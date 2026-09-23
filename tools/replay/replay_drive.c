@@ -22,8 +22,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "runtime/savestate.h"
 #include "runtime/scalar.h"
 #include "runtime/wire.h"
+
+#if defined(_WIN32)
+/* Run mode trades packed structs over the standard streams, and Windows
+   opens those in text mode: every 0x0A byte of a float would go out as
+   0x0D 0x0A. */
+#include <fcntl.h>
+#include <io.h>
+#define MSL_BINARY_STREAMS()                                                  \
+    do {                                                                      \
+        _setmode(_fileno(stdin), _O_BINARY);                                  \
+        _setmode(_fileno(stdout), _O_BINARY);                                 \
+    } while (0)
+#else
+#define MSL_BINARY_STREAMS() ((void) 0)
+#endif
 
 #pragma pack(push, 1)
 
@@ -112,6 +128,54 @@ typedef struct OutFrame {
     uint8_t combo_count[4];
 } OutFrame;
 
+/* Run mode. Once the tape has been replayed, the caller can keep stepping the
+   match with inputs of its own - an agent playing on from the position the
+   recording reached. Every lane starts from the same saved state, so several
+   runs of one position play at once, and the rows below carry everything a
+   Slippi post-frame event needs so the caller can write the run out as a
+   replay of its own. */
+typedef struct RunPlayer {
+    float pos_x;
+    float pos_y;
+    float percent;
+    float shield_hp;
+    float speed_air_x;
+    float speed_ground_x;
+    float speed_y;
+    float speed_x_attack;
+    float speed_y_attack;
+    uint32_t animation_index;
+    uint16_t action_id;
+    int16_t action_frame;
+    uint16_t hitlag;
+    uint16_t hitstun;
+    uint16_t ground_id;
+    uint16_t instance_hit_by;
+    uint16_t instance_id;
+    uint8_t char_id;
+    uint8_t stocks;
+    uint8_t facing;
+    uint8_t on_ground;
+    uint8_t is_dead;
+    uint8_t jumps_left;
+    uint8_t hurtbox_state;
+    uint8_t l_cancel;
+    uint8_t last_attack_landed;
+    uint8_t combo_count;
+    uint8_t last_hit_by;
+    uint8_t state_flags[5];
+} RunPlayer;
+
+typedef struct RunOut {
+    int32_t frame_id;
+    uint32_t frame_seed;
+    RunPlayer p[4];
+} RunOut;
+
+typedef struct RunIn {
+    TapeInput p[4];
+} RunIn;
+
 #pragma pack(pop)
 
 /* tools/validation/native.c::processed_stick_i8 */
@@ -191,6 +255,137 @@ static void fill_output(OutFrame* out, const MslCoreCompare* compare)
     }
 }
 
+static void fill_run(RunOut* out, const MslCoreCompare* compare)
+{
+    int i;
+    memset(out, 0, sizeof(*out));
+    out->frame_id = compare->frame_id;
+    out->frame_seed = compare->frame_pre_random_seed;
+    for (i = 0; i < 4; ++i) {
+        RunPlayer* p = &out->p[i];
+        p->pos_x = compare->pos_x[i];
+        p->pos_y = compare->pos_y[i];
+        p->percent = compare->percent[i];
+        p->shield_hp = compare->shield_hp[i];
+        p->speed_air_x = compare->speed_air_x_self[i];
+        p->speed_ground_x = compare->speed_ground_x_self[i];
+        p->speed_y = compare->speed_y_self[i];
+        p->speed_x_attack = compare->speed_x_attack[i];
+        p->speed_y_attack = compare->speed_y_attack[i];
+        p->animation_index = compare->animation_index[i];
+        p->action_id = compare->action_id[i];
+        p->action_frame = compare->action_frame[i];
+        p->hitlag = compare->hitlag[i];
+        p->hitstun = compare->hitstun[i];
+        p->ground_id = compare->ground_id[i];
+        p->instance_hit_by = compare->instance_hit_by[i];
+        p->instance_id = compare->instance_id[i];
+        p->char_id = compare->char_id[i];
+        p->stocks = compare->stocks[i];
+        p->facing = compare->facing[i];
+        p->on_ground = compare->on_ground[i];
+        p->is_dead = compare->is_dead[i];
+        p->jumps_left = compare->jumps_left[i];
+        p->hurtbox_state = compare->hurtbox_state[i];
+        p->l_cancel = compare->l_cancel[i];
+        p->last_attack_landed = compare->last_attack_landed[i];
+        p->combo_count = compare->combo_count[i];
+        p->last_hit_by = compare->last_hit_by[i];
+        memcpy(p->state_flags, compare->state_flags[i],
+               MSL_CORE_STATE_FLAGS_BYTES);
+    }
+}
+
+/* Play on from the replayed position, one lane per run, until the caller
+   stops sending inputs. Every lane is the same saved state to start with, so
+   the runs differ only by what their agents press. */
+static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
+                    const MslCoreInput* previous, int lanes)
+{
+    enum { MAX_LANES = 16 };
+    static MslCoreMatch storage[MAX_LANES];
+    MslCoreMatch* matches[MAX_LANES];
+    static uint8_t state[1 << 21];
+    size_t needed;
+    size_t written;
+    int lane;
+    RunOut out[MAX_LANES];
+    RunIn in[MAX_LANES];
+
+    if (lanes < 1 || lanes > MAX_LANES) {
+        fprintf(stderr, "lanes must be 1..%d\n", MAX_LANES);
+        return 1;
+    }
+    MSL_BINARY_STREAMS();
+    needed = msl_core_match_save_size(replayed);
+    if (needed > sizeof(state)) {
+        fprintf(stderr, "savestate is %zu bytes, buffer is %zu\n", needed,
+                sizeof(state));
+        return 1;
+    }
+    if (msl_core_match_save(replayed, state, sizeof(state), &written) != 0) {
+        fprintf(stderr, "save failed\n");
+        return 1;
+    }
+    /* Lane 0 is the replayed match itself. A MslCoreMatch carries pointers
+       into its own storage, so it cannot be copied with an assignment: the
+       other lanes are built and then given the saved state. */
+    matches[0] = replayed;
+    for (lane = 1; lane < lanes; ++lane) {
+        matches[lane] = &storage[lane];
+        /* match_init does its own storage_init, and restore needs a
+           destination that already carries the game data and an arena. */
+        if (msl_core_match_init(matches[lane], game_data, &replayed->config,
+                                previous) != 0)
+        {
+            fprintf(stderr, "lane %d could not be created\n", lane);
+            return 1;
+        }
+        if (msl_core_match_restore(matches[lane], state, written) != 0) {
+            fprintf(stderr, "lane %d could not take the saved state "
+                    "(needed %zu, written %zu)\n", lane, needed, written);
+            return 1;
+        }
+    }
+    /* The position every lane starts from, before any agent has pressed
+       anything. */
+    for (lane = 0; lane < lanes; ++lane) {
+        fill_run(&out[lane], msl_core_match_output(matches[lane]));
+    }
+    if (fwrite(out, sizeof(out[0]), (size_t) lanes, stdout) !=
+            (size_t) lanes || fflush(stdout) != 0)
+    {
+        return 1;
+    }
+    for (;;) {
+        static const MslCoreStageEvents no_events = { 0 };
+        size_t got = fread(in, sizeof(in[0]), (size_t) lanes, stdin);
+        if (got != (size_t) lanes) {
+            return feof(stdin) ? 0 : 1;           /* the caller is done */
+        }
+        for (lane = 0; lane < lanes; ++lane) {
+            MslCoreInput input;
+            TapeFrame carrier;
+            memset(&carrier, 0, sizeof(carrier));
+            memcpy(carrier.p, in[lane].p, sizeof(carrier.p));
+            fill_input(&input, &carrier, matches[lane]->config.num_players);
+            if (msl_core_match_step(matches[lane], &input,
+                                    matches[lane]->random_seed,
+                                    &no_events) != 0)
+            {
+                fprintf(stderr, "run step failed on lane %d\n", lane);
+                return 1;
+            }
+            fill_run(&out[lane], msl_core_match_output(matches[lane]));
+        }
+        if (fwrite(out, sizeof(out[0]), (size_t) lanes, stdout) !=
+                (size_t) lanes || fflush(stdout) != 0)
+        {
+            return 1;
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     TapeConfig tape;
@@ -204,17 +399,22 @@ int main(int argc, char** argv)
     FILE* output;
     uint32_t index;
     int player;
+    int lanes;
 
     if (argc == 2 && strcmp(argv[1], "--sizes") == 0) {
-        printf("{\"config\": %u, \"frame\": %u, \"out\": %u}\n",
+        printf("{\"config\": %u, \"frame\": %u, \"out\": %u, "
+               "\"run_out\": %u, \"run_in\": %u}\n",
                (unsigned) sizeof(TapeConfig), (unsigned) sizeof(TapeFrame),
-               (unsigned) sizeof(OutFrame));
+               (unsigned) sizeof(OutFrame), (unsigned) sizeof(RunOut),
+               (unsigned) sizeof(RunIn));
         return 0;
     }
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s <data_root> <tape> <out>\n", argv[0]);
+    if (argc != 4 && !(argc == 6 && strcmp(argv[4], "--run") == 0)) {
+        fprintf(stderr, "usage: %s <data_root> <tape> <out> [--run <lanes>]\n",
+                argv[0]);
         return 2;
     }
+    lanes = argc == 6 ? atoi(argv[5]) : 0;
     input = fopen(argv[2], "rb");
     if (input == NULL || fread(&tape, 1, sizeof(tape), input) != sizeof(tape)) {
         fprintf(stderr, "cannot read tape %s\n", argv[2]);
@@ -303,6 +503,11 @@ int main(int argc, char** argv)
     if (fclose(output) != 0) {
         fprintf(stderr, "failed to flush output\n");
         return 1;
+    }
+    if (lanes > 0) {
+        int status = run_mode(&match, &game_data, &previous, lanes);
+        msl_core_game_data_deinit(&game_data);
+        return status;
     }
     msl_core_match_destroy(&match);
     msl_core_game_data_deinit(&game_data);

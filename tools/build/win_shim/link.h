@@ -32,7 +32,24 @@ struct dl_phdr_info {
 
 /* The consumer passes its own anchor inside `data`; every caller in this tree
    filters by an anchor it owns, so reporting only the anchor's own module is
-   both sufficient and cheaper than walking the loaded-module list. */
+   both sufficient and cheaper than walking the loaded-module list.
+
+   This reads `data` as a struct whose FIRST member is that anchor address,
+   which is exactly src/runtime/savestate.c's ImageRangeQuery:
+
+       typedef struct ImageRangeQuery {
+           uintptr_t anchor;      <- read here
+           uintptr_t base;
+           size_t size;
+       } ImageRangeQuery;
+
+   If that member moves or changes type, this shim reads the wrong field and
+   reports the module containing some other address - most likely none, which
+   turns every savestate into "incompatible" rather than anything louder. The
+   clean fix is a platform seam in savestate.c (an msl_platform_image_range()
+   that Windows implements directly) instead of a fake ELF API; that is a
+   change to the core, so it is proposed rather than made here. The only
+   caller is savestate.c's current_image_range(). */
 static inline int dl_iterate_phdr(int (*callback)(struct dl_phdr_info*, size_t,
                                                   void*),
                                   void* data)

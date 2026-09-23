@@ -7,17 +7,22 @@ and compares every frame against the file.
   python -m tools.replay.replay_drive <replay.slp> [...] [--json out.json]
   python -m tools.replay.replay_drive --list files.txt --profile ucf084
 
-What the caller usually wants is `reproduces(path, through)`: does this
-recording replay exactly up to a frame? That is the gate for starting anything
-from a position in somebody's real game.
+**This is not validation and its answers are not verdicts.** The strict gate
+lives in tools/validation; admission is what decides whether a recording may
+be compared at all, and agent_docs/VALIDATION.md forbids exactly what
+`state_matches_recording` does: it tries each UCF capability profile and keeps
+the one that reproduces the file, where the gate requires reviewed
+provenance and says "never pick a profile solely because it makes a recording
+pass". Nothing here may be used to admit a capture, record a suite result,
+write an output lock, or claim that the simulator is or is not exact. It
+answers one question for one consumer: may I start something from the
+position this recording reached at this frame?
 
 Two things are per-recording and have to be right or nothing matches:
 
   * the internal character id, from the post-frame rows - the external id in
     the game-start block picks another character's entry data;
-  * the UCF capability profile, which the strict suites take as a parameter.
-    `fit()` picks it by trying each profile and keeping the one that
-    reproduces the file.
+  * the UCF capability profile, fitted as described above.
 
 Rollback re-simulations write a second row for the same frame id; the last row
 for an id is the finalized one, as in native.c::build_finalized_rows.
@@ -56,6 +61,10 @@ OUT_SIZE = struct.calcsize(OUT_FMT)
 TAPE_MAGIC = 0x314C534D  # "MSL1"
 
 LEGAL_STAGES = (2, 3, 8, 28, 31, 32)
+
+NOT_A_VERDICT = ('not admission and not a validation result: the inputs '
+                 'profile is fitted by trying each one, which the strict '
+                 'gate forbids (agent_docs/VALIDATION.md)')
 
 # cardinals, shield SDI, SDI, extended shield drop, 0.84 shield drop.
 UCF_PROFILES = {
@@ -344,42 +353,49 @@ def supported(replay) -> str | None:
     return None
 
 
-def reproduces(path, through=None, profiles=PROFILE_ORDER, raw_cstick=True):
-    """Replay `path` and report whether it matches the recording exactly.
+def state_matches_recording(path, through=None, profiles=PROFILE_ORDER,
+                            raw_cstick=True):
+  """Does the simulator land where this recording did, up to `through`?
 
-    `through` stops at a frame id (the takeover frame, say) instead of running
-    the whole game. Returns a dict with `ok`, the `profile` that worked, the
-    frame count driven and the seconds it took.
-    """
-    replay = read(path)
-    reason = supported(replay)
-    if reason:
-        return {"ok": False, "reason": reason, "profile": None}
-    index_of = {int(frame): i for i, frame in enumerate(replay["ids"])}
-    if through is None:
-        count = len(replay["ids"])
-    else:
-        if int(through) not in index_of:
-            return {"ok": False, "reason": "frame-not-in-file", "profile": None}
-        count = index_of[int(through)] + 1
-    started = time.time()
-    attempts = []
-    for profile in profiles:
-        blob = drive(replay, count, profile, raw_cstick=raw_cstick)
-        rows = len(blob) // OUT_SIZE
-        first_bad = None
-        for index in range(rows):
-            if frame_diff(replay, blob, index):
-                first_bad = int(replay["ids"][index])
-                break
-        attempts.append({"profile": profile, "first_divergence": first_bad})
-        if first_bad is None:
-            return {"ok": True, "reason": None, "profile": profile,
-                    "frames": rows, "seconds": round(time.time() - started, 3),
-                    "attempts": attempts, "blob": blob, "replay": replay}
-    return {"ok": False, "reason": "diverges", "profile": None,
-            "frames": count, "seconds": round(time.time() - started, 3),
-            "attempts": attempts}
+  Not a validation verdict and not admission - see the module docstring. The
+  answer is a dict with `matches`, the `fitted_inputs_profile` that produced
+  it, the frames driven, the seconds it took, and `note`, which says what the
+  answer is not. `through` stops at a frame id (the takeover frame, say)
+  rather than running the whole game.
+  """
+  replay = read(path)
+  reason = supported(replay)
+  if reason:
+    return {'matches': False, 'reason': reason,
+            'fitted_inputs_profile': None, 'note': NOT_A_VERDICT}
+  index_of = {int(frame): i for i, frame in enumerate(replay['ids'])}
+  if through is None:
+    count = len(replay['ids'])
+  else:
+    if int(through) not in index_of:
+      return {'matches': False, 'reason': 'frame-not-in-file',
+              'fitted_inputs_profile': None, 'note': NOT_A_VERDICT}
+    count = index_of[int(through)] + 1
+  started = time.time()
+  attempts = []
+  for profile in profiles:
+    blob = drive(replay, count, profile, raw_cstick=raw_cstick)
+    rows = len(blob) // OUT_SIZE
+    first_bad = None
+    for index in range(rows):
+      if frame_diff(replay, blob, index):
+        first_bad = int(replay['ids'][index])
+        break
+    attempts.append({'profile': profile, 'first_difference': first_bad})
+    if first_bad is None:
+      return {'matches': True, 'reason': None,
+              'fitted_inputs_profile': profile, 'frames': rows,
+              'seconds': round(time.time() - started, 3),
+              'attempts': attempts, 'blob': blob, 'replay': replay,
+              'note': NOT_A_VERDICT}
+  return {'matches': False, 'reason': 'differs', 'fitted_inputs_profile': None,
+          'frames': count, 'seconds': round(time.time() - started, 3),
+          'attempts': attempts, 'note': NOT_A_VERDICT}
 
 
 def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
@@ -457,10 +473,10 @@ def main() -> None:
             if profile:
                 result = summarize(path, profile, raw_cstick, limit)
             else:
-                fit = reproduces(path, raw_cstick=raw_cstick)
-                result = summarize(path, fit["profile"] or PROFILE_ORDER[0],
-                                   raw_cstick, limit)
-                result["fitted_profile"] = fit["profile"]
+                fit = state_matches_recording(path, raw_cstick=raw_cstick)
+                result = summarize(path, fit["fitted_inputs_profile"]
+                                   or PROFILE_ORDER[0], raw_cstick, limit)
+                result["fitted_inputs_profile"] = fit["fitted_inputs_profile"]
         except Exception as error:  # noqa: BLE001
             result = {"path": str(path),
                       "error": "%s: %s" % (type(error).__name__, error)}
