@@ -49,7 +49,22 @@ _DWARF_ATE_CODES = {
 }
 
 
-def _dwarf_tool() -> str:
+def _is_elf(object_path: Path) -> bool:
+    try:
+        with open(object_path, "rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return True
+
+
+def _dwarf_tool(object_path: Path | None = None) -> str:
+    # The host object is PE/COFF on Windows, which readelf rejects outright.
+    # binutils shares its DWARF dumper, so objdump prints the same listing for
+    # it; the PPC object stays ELF on every host and keeps the readelf path.
+    if object_path is not None and not _is_elf(object_path):
+        if shutil.which("objdump"):
+            return "objdump"
+        raise RuntimeError(f"{object_path} is not ELF and objdump is missing")
     if shutil.which("readelf"):
         return "readelf"
     # Prefer a full LLVM llvm-dwarfdump (e.g. Homebrew's) over Apple's
@@ -77,9 +92,13 @@ class Die:
 
 class Dwarf:
     def __init__(self, object_path: Path):
-        tool = _dwarf_tool()
+        tool = _dwarf_tool(object_path)
         if tool == "readelf":
             command = ["readelf", "--debug-dump=info", "--wide", str(object_path)]
+            die_re = _DIE_RE
+            attr_re = _ATTR_RE
+        elif tool == "objdump":
+            command = ["objdump", "--dwarf=info", "--wide", str(object_path)]
             die_re = _DIE_RE
             attr_re = _ATTR_RE
         else:
@@ -103,7 +122,7 @@ class Dwarf:
                     self.address_size = int(match.group(1) or match.group(2), 16)
             match = die_re.match(line)
             if match:
-                if tool == "readelf":
+                if tool in ("readelf", "objdump"):
                     depth = int(match.group(1))
                     offset = int(match.group(2), 16)
                     tag = match.group(3)
@@ -122,7 +141,7 @@ class Dwarf:
             match = attr_re.match(line)
             if match and current is not None:
                 value = match.group(2)
-                if tool != "readelf":
+                if tool not in ("readelf", "objdump"):
                     code = _DWARF_ATE_CODES.get(value)
                     if code is not None:
                         value = str(code)
