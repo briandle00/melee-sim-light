@@ -296,24 +296,39 @@ static void fill_run(RunOut* out, const MslCoreCompare* compare)
     }
 }
 
+/* The most lanes run mode takes. The lanes live on the heap, so this is a
+   sanity bound rather than the size of anything: one lane's match is about
+   1 MB, so this many is a few GB - more than any caller has wanted (a few
+   hundred runs of one position). `--sizes` reports it. */
+enum { MAX_LANES = 4096 };
+
 /* Play on from the replayed position, one lane per run, until the caller
    stops sending inputs. Every lane is the same saved state to start with, so
    the runs differ only by what their agents press. */
 static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
                     const MslCoreInput* previous, int lanes)
 {
-    enum { MAX_LANES = 16 };
-    static MslCoreMatch storage[MAX_LANES];
-    MslCoreMatch* matches[MAX_LANES];
     static uint8_t state[1 << 21];
+    MslCoreMatch* storage;
+    MslCoreMatch** matches;
+    RunOut* out;
+    RunIn* in;
     size_t needed;
     size_t written;
     int lane;
-    RunOut out[MAX_LANES];
-    RunIn in[MAX_LANES];
 
     if (lanes < 1 || lanes > MAX_LANES) {
         fprintf(stderr, "lanes must be 1..%d\n", MAX_LANES);
+        return 1;
+    }
+    /* Lane 0 is the replayed match itself, so storage[0] is never used; it is
+       allocated anyway so a lane's index is its own everywhere. */
+    storage = (MslCoreMatch*) calloc((size_t) lanes, sizeof(*storage));
+    matches = (MslCoreMatch**) calloc((size_t) lanes, sizeof(*matches));
+    out = (RunOut*) calloc((size_t) lanes, sizeof(*out));
+    in = (RunIn*) calloc((size_t) lanes, sizeof(*in));
+    if (storage == NULL || matches == NULL || out == NULL || in == NULL) {
+        fprintf(stderr, "not enough memory for %d lanes\n", lanes);
         return 1;
     }
     MSL_BINARY_STREAMS();
@@ -352,14 +367,14 @@ static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
     for (lane = 0; lane < lanes; ++lane) {
         fill_run(&out[lane], msl_core_match_output(matches[lane]));
     }
-    if (fwrite(out, sizeof(out[0]), (size_t) lanes, stdout) !=
+    if (fwrite(out, sizeof(*out), (size_t) lanes, stdout) !=
             (size_t) lanes || fflush(stdout) != 0)
     {
         return 1;
     }
     for (;;) {
         static const MslCoreStageEvents no_events = { 0 };
-        size_t got = fread(in, sizeof(in[0]), (size_t) lanes, stdin);
+        size_t got = fread(in, sizeof(*in), (size_t) lanes, stdin);
         if (got != (size_t) lanes) {
             return feof(stdin) ? 0 : 1;           /* the caller is done */
         }
@@ -378,7 +393,7 @@ static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
             }
             fill_run(&out[lane], msl_core_match_output(matches[lane]));
         }
-        if (fwrite(out, sizeof(out[0]), (size_t) lanes, stdout) !=
+        if (fwrite(out, sizeof(*out), (size_t) lanes, stdout) !=
                 (size_t) lanes || fflush(stdout) != 0)
         {
             return 1;
@@ -403,10 +418,10 @@ int main(int argc, char** argv)
 
     if (argc == 2 && strcmp(argv[1], "--sizes") == 0) {
         printf("{\"config\": %u, \"frame\": %u, \"out\": %u, "
-               "\"run_out\": %u, \"run_in\": %u}\n",
+               "\"run_out\": %u, \"run_in\": %u, \"max_lanes\": %d}\n",
                (unsigned) sizeof(TapeConfig), (unsigned) sizeof(TapeFrame),
                (unsigned) sizeof(OutFrame), (unsigned) sizeof(RunOut),
-               (unsigned) sizeof(RunIn));
+               (unsigned) sizeof(RunIn), (int) MAX_LANES);
         return 0;
     }
     if (argc != 4 && !(argc == 6 && strcmp(argv[4], "--run") == 0)) {
