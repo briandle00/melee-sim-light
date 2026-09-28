@@ -24,7 +24,8 @@ from tools.validation.slpz import (
     resolve_replay_path,
     set_native_unorder_events,
 )
-from tools.validation.admission import gecko_codes, raw_player_levels, require_admissible, slippi_patches
+from tools.validation.admission import (gecko_codes, raw_player_levels, require_admissible,
+                                        slippi_patches, stadium_transformations)
 from tools.validation.suite_io import ReplaySuite, display_path_under_repo, load_suite
 
 
@@ -335,6 +336,12 @@ def validate_one(
                                jit_arithmetic=jit_arithmetic)
         codes = gecko_codes(peppi_path.read_bytes())
         start = with_human_levels(game.start, peppi_path)
+        # Pokemon Stadium runs under the patch set its gecko list names. One
+        # unfrozen outside both is inadmissible; a diagnostic run keeps it
+        # frozen.
+        stadium = 0
+        if game.start.get("stage") == 3:
+            stadium = stadium_transformations(game.start, codes) or 0
         metadata = game.metadata
         if played_on is not None:
             metadata = dict(metadata)
@@ -362,6 +369,7 @@ def validate_one(
             runner_stdout=runner.stdout_fd if runner is not None else -1,
             slippi_patches=slippi_patches(codes),
             jit_arithmetic=1 if jit_arithmetic == "no-host-fma" else 0,
+            stadium_transformations=stadium,
         )
     result["admitted"] = not diagnostic
     result["diagnostic"] = diagnostic or signed_zero_equal or frames != 0 or start_frame is not None
