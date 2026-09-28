@@ -191,3 +191,17 @@ def test_neutral_spawn_is_read_from_the_code_list():
     assert not admission.slippi_patches({0xC216E510: b""}) & admission.PATCH_RETAIL_SPAWNS
     assert admission.slippi_patches({0xC21D24FC: b""}) & admission.PATCH_RETAIL_SPAWNS
     assert admission.slippi_patches({}) == 0
+
+
+def test_rollback_rows_and_a_discarded_tail():
+    # Frames 0..4 written in order, then a rollback rewrites 2 and 3.
+    ids = np.array([0, 1, 2, 3, 2, 3, 4])
+    keep, dropped = rd.finalized_rows(ids)
+    assert keep.tolist() == [0, 1, 4, 5, 6] and dropped == 0
+    # The game ends mid re-simulation: 3 is rewritten before 4 ever was, so
+    # 4's only row is from the discarded timeline.
+    ids = np.array([0, 1, 2, 3, 4, 2, 3])
+    keep, dropped = rd.finalized_rows(ids)
+    assert keep.tolist() == [0, 1, 5, 6] and dropped == 1
+    keep, dropped = rd.finalized_rows(np.array([], dtype=np.int32))
+    assert len(keep) == 0 and dropped == 0

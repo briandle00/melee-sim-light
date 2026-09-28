@@ -192,6 +192,28 @@ def stadium_transformations(start, raw):
     return stadium_transformations(start, gecko_codes(raw))
 
 
+def finalized_rows(ids):
+    """The row index to read for each frame id, in frame order, and how many
+    trailing frames were dropped as belonging to a discarded timeline.
+
+    Rollback re-simulations write a second row for the same frame id; the
+    last row for an id is the finalized one. A frame whose last row was
+    written before an earlier frame's rewrite belongs to the discarded
+    timeline: the game ended before the re-simulation reached it. Online
+    games can end that way, and those rows are no one's frame to match."""
+    ids = np.asarray(ids)
+    order = np.argsort(ids, kind="stable")
+    keep = [order[i] for i in range(len(order))
+            if i + 1 == len(order) or ids[order[i + 1]] != ids[order[i]]]
+    keep = np.asarray(keep, dtype=np.int64)
+    if not len(keep):
+        return keep, 0
+    stale = np.nonzero(keep < np.maximum.accumulate(keep))[0]
+    if len(stale):
+        return keep[:int(stale[0])], len(keep) - int(stale[0])
+    return keep, 0
+
+
 def read(path):
     """Everything the tape needs plus the per-frame truth to compare against."""
     game = _read_slippi(str(path), False)
@@ -271,11 +293,8 @@ def read(path):
             })
     if frame_seed is None:
         frame_seed = np.asarray(players[0]["pre_seed"]).copy()
-    order = np.argsort(ids, kind="stable")
-    keep = [order[i] for i in range(len(order))
-            if i + 1 == len(order) or ids[order[i + 1]] != ids[order[i]]]
-    keep = np.asarray(keep, dtype=np.int64)
-    duplicates = len(order) - len(keep)
+    keep, discarded_tail = finalized_rows(ids)
+    duplicates = len(ids) - len(keep)
     if duplicates:
         rows = len(ids)
         ids = ids[keep]
@@ -364,6 +383,7 @@ def read(path):
                    if "dreamland_whispy" in names else None),
         "rows": keep,
         "duplicate_rows": duplicates,
+        "discarded_tail": discarded_tail,
     }
 
 
