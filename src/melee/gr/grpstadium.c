@@ -38,8 +38,11 @@
 #include <melee/mp/mplib.h>
 #include <melee/pl/player.h>
 #ifdef MSL_CORE_HOSTED
+#include <platform/files.h>
 #include <runtime/context.h>
 #include <runtime/source_state.h>
+#include <runtime/wire.h>
+extern int msl_stadium_transformations(void);
 static void msl_stadium_show(Ground_GObj* display, int screen, int frames);
 static void msl_stadium_display_step(Ground_GObj* display);
 #endif
@@ -295,6 +298,9 @@ void grStadium_801D1290(Ground_GObj* gobj)
         gp->u.display.xF2 = 0;
         gp->u.display.xF4 = NULL;
         msl_stadium_show(gobj, 0, 0);
+        if (msl_stadium_transformations() != MSL_STADIUM_FROZEN) {
+            Ground_801C10B8(gobj, fn_801D11E4);
+        }
     }
     return;
 #else
@@ -1986,6 +1992,37 @@ void fn_801D4220(int un0, int un1, UNK_T un2, bool cancelflag)
     gp->u.stadium.xC4_b1 = false;
 }
 
+#ifdef MSL_CORE_HOSTED
+extern int msl_stadium_transformations(void);
+
+static const char* msl_stadium_archive(int kind)
+{
+    switch (kind) {
+    case 3:
+        return datfiles[0];
+    case 4:
+        return datfiles[1];
+    case 9:
+        return datfiles[2];
+    case 6:
+        return datfiles[3];
+    }
+    HSD_ASSERT(0xA44, 0);
+    return NULL;
+}
+
+// The read that retail starts with lbFile_80016580 into the 0x50000 scratch
+// block, and the parse that follows it (grDatFiles_801C6478 in the preloaded
+// patch set, StadiumFileLoad in the online one), as one step: the archive
+// was read and translated with GameData, so a load is taking a slot.
+static UnkArchiveStruct* msl_stadium_publish(int kind)
+{
+    HSD_Archive* archive = msl_host_archive_find(msl_stadium_archive(kind));
+    HSD_ASSERT(0x99A, archive);
+    return msl_grdatfiles_publish_archive(archive);
+}
+#endif
+
 #pragma push
 #pragma dont_inline on
 bool grStadium_801D42B8(void)
@@ -2000,8 +2037,12 @@ bool grStadium_801D42B8(void)
     if (gp->u.stadium.xC4_b1) {
         return false;
     }
+#ifdef MSL_CORE_HOSTED
+    gp->u.stadium.xD0 = msl_stadium_publish(gp->u.stadium.xEC_preloaded_kind);
+#else
     gp->u.stadium.xD0 =
         grDatFiles_801C6478(gp->u.stadium.xCC, gp->u.stadium.xC8);
+#endif
     return true;
 }
 #pragma pop
@@ -2104,6 +2145,7 @@ void grStadium_801D435C(Ground_GObj* arg0)
 }
 
 #ifdef MSL_CORE_HOSTED
+static const int msl_stadium_kinds[] = { 3, 4, 6, 9 };
 
 // The jumbotron's screen schedule, headless. The pictures and text are
 // presentation, but choosing the next screen draws random numbers inside
@@ -2232,6 +2274,11 @@ static void msl_stadium_show(Ground_GObj* display, int screen, int frames)
     }
 }
 
+static void msl_stadium_show_transformation(Ground_GObj* display, int screen)
+{
+    msl_stadium_show(display, screen, 0);
+}
+
 static void msl_stadium_next_screen(Ground_GObj* display)
 {
     Ground* gp = GET_GROUND(display);
@@ -2331,14 +2378,243 @@ void msl_stadium_display_event(int screen)
     }
 }
 
+// A transformation other than the one before last: the retail loop at
+// 0x801D4638, which Common/Preload Stadium Transformations/Core/
+// Load Transformation.asm repeats at 0x801D45EC.
+static int msl_stadium_choose(Ground* gp)
+{
+    int kind;
+    do {
+        kind = msl_stadium_kinds[HSD_Randi(ARRAY_SIZE(msl_stadium_kinds))];
+    } while (gp->u.stadium.xE2 == kind);
+    return kind;
+}
+
+/* grStadium_801D4548 as the two unfrozen Slippi patch sets run it.
+
+   MSL_STADIUM_PRELOADED, Common/Preload Stadium Transformations:
+     Load Transformation.asm (0x801D45EC) chooses and reads the next
+       transformation on the first frame of each wait in state 0, once;
+     GetPreloadedTransition and SkipNormalDecision1 (0x801D460C/10) take that
+       choice when the timer runs out, in place of the retail loop;
+     SkipNormalDecision2 (0x801D4724) skips the read and falls into the
+       state-1 test, grStadium_801D42B8, which parses the archive on the same
+       frame;
+     Reset isLoaded.asm (0x801D4F14) arms the next read on returning home.
+   MSL_STADIUM_ONLINE_LOADED, Online/Core/Hacks/Stadium:
+     the retail decision; StadiumFileLoad.asm (0x800165AC) reads and parses
+       the archive inside lbFile_80016580, synchronously;
+     GrPsxIsValid.asm (0x801D4760) answers state 1 from the archive already
+       parsed, so state 2 follows on the next frame.
+   Everything else is retail. Presentation (effects, sound, jumbotron) is
+   headless but keeps its RNG draws: grStadium_801D435C's five HSD_Randf
+   calls a frame, during states 4 and 5, run as written.
+   refs/melee/src/melee/gr/grpstadium.c::grStadium_801D4548
+   refs/slippi-ssbm-asm/Common/Preload Stadium Transformations/Core/
+   refs/slippi-ssbm-asm/Online/Core/Hacks/Stadium/ */
+static void msl_stadium_transform(Ground_GObj* gobj)
+{
+    int mode = msl_stadium_transformations();
+    Ground* gp = GET_GROUND(gobj);
+    f32 scale = Ground_801C0498();
+    int kind;
+    int old;
+
+    if (mode == MSL_STADIUM_FROZEN) {
+        // External/Frozen PS/Core/FreezePokemon.asm, the online toggle and
+        // the legacy online bypass all leave through 0x801D4FD8 here.
+        return;
+    }
+    if (gm_8018841C() != 0) {
+        return;
+    }
+    if (Stage_80225194() == 0xF0) {
+        return;
+    }
+    switch (gp->u.stadium.xDC) {
+    case 0:
+        if (mode == MSL_STADIUM_PRELOADED && !gp->u.stadium.xF0_preloaded) {
+            gp->u.stadium.xEC_preloaded_kind = msl_stadium_choose(gp);
+            gp->u.stadium.xF0_preloaded = true;
+        }
+        old = gp->u.stadium.xD8;
+        gp->u.stadium.xD8 = old - 1;
+        if (old >= 0) {
+            return;
+        }
+        if (gp->u.stadium.xDE == 5) {
+            kind = mode == MSL_STADIUM_PRELOADED
+                       ? gp->u.stadium.xEC_preloaded_kind
+                       : msl_stadium_choose(gp);
+        } else {
+            kind = 5;
+        }
+        gp->u.stadium.xE2 = gp->u.stadium.xE0;
+        gp->u.stadium.xE0 = gp->u.stadium.xDE;
+        gp->u.stadium.xDE = kind;
+        if (kind == 5) {
+            gp->u.stadium.xDC = 2;
+            return;
+        }
+        grAnime_801C65B0(gp->u.stadium.xD0);
+        gp->u.stadium.xD0 = NULL;
+        if (mode == MSL_STADIUM_PRELOADED) {
+            // Into the state-1 test on this frame; xC4_b1 was never raised.
+            if (grStadium_801D42B8()) {
+                gp->u.stadium.xDC = 2;
+            }
+            return;
+        }
+        gp->u.stadium.xC4_b1 = true;
+        gp->u.stadium.xD0 = msl_stadium_publish(kind);
+        gp->u.stadium.xDC = 1;
+        return;
+    case 1:
+        if (mode == MSL_STADIUM_PRELOADED) {
+            if (grStadium_801D42B8()) {
+                gp->u.stadium.xDC = 2;
+            }
+            return;
+        }
+        // GrPsxIsValid: the main archive's map_head is always valid here.
+        gp->u.stadium.xDC = 2;
+        return;
+    case 2: {
+        Ground_GObj* display = Ground_801C2BA4(1);
+        int screen;
+        // Retail stores NULL through the display view of this Ground, which
+        // on the console is the transformation timer xD8.
+        gp->u.stadium.xD8 = 0;
+        if (display != NULL) {
+            switch (gp->u.stadium.xDE) {
+            case 3:
+                screen = 3;
+                break;
+            case 4:
+                screen = 4;
+                break;
+            case 9:
+                screen = 5;
+                break;
+            case 6:
+                screen = 6;
+                break;
+            case 5:
+                screen = 2;
+                break;
+            default:
+                HSD_ASSERT(0xA67, 0);
+                screen = 2;
+                break;
+            }
+            msl_stadium_show_transformation(display, screen);
+        }
+        gp->u.stadium.xDC = 3;
+        return;
+    }
+    case 3:
+        // GALE01 0x801D4810 compares the value before the increment; the
+        // decomp's pre-increment ends the wait a frame early.
+        if (gp->u.stadium.xD8++ > yaku->x10) {
+            GET_GROUND(gp->u.stadium.xE4)->u.stadium.xC4_b1 = true;
+            gp->u.stadium.xDC = 4;
+            gp->u.stadium.xD8 = 0;
+            Ground_801C53EC(0x75300);
+            Ground_801C53EC(0x75301);
+        }
+        return;
+    case 4: {
+        HSD_JObj* jobj = GET_JOBJ(gp->u.stadium.xE4);
+        // GALE01 0x801D48C8: fnmsubs f29, f31, f0, f29.
+        f32 shrunk = __fnmsubs(scale, 0.95f / yaku->x14,
+                               HSD_JObjGetScaleY(jobj));
+        f32 least = 0.05f * scale;
+        if (shrunk > least) {
+            HSD_JObjSetScaleY(jobj, shrunk);
+        } else {
+            HSD_JObjSetScaleY(jobj, 0.05F);
+            old = gp->u.stadium.xD8;
+            gp->u.stadium.xD8 = old + 1;
+            if (old > yaku->x18) {
+                Ground_GObj* next;
+                HSD_JObj* next_jobj;
+                grAnime_801C7A04(gp->u.stadium.xE4, 0, 7, 0.0f);
+                next = grStadium_801D10F8(gp->u.stadium.xDE);
+                next_jobj = GET_JOBJ(next);
+                HSD_JObjSetScaleY(next_jobj, least);
+                HSD_JObjSetTranslateY(next_jobj, -10.0F);
+                gp->u.stadium.xE8 = next;
+                gp->u.stadium.xD8 = 0;
+                gp->u.stadium.xDC = 5;
+                mpLib_80057528(0x55);
+                mpLib_80057528(0x6F);
+            }
+        }
+        grStadium_801D435C(gobj);
+        Camera_80030E44(1, NULL);
+        return;
+    }
+    case 5: {
+        int frame = ++gp->u.stadium.xD8;
+        if (frame <= yaku->x14) {
+            HSD_JObj* next_jobj = gp->u.stadium.xE8->hsd_obj;
+            HSD_JObj* jobj;
+            f32 grown = 0.95f * frame / yaku->x14 + 0.05F;
+            int half;
+            f32 y;
+            HSD_JObjSetScaleY(next_jobj, grown * scale);
+            half = yaku->x14 / 2;
+            if (frame < half) {
+                y = -10.0f * scale * (1.0f - ((f32) frame / half));
+            } else {
+                y = 0.0f;
+            }
+            HSD_JObjSetTranslateY(next_jobj, y);
+            jobj = gp->u.stadium.xE4->hsd_obj;
+            if (frame > half) {
+                y = -10.0f * scale *
+                    (1.0f - ((f32) (yaku->x14 - frame) / (yaku->x14 - half)));
+            } else {
+                y = 0.0f;
+            }
+            HSD_JObjSetTranslateY(jobj, y);
+        } else {
+            HSD_JObj* next_jobj = gp->u.stadium.xE8->hsd_obj;
+            HSD_JObjSetScaleY(next_jobj, scale);
+            HSD_JObjSetTranslateY(next_jobj, 0.0F);
+            gp->u.stadium.xDC = 6;
+            Ground_801C4A08(gp->u.stadium.xE4);
+            gp->u.stadium.xE4 = gp->u.stadium.xE8;
+            gp->u.stadium.xE8 = NULL;
+        }
+        grStadium_801D435C(gobj);
+        Camera_80030E44(1, NULL);
+        return;
+    }
+    case 6:
+        GET_GROUND(gp->u.stadium.xE4)->u.stadium.xC4_b0 = true;
+        mpLib_80058560();
+        if (gp->u.stadium.xDE == 5) {
+            if (mode == MSL_STADIUM_PRELOADED) {
+                gp->u.stadium.xF0_preloaded = false;
+            }
+            gp->u.stadium.xD8 = randi_between_2(yaku->x0, yaku->x4);
+            grAnime_801C65B0((void*) gp->u.stadium.xCC);
+            mpLib_800575B0(0x55);
+            mpLib_800575B0(0x6F);
+        } else {
+            gp->u.stadium.xD8 = randi_between_2(yaku->x8, yaku->xC);
+        }
+        gp->u.stadium.xDC = 0;
+        return;
+    }
+}
 #endif
 
 void grStadium_801D4548(Ground_GObj* gobj)
 {
 #ifdef MSL_CORE_HOSTED
-    // External/Frozen PS/Core/FreezePokemon.asm replaces the transformation
-    // decision at retail 0x801D45FC with a branch to 0x801D4FD8.
-    (void) gobj;
+    msl_stadium_transform(gobj);
     return;
 #else
     s32 sp6C;
