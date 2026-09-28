@@ -309,19 +309,26 @@ def read(path):
         offsets = node.offsets.to_numpy(zero_copy_only=False)
         values = node.values
         velocity, position = values.field("velocity"), values.field("position")
-        misc = values.field("misc")
+        # Older recordings lack some lanes (misc from 3.2, owner from 3.6,
+        # instance_id from 3.16); a missing lane is not compared.
+        item_names = set(values.type.names)
+
+        def lane(name):
+            return column(values, name) if name in item_names else None
+
+        misc = values.field("misc") if "misc" in item_names else None
         items = {
             "start": offsets[keep], "count": (offsets[1:] - offsets[:-1])[keep],
             "type": column(values, "type"), "state": column(values, "state"),
-            "owner": column(values, "owner"),
+            "owner": lane("owner"),
             "direction": column(values, "direction"),
             "vel_x": column(velocity, "x"), "vel_y": column(velocity, "y"),
             "pos_x": column(position, "x"), "pos_y": column(position, "y"),
             "damage": column(values, "damage"), "timer": column(values, "timer"),
             "spawn_id": column(values, "id"),
-            "misc": np.stack([column(misc, str(k)) for k in range(4)], axis=1),
-            "instance_id": (column(values, "instance_id")
-                            if "instance_id" in values.type.names else None),
+            "misc": (None if misc is None else
+                     np.stack([column(misc, str(k)) for k in range(4)], axis=1)),
+            "instance_id": lane("instance_id"),
         }
     version = tuple(int(v) for v in start["slippi"]["version"])
     with open(path, "rb") as handle:
@@ -803,13 +810,15 @@ def frame_diff(replay, blob, index):
                      tuple(replay.get("version", (0,))) >= (3, 16, 0))
     for slot, (row, sim) in enumerate(zip(rows, got["items"])):
         for name in ITEM_COMPARED:
+            if items[name] is None:
+                continue
             if float(sim[name]) != float(items[name][row]):
                 bad.append(("item." + name, slot, float(sim[name]),
                             float(items[name][row])))
         if with_instance and sim["instance_id"] != int(items["instance_id"][row]):
             bad.append(("item.instance_id", slot, float(sim["instance_id"]),
                         float(items["instance_id"][row])))
-        for k in range(4):
+        for k in range(4 if items["misc"] is not None else 0):
             # The driver's mask is the simulated item's; the recorded item is
             # the same kind and state whenever those lanes matched above.
             if (sim["misc_mask"] >> k) & 1 and                     sim["misc%d" % k] != int(items["misc"][row][k]):
