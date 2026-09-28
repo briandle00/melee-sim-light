@@ -33,6 +33,12 @@ Four things are per-recording and have to be right or nothing matches:
   * where the fighters enter: Slippi's NeutralSpawn when the gecko list
     carries it, otherwise each port's own stage spawn point (console setups).
 
+Recordings from before Slippi 3.17 have no raw C-stick bytes. One processed
+reading cannot be turned back into raw bytes without a choice (see
+reconstructed_cstick), and state_matches_recording makes that choice per
+held stick position against the recording (drive_fitted) - fitting, with the
+same standing as the profile fit above.
+
 "Matches" means every frame's fighters (both ports' leaders on seven lanes,
 and Nana on the same seven wherever the recording has her) and every item on
 its gameplay lanes. On Slippi 3.18+ the Stadium transformation events are
@@ -357,7 +363,117 @@ def events_at(offsets, values, index):
         yield tuple(value[position] for value in values)
 
 
-def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
+GATE_SNAP, GATE_EXACT = "snap", "exact"
+
+
+def reconstructed_cstick(player, gate=GATE_SNAP):
+    """Raw C-stick bytes for a recording that has only the processed axes
+    (Slippi before 3.17).
+
+    The raw bytes feed one consumer: UCF 1.0's cardinal snap, which turns a
+    C-stick at or past 80 on one axis, with the other within 6, into exactly
+    +-1.0. Everything else reads the processed axes, which the recording has.
+    The processed value alone cannot say whether the snap applied: +-0.9875
+    with the other axis 0 comes from a raw 79 (no snap) or from a raw past 80
+    that the stick clamp scaled back with a small off-axis value (snap). On 40
+    Slippi 3.17 games that record both, the two are about even. GATE_SNAP
+    reconstructs that case as 80, GATE_EXACT as 79; every other value is
+    unambiguous and reconstructed as recorded."""
+    cx = np.asarray(player["c_x"], dtype=np.float64)
+    cy = np.asarray(player["c_y"], dtype=np.float64)
+    raw_cx = np.clip(np.trunc(cx * 80.0), -80, 80)
+    raw_cy = np.clip(np.trunc(cy * 80.0), -80, 80)
+    if gate == GATE_SNAP:
+        at_x = (np.abs(np.abs(cx) - 0.9875) < 1e-6) & (cy == 0)
+        at_y = (np.abs(np.abs(cy) - 0.9875) < 1e-6) & (cx == 0)
+        raw_cx[at_x] = np.sign(cx[at_x]) * 80
+        raw_cy[at_y] = np.sign(cy[at_y]) * 80
+    return raw_cx.astype(np.int16), raw_cy.astype(np.int16)
+
+
+def cstick_gate_segments(player):
+    """Runs of frames where a recording without raw C-stick bytes holds the
+    C-stick at +-0.9875 on one axis with the other at 0 - the one reading
+    reconstructed_cstick cannot settle. Each run is one stick position, so
+    one choice: [(first index, last index, axis)]."""
+    cx = np.asarray(player["c_x"], dtype=np.float64)
+    cy = np.asarray(player["c_y"], dtype=np.float64)
+    at = np.where((np.abs(np.abs(cx) - 0.9875) < 1e-6) & (cy == 0),
+                  np.sign(cx), 0) +         np.where((np.abs(np.abs(cy) - 0.9875) < 1e-6) & (cx == 0),
+                 2 * np.sign(cy), 0)
+    runs = []
+    start = None
+    for i in range(len(at) + 1):
+        value = at[i] if i < len(at) else 0
+        if start is not None and value != at[start]:
+            runs.append((start, i - 1, int(at[start])))
+            start = None
+        if start is None and value != 0:
+            start = i
+    return runs
+
+
+def first_difference(replay, blob):
+    for index in range(len(blob) // OUT_SIZE):
+        if frame_diff(replay, blob, index):
+            return index
+    return None
+
+
+def drive_fitted(replay, count, profile, tries=4, rounds=64):
+    """drive(), deciding each ambiguous C-stick gate run against the
+    recording.
+
+    Only for recordings without raw C-stick bytes, and only where the choice
+    shows: every run starts unsnapped (a raw 79); at each first difference
+    the latest undecided runs before it are tried snapped (a raw 80), one at
+    a time, and a flip is kept when it moves the first difference later.
+    This is fitting to the recording, like the UCF profile fit, and carries
+    the same caveat (module docstring)."""
+    lanes = [p for p in replay["players"] if p["raw_cx"] is None]
+    if not lanes:
+        return drive(replay, count, profile), 0
+    segments = []
+    for lane, player in enumerate(replay["players"]):
+        if player["raw_cx"] is None:
+            player["raw_c_fit"] = reconstructed_cstick(player, GATE_EXACT)
+            segments += [(first, last, axis, lane) for first, last, axis
+                         in cstick_gate_segments(player)]
+    segments.sort()
+    decided = set()
+    flips = 0
+    blob = drive(replay, count, profile)
+    first = first_difference(replay, blob)
+    for _ in range(rounds):
+        if first is None:
+            break
+        candidates = [seg for seg in segments
+                      if seg[0] <= first and seg not in decided]
+        improved = False
+        for seg in list(reversed(candidates))[:tries]:
+            decided.add(seg)
+            player = replay["players"][seg[3]]
+            raw_cx, raw_cy = player["raw_c_fit"]
+            saved = raw_cx.copy(), raw_cy.copy()
+            span = slice(seg[0], seg[1] + 1)
+            if abs(seg[2]) == 1:
+                raw_cx[span] = seg[2] * 80
+            else:
+                raw_cy[span] = (seg[2] // 2) * 80
+            trial = drive(replay, count, profile)
+            moved = first_difference(replay, trial)
+            if moved is None or moved > first:
+                blob, first, improved = trial, moved, True
+                flips += 1
+                break
+            raw_cx[:], raw_cy[:] = saved
+        if not improved:
+            break
+    return blob, flips
+
+
+def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
+               cstick_gate=GATE_SNAP):
     players = replay["players"]
     ucf = profile_bits(profile)
     first = int(replay["ids"][0])
@@ -404,11 +520,10 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
         if raw_cstick and player["raw_cx"] is not None:
             raw_cx = np.asarray(player["raw_cx"], dtype=np.int16)
             raw_cy = np.asarray(player["raw_cy"], dtype=np.int16)
+        elif "raw_c_fit" in player:
+            raw_cx, raw_cy = player["raw_c_fit"]
         else:
-            raw_cx = np.clip(np.trunc(np.asarray(player["c_x"]) * 80.0),
-                             -80, 80).astype(np.int16)
-            raw_cy = np.clip(np.trunc(np.asarray(player["c_y"]) * 80.0),
-                             -80, 80).astype(np.int16)
+            raw_cx, raw_cy = reconstructed_cstick(player, cstick_gate)
         lanes.append({
             "buttons": np.asarray(player["buttons"], dtype=np.uint16),
             "main_x": raw_x, "main_y": raw_y, "c_x": raw_cx, "c_y": raw_cy,
@@ -465,9 +580,10 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
     return b"".join(blocks)
 
 
-def drive(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
+def drive(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
+          cstick_gate=GATE_SNAP):
     """Run the core over the tape; returns the raw per-frame output block."""
-    tape = build_tape(replay, count, profile, raw_cstick, raw_main)
+    tape = build_tape(replay, count, profile, raw_cstick, raw_main, cstick_gate)
     with tempfile.TemporaryDirectory(prefix="msl_tape_") as folder:
         tape_path = os.path.join(folder, "tape.bin")
         out_path = os.path.join(folder, "out.bin")
@@ -651,7 +767,10 @@ def state_matches_recording(path, through=None, profiles=None,
   if profiles is None:
     profiles = candidate_profiles(replay)
   for profile in profiles:
-    blob = drive(replay, count, profile, raw_cstick=raw_cstick)
+    if raw_cstick:
+      blob, _ = drive_fitted(replay, count, profile)
+    else:
+      blob = drive(replay, count, profile, raw_cstick=False)
     rows = len(blob) // OUT_SIZE
     first_bad = None
     for index in range(rows):

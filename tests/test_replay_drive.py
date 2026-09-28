@@ -148,6 +148,17 @@ def test_stadium_events_are_the_state_after_the_frame():
     assert rd.stadium_diff(replay, blob, 3) == ((1, 9), (2, 9))
 
 
+def test_ambiguous_cstick_gates_are_the_only_reconstruction_choice():
+    player = {"c_x": np.array([0.0, -0.9875, -0.9875, -1.0, 0.5, 0.9875]),
+              "c_y": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0125])}
+    exact = rd.reconstructed_cstick(player, rd.GATE_EXACT)
+    snap = rd.reconstructed_cstick(player, rd.GATE_SNAP)
+    assert exact[0].tolist() == [0, -79, -79, -80, 40, 79]
+    assert snap[0].tolist() == [0, -80, -80, -80, 40, 79]
+    # One run per held gate position; the off-axis 0.0125 is not a gate.
+    assert rd.cstick_gate_segments(player) == [(1, 2, -1)]
+
+
 def test_neutral_spawn_is_read_from_the_code_list():
     from tools.validation import admission
     assert not admission.slippi_patches({0xC216E510: b""}) & admission.PATCH_RETAIL_SPAWNS
