@@ -55,7 +55,18 @@ CPPFLAGS=(
 )
 NATIVE_CPPFLAGS=("${CPPFLAGS[@]}" -DMSL_CORE_NATIVE -I"$GEN")
 PYTHON_CPPFLAGS=("${NATIVE_CPPFLAGS[@]}" -DMSL_CORE_SHARED -D_GNU_SOURCE)
+# The Makefile builds gameplay at -O0 and only an audited list of hot files
+# higher; this builds everything at $OPT. The three -fno flags below take away
+# the undefined-behaviour assumptions that make that unsafe for decomp code,
+# which was written against MWCC and PPC hardware. The one that has already
+# bitten: ftPe_SpecialLw.c::pickVeg reads speciallw_item_table[idx + 1] one
+# past the end on its last pass, GCC's loop optimizer concludes the last pass
+# never runs, and a Beam Sword pull returned table[-1].kind (x14, 128, Crazy
+# Hand's bullet) and crashed in Item_80267AA8. Defined code compiles the same
+# either way.
 CFLAGS=("$OPT" -g -std=gnu11 -fgnu89-inline -fno-short-enums
+        -fno-aggressive-loop-optimizations -fno-delete-null-pointer-checks
+        -fwrapv
         -fno-strict-aliasing -ffp-contract=off -ffunction-sections
         -fdata-sections -w
         -Werror=implicit-function-declaration -Wno-int-conversion
@@ -147,7 +158,17 @@ done
 step "replay driver"
 "$CC" "${NATIVE_CPPFLAGS[@]}" -O2 -g -std=gnu11 -w \
   -c "$ROOT/tools/replay/replay_drive.c" -o "$BUILD/python/replay_drive.o"
-"$CC" -g -Wl,--gc-sections "$BUILD/python/replay_drive.o" \
+# mingw links every executable against its default-manifest.o and hands the
+# linker that path unquoted, so a toolchain installed under a path with a
+# space (WinGet's is under the user profile) cannot link one. A copy beside
+# the objects, found first through -B, sidesteps it.
+manifest_obj="$("$CC" -print-file-name=default-manifest.o)"
+manifest_dir=()
+if [ -f "$manifest_obj" ]; then
+  cp -f "$manifest_obj" "$BUILD/python/default-manifest.o"
+  manifest_dir=(-B "$BUILD/python/")
+fi
+"$CC" "${manifest_dir[@]}" -g -Wl,--gc-sections "$BUILD/python/replay_drive.o" \
   "@$BUILD/python/objects.txt" "$BUILD/python/win_stubs.o" \
   -static-libgcc -lm -o "$BUILD/python/replay_drive.exe"
 
