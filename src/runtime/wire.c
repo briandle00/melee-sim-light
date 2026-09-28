@@ -46,6 +46,8 @@ void msl_core_decode_match_config(MslCoreMatchConfig* config,
         wire[offsetof(MslCoreMatchConfig, slippi_patches)];
     config->jit_arithmetic =
         wire[offsetof(MslCoreMatchConfig, jit_arithmetic)];
+    config->stadium_transformations =
+        wire[offsetof(MslCoreMatchConfig, stadium_transformations)];
     memcpy(config->players, wire + offsetof(MslCoreMatchConfig, players),
            sizeof(config->players));
 }
