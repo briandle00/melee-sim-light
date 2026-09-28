@@ -143,6 +143,10 @@ typedef struct MslCoreMatchConfig {
     uint8_t whispy_dead_fighter_fix;
     // MSL_PATCH_* capabilities from the replay code list.
     uint8_t slippi_patches;
+    // How the capturing Dolphin's JIT computed floating point where hosts
+    // differ (MSL_JIT_*). Zero is a host with FMA3, like the retail CPU's
+    // fused multiply-adds.
+    uint8_t jit_arithmetic;
     MslCoreMatchPlayerConfig players[MSL_CORE_MAX_PLAYERS];
 } MslCoreMatchConfig;
 
@@ -152,6 +156,14 @@ enum {
     // External/PreventWobbling: Init Wobble Count at 0x800DB880/0x800DBBD4,
     // Wobble Check at 0x8008F090.
     MSL_PATCH_PREVENT_WOBBLING = 1 << 1,
+};
+
+enum {
+    // Jit64 on a host without FMA3 (older x86 CPUs, and x86 Dolphin under
+    // Rosetta on Apple silicon) runs the double-precision fmadd family as a
+    // rounded multiply and then a rounded add. Single-precision operands give
+    // an exact product either way, so only double-precision sites move.
+    MSL_JIT_NO_HOST_FMA = 1 << 0,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The
@@ -362,9 +374,9 @@ _Static_assert(sizeof(MslCoreInputPlayer) == 13, "MslCoreInputPlayer wire size")
 _Static_assert(sizeof(MslCoreInput) == 52, "MslCoreInput wire size");
 _Static_assert(sizeof(MslCoreStageEvents) == 132, "stage events wire size");
 _Static_assert(sizeof(MslCoreStreamFrame) == 188, "stream frame wire size");
-_Static_assert(sizeof(MslCoreMatchConfig) == 64,
+_Static_assert(sizeof(MslCoreMatchConfig) == 65,
                "MslCoreMatchConfig wire size");
-_Static_assert(sizeof(MslCoreStreamJobHeader) == 120,
+_Static_assert(sizeof(MslCoreStreamJobHeader) == 121,
                "stream job header wire size");
 _Static_assert(sizeof(MslCoreItem) == 48, "MslCoreItem wire size");
 _Static_assert(sizeof(MslCoreCompare) == 1302, "MslCoreCompare wire size");
