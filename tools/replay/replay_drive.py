@@ -10,19 +10,32 @@ and compares every frame against the file.
 **This is not validation and its answers are not verdicts.** The strict gate
 lives in tools/validation; admission is what decides whether a recording may
 be compared at all, and agent_docs/VALIDATION.md forbids exactly what
-`state_matches_recording` does: it tries each UCF capability profile and keeps
-the one that reproduces the file, where the gate requires reviewed
-provenance and says "never pick a profile solely because it makes a recording
-pass". Nothing here may be used to admit a capture, record a suite result,
-write an output lock, or claim that the simulator is or is not exact. It
-answers one question for one consumer: may I start something from the
-position this recording reached at this frame?
+`state_matches_recording` does when the recording's own profile does not
+reproduce it: it tries each other UCF capability profile and keeps the one
+that reproduces the file, where the gate requires reviewed provenance and
+says "never pick a profile solely because it makes a recording pass".
+Nothing here may be used to admit a capture, record a suite result, write an
+output lock, or claim that the simulator is or is not exact. It answers one
+question for one consumer: may I start something from the position this
+recording reached at this frame?
 
-Two things are per-recording and have to be right or nothing matches:
+Three things are per-recording and have to be right or nothing matches:
 
   * the internal character id, from the post-frame rows - the external id in
     the game-start block picks another character's entry data;
-  * the UCF capability profile, fitted as described above.
+  * the UCF capability profile: first the one the recording's gecko list
+    names (UCF 0.8 or 0.84 shield drop, and which of the later injections
+    it carries), then the fitted ones;
+  * on Pokemon Stadium, which patch set owns the transformations (frozen,
+    Slippi's preloaded ones, or Slippi Online's synchronous load), also from
+    the gecko list. A recording with neither patch set streamed the stage's
+    archives from the disc, and is refused.
+
+"Matches" means every frame's fighters (both ports' leaders on seven lanes,
+and Nana on the same seven wherever the recording has her) and every item on
+its gameplay lanes. On Slippi 3.18+ the Stadium transformation events are
+there to compare too (stadium_diff), but they are a diagnostic: a wrong
+transformation shows up in the fighters soon enough.
 
 Rollback re-simulations write a second row for the same frame id; the last row
 for an id is the finalized one, as in native.c::build_finalized_rows.
@@ -54,7 +67,16 @@ DATA_ROOT = Path(os.environ.get("MSL_DATA_DIR", ROOT / "data")) / "raw"
 
 CONFIG_FMT = "<IiiIIf16B32BI"
 FRAME_FMT = "<II4B2f" + "H4b3B4f" * 4
-OUT_FMT = "<iI16f4H4h4H4H32B"
+MAX_ITEMS = 15
+# replay_drive.c OutItem: exists, state, owner, misc_mask, type, instance_id,
+# misc[4], damage, pad, spawn_id, direction, vel_x, vel_y, pos_x, pos_y, timer.
+ITEM_FMT = "BBbBHH4BHHI6f"
+ITEM_FIELDS = 17
+OUT_FMT = ("<iI16f4H4h4H4H32B"
+           # follower present/facing/stocks, item count and pad, Stadium
+           # phase and kind, follower action, follower pos x/y, percent,
+           # shield
+           "12BB3x2H4H16f" + ITEM_FMT * MAX_ITEMS)
 CONFIG_SIZE = struct.calcsize(CONFIG_FMT)
 FRAME_SIZE = struct.calcsize(FRAME_FMT)
 OUT_SIZE = struct.calcsize(OUT_FMT)
@@ -70,8 +92,58 @@ NOT_A_VERDICT = ('not admission and not a validation result: the inputs '
 UCF_PROFILES = {
     "ucf10": (1, 1, 1, 1, 1),
     "ucf084": (0, 0, 0, 1, 1),
+    "ucf08": (0, 0, 0, 0, 0),
 }
-PROFILE_ORDER = ("ucf10", "ucf084")
+PROFILE_ORDER = ("ucf10", "ucf084", "ucf08")
+
+# The UCF injections a recording's gecko list carries, by address, in
+# UCF_PROFILES order. UCF 0.8 and 0.84 both inject the classic shield drop at
+# 0x800998A4; 0.84's is the 208-byte block (External/UCF 0.84/UCF/
+# UCF Shield Drop.asm), 0.8's the 312-byte one (External/UCF 0.8/Logic/
+# UCF SD.asm), which has no platform check.
+UCF_CODES = (0xC206B460,   # UCF Pad Buffer + 1.0 Cardinals
+             0xC2093294,   # UCF Shield SDI
+             0xC208E54C,   # UCF SDI
+             0xC209A0B8)   # UCF Shield Drop Extended
+UCF_SHIELD_DROP = 0xC20998A4
+UCF_084_SHIELD_DROP_SIZE = 208
+
+
+def recorded_profile(raw):
+    """The UCF profile the recording's own gecko list says it ran, as a
+    UCF_PROFILES-style name ("ucf:" and five bits), or None when the list has
+    no UCF shield drop to go by."""
+    from tools.validation.admission import gecko_codes
+    try:
+        codes = gecko_codes(raw)
+    except ValueError:
+        return None
+    drop = codes.get(UCF_SHIELD_DROP)
+    if drop is None:
+        return None
+    bits = [1 if address in codes else 0 for address in UCF_CODES]
+    bits.append(1 if len(drop) == UCF_084_SHIELD_DROP_SIZE else 0)
+    return "ucf:" + "".join(str(bit) for bit in bits)
+
+
+def profile_bits(profile):
+    if profile in UCF_PROFILES:
+        return UCF_PROFILES[profile]
+    if isinstance(profile, str) and profile.startswith("ucf:"):
+        return tuple(int(bit) for bit in profile[4:])
+    raise KeyError(profile)
+
+
+def candidate_profiles(replay):
+    """The recording's own profile first, then the fitted ones it is not."""
+    out = []
+    seen = set()
+    for profile in ((replay.get("ucf_profile"),) + PROFILE_ORDER):
+        if profile is None or profile_bits(profile) in seen:
+            continue
+        seen.add(profile_bits(profile))
+        out.append(profile)
+    return tuple(out)
 
 FIELDS = ("pos_x", "pos_y", "percent", "action_id", "stocks", "facing",
           "shield_hp")
@@ -90,6 +162,38 @@ def trigger_u8(values):
     out = np.asarray(values, dtype=np.float64)
     out = np.where(out > 0.0, np.floor(out * 140.0 + 0.5), 0.0)
     return np.clip(out, 0, 140).astype(np.uint8)
+
+
+# replay_drive.c TapeConfig.stadium_transformations, wire.h MSL_STADIUM_*.
+STADIUM_FROZEN, STADIUM_PRELOADED, STADIUM_ONLINE_LOADED = 0, 1, 2
+
+
+def stadium_transformations(start, raw):
+    """How this recording's Pokemon Stadium transforms: a STADIUM_* value,
+    or None when it does and no deterministic patch set owns the read.
+
+    Frozen is the console toggle's is_frozen_ps, the online toggle at
+    0x801D457C (IngameCheckIfFrozen: its static byte is the toggle), or the
+    legacy online bypass at 0x801D4578. Unfrozen needs one of the two Slippi
+    patch sets that make the transformation read deterministic; a recording
+    with neither streamed the archive from the disc asynchronously, and
+    nothing in the file says when that read finished."""
+    if int(start["stage"]) != 3:
+        return STADIUM_FROZEN
+    from tools.validation.admission import gecko_codes, stadium_is_frozen
+    codes = gecko_codes(raw)
+    if stadium_is_frozen(start, codes):
+        return STADIUM_FROZEN
+    toggle = codes.get(0xC21D457C)
+    if toggle is not None and len(toggle) > 16 and toggle[16] != 0:
+        return STADIUM_FROZEN
+    preloaded = 0xC21D45EC in codes
+    online = 0xC20165AC in codes
+    if preloaded and not online:
+        return STADIUM_PRELOADED
+    if online and not preloaded:
+        return STADIUM_ONLINE_LOADED
+    return None
 
 
 def read(path):
@@ -142,6 +246,28 @@ def read(path):
             "shield": column(post, "shield"),
             "valid": leader.is_valid().to_numpy(zero_copy_only=False),
         })
+        # Ice Climbers: Nana is the port's follower, recorded with rows of her
+        # own only while she is awake (asleep between her death and Popo's
+        # respawn). She takes no inputs from the file - the core runs her CPU
+        # mimic of Popo - so her rows are only ever compared, never driven.
+        port_node = ports.field(index)
+        if "follower" in port_node.type.names:
+            follower = port_node.field("follower")
+            fpost = follower.field("post")
+            fvalid = (follower.is_valid().to_numpy(zero_copy_only=False) &
+                      fpost.is_valid().to_numpy(zero_copy_only=False) &
+                      fpost.field("character").is_valid()
+                      .to_numpy(zero_copy_only=False))
+            players[-1].update({
+                "f_valid": fvalid,
+                "f_x": column(fpost.field("position"), "x"),
+                "f_y": column(fpost.field("position"), "y"),
+                "f_percent": column(fpost, "percent"),
+                "f_state": column(fpost, "state"),
+                "f_stocks": column(fpost, "stocks"),
+                "f_direction": column(fpost, "direction"),
+                "f_shield": column(fpost, "shield"),
+            })
     order = np.argsort(ids, kind="stable")
     keep = [order[i] for i in range(len(order))
             if i + 1 == len(order) or ids[order[i + 1]] != ids[order[i]]]
@@ -155,8 +281,54 @@ def read(path):
             for name, value in list(player.items()):
                 if isinstance(value, np.ndarray) and value.shape[:1] == (rows,):
                     player[name] = value[keep]
+    items = None
+    if "item" in names:
+        node = frames.field("item")
+        offsets = node.offsets.to_numpy(zero_copy_only=False)
+        values = node.values
+        velocity, position = values.field("velocity"), values.field("position")
+        misc = values.field("misc")
+        items = {
+            "start": offsets[keep], "count": (offsets[1:] - offsets[:-1])[keep],
+            "type": column(values, "type"), "state": column(values, "state"),
+            "owner": column(values, "owner"),
+            "direction": column(values, "direction"),
+            "vel_x": column(velocity, "x"), "vel_y": column(velocity, "y"),
+            "pos_x": column(position, "x"), "pos_y": column(position, "y"),
+            "damage": column(values, "damage"), "timer": column(values, "timer"),
+            "spawn_id": column(values, "id"),
+            "misc": np.stack([column(misc, str(k)) for k in range(4)], axis=1),
+            "instance_id": (column(values, "instance_id")
+                            if "instance_id" in values.type.names else None),
+        }
+    version = tuple(int(v) for v in start["slippi"]["version"])
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    stadium = stadium_transformations(start, raw)
+    ucf_profile = recorded_profile(raw)
+    # Slippi 3.18+ records each change of the transformation phase.
+    stadium_events = None
+    if "stadium_transformation" in names:
+        node = frames.field("stadium_transformation")
+        offsets = node.offsets.to_numpy(zero_copy_only=False)
+        values = node.values
+        phases = column(values, "event")
+        kinds = column(values, "type")
+        # The state after each frame, carried forward from the last event;
+        # None before the first (the stage's first proc, frame -39).
+        stadium_events = [None] * len(keep)
+        current = None
+        for index, row in enumerate(keep):
+            for k in range(int(offsets[row]), int(offsets[row + 1])):
+                current = (int(phases[k]), int(kinds[k]))
+            stadium_events[index] = current
     return {
         "path": str(path),
+        "version": version,
+        "stadium": stadium,
+        "ucf_profile": ucf_profile,
+        "stadium_events": stadium_events,
+        "items": items,
         "stage": int(start["stage"]),
         "ids": ids,
         "frame_seed": frame_seed,
@@ -188,7 +360,7 @@ def events_at(offsets, values, index):
 
 def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
     players = replay["players"]
-    ucf = UCF_PROFILES[profile]
+    ucf = profile_bits(profile)
     first = int(replay["ids"][0])
     online = 1 if replay["online"] else 0
     streams = ((1 if replay["fod"] is not None else 0) |
@@ -205,7 +377,7 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
         max(p["stocks"] for p in players),
         online, online, online, online,
         ucf[0], ucf[1], ucf[2], ucf[3], ucf[4],
-        streams, 0, 0,
+        streams, replay.get("stadium", 0) or 0, 0,
         *[value
           for index in range(4)
           for value in ((int(players[index]["internal_char"][0]),
@@ -310,8 +482,18 @@ def drive(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
             return handle.read()
 
 
+ITEM_BASE = 101         # first item lane in an unpacked OutFrame row
+ITEM_NAMES = ("exists", "state", "owner", "misc_mask", "type", "instance_id",
+              "misc0", "misc1", "misc2", "misc3", "damage", "pad", "spawn_id",
+              "direction", "vel_x", "vel_y", "pos_x", "pos_y", "timer")
+
+
 def frame_state(blob, index):
     row = struct.unpack_from(OUT_FMT, blob, index * OUT_SIZE)
+    items = []
+    for slot in range(row[78]):
+        base = ITEM_BASE + slot * len(ITEM_NAMES)
+        items.append(dict(zip(ITEM_NAMES, row[base:base + len(ITEM_NAMES)])))
     return {
         "frame_id": row[0], "pos_x": row[2:6], "pos_y": row[6:10],
         "percent": row[10:14], "shield_hp": row[14:18],
@@ -319,11 +501,38 @@ def frame_state(blob, index):
         "hitstun": row[26:30], "hitlag": row[30:34], "stocks": row[34:38],
         "facing": row[38:42], "on_ground": row[42:46], "is_dead": row[46:50],
         "jumps_left": row[50:54], "hurtbox_state": row[54:58],
+        "follower_present": row[66:70], "follower_facing": row[70:74],
+        "follower_stocks": row[74:78],
+        "stadium_phase": row[79], "stadium_kind": row[80],
+        "follower_action_id": row[81:85],
+        "follower_pos_x": row[85:89], "follower_pos_y": row[89:93],
+        "follower_percent": row[93:97], "follower_shield_hp": row[97:101],
+        "items": items,
     }
 
 
+# Item lanes compared like tools/validation/native.c::compare_row: every
+# recorded lane, the misc bytes only where both sides say they are gameplay
+# state, and the instance id only where the recording has one (Slippi 3.16).
+ITEM_COMPARED = ("type", "state", "owner", "direction", "vel_x", "vel_y",
+                 "pos_x", "pos_y", "damage", "timer", "spawn_id")
+
+
+def recorded_items(replay, index):
+    items = replay.get("items")
+    if items is None:
+        return None
+    start = int(items["start"][index])
+    count = min(int(items["count"][index]), MAX_ITEMS)
+    return [start + k for k in range(count)]
+
+
 def frame_diff(replay, blob, index):
-    """[(field, player, simulated, recorded)] for one row; empty means equal."""
+    """[(field, player, simulated, recorded)] for one row; empty means equal.
+
+    Both ports' fighters, Nana where a port has her, and every item. A
+    follower mismatch names its field `follower.<field>` and an item one
+    `item.<field>` with the item's slot in place of the player."""
     got = frame_state(blob, index)
     bad = []
     for lane, player in enumerate(replay["players"]):
@@ -341,7 +550,66 @@ def frame_diff(replay, blob, index):
         for name, value in want.items():
             if float(got[name][lane]) != float(value):
                 bad.append((name, lane, float(got[name][lane]), float(value)))
+        if "f_valid" not in player:
+            continue
+        recorded = bool(player["f_valid"][index])
+        if recorded != bool(got["follower_present"][lane]):
+            bad.append(("follower.present", lane,
+                        float(got["follower_present"][lane]), float(recorded)))
+            continue
+        if not recorded:
+            continue
+        want = {
+            "pos_x": float(player["f_x"][index]),
+            "pos_y": float(player["f_y"][index]),
+            "percent": float(player["f_percent"][index]),
+            "shield_hp": float(player["f_shield"][index]),
+            "action_id": int(player["f_state"][index]),
+            "stocks": int(player["f_stocks"][index]),
+            "facing": 1 if player["f_direction"][index] > 0 else 0,
+        }
+        for name, value in want.items():
+            simulated = got["follower_" + name][lane]
+            if float(simulated) != float(value):
+                bad.append(("follower." + name, lane, float(simulated),
+                            float(value)))
+    rows = recorded_items(replay, index)
+    if rows is None:
+        return bad
+    items = replay["items"]
+    if len(rows) != len(got["items"]):
+        bad.append(("item.count", -1, float(len(got["items"])),
+                    float(len(rows))))
+        return bad
+    with_instance = (items["instance_id"] is not None and
+                     tuple(replay.get("version", (0,))) >= (3, 16, 0))
+    for slot, (row, sim) in enumerate(zip(rows, got["items"])):
+        for name in ITEM_COMPARED:
+            if float(sim[name]) != float(items[name][row]):
+                bad.append(("item." + name, slot, float(sim[name]),
+                            float(items[name][row])))
+        if with_instance and sim["instance_id"] != int(items["instance_id"][row]):
+            bad.append(("item.instance_id", slot, float(sim["instance_id"]),
+                        float(items["instance_id"][row])))
+        for k in range(4):
+            # The driver's mask is the simulated item's; the recorded item is
+            # the same kind and state whenever those lanes matched above.
+            if (sim["misc_mask"] >> k) & 1 and                     sim["misc%d" % k] != int(items["misc"][row][k]):
+                bad.append(("item.misc%d" % k, slot, float(sim["misc%d" % k]),
+                            float(items["misc"][row][k])))
     return bad
+
+
+def stadium_diff(replay, blob, index):
+    """Where the recording carries Stadium transformation events (3.18+):
+    (simulated, recorded) (phase, kind) when they disagree, else None. The
+    event is the state after the stage's frame, as the simulator reports it."""
+    events = replay.get("stadium_events")
+    if not events or events[index] is None:
+        return None
+    got = frame_state(blob, index)
+    simulated = (int(got["stadium_phase"]), int(got["stadium_kind"]))
+    return None if simulated == events[index] else (simulated, events[index])
 
 
 def supported(replay) -> str | None:
@@ -350,10 +618,12 @@ def supported(replay) -> str | None:
         return "not-singles"
     if replay["stage"] not in LEGAL_STAGES:
         return "stage-%d" % replay["stage"]
+    if replay.get("stadium", 0) is None:
+        return "stadium-unpatched-transformations"
     return None
 
 
-def state_matches_recording(path, through=None, profiles=PROFILE_ORDER,
+def state_matches_recording(path, through=None, profiles=None,
                             raw_cstick=True):
   """Does the simulator land where this recording did, up to `through`?
 
@@ -378,6 +648,8 @@ def state_matches_recording(path, through=None, profiles=PROFILE_ORDER,
     count = index_of[int(through)] + 1
   started = time.time()
   attempts = []
+  if profiles is None:
+    profiles = candidate_profiles(replay)
   for profile in profiles:
     blob = drive(replay, count, profile, raw_cstick=raw_cstick)
     rows = len(blob) // OUT_SIZE

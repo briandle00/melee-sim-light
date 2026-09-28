@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "runtime/item_projection.h"
 #include "runtime/savestate.h"
 #include "runtime/scalar.h"
 #include "runtime/wire.h"
@@ -75,7 +76,8 @@ typedef struct TapeConfig {
     uint8_t ucf_shield_drop_extended_enabled;
     uint8_t ucf_shield_drop_084_enabled;
     uint8_t stage_event_streams;
-    uint8_t pad[2];
+    uint8_t stadium_transformations;    /* MSL_STADIUM_* (wire.h) */
+    uint8_t pad;
     TapePlayer players[4];
     uint32_t frame_count;
 } TapeConfig;
@@ -107,6 +109,29 @@ typedef struct TapeFrame {
     TapeInput p[4];
 } TapeFrame;
 
+/* One item as Slippi's item event records it. misc_mask says which of the
+   four misc bytes are gameplay state for this kind and state
+   (item_projection.h); the others are written as zero, and a comparison
+   skips them. */
+typedef struct OutItem {
+    uint8_t exists;
+    uint8_t state;
+    int8_t owner;
+    uint8_t misc_mask;
+    uint16_t type;
+    uint16_t instance_id;
+    uint8_t misc[4];
+    uint16_t damage;
+    uint16_t pad;
+    uint32_t spawn_id;
+    float direction;
+    float vel_x;
+    float vel_y;
+    float pos_x;
+    float pos_y;
+    float timer;
+} OutItem;
+
 typedef struct OutFrame {
     int32_t frame_id;
     uint32_t frame_seed;
@@ -126,6 +151,23 @@ typedef struct OutFrame {
     uint8_t hurtbox_state[4];
     uint8_t last_attack_landed[4];
     uint8_t combo_count[4];
+    /* Ice Climbers' Nana, per port. Slippi records her as the port's
+       follower, with rows only while she is awake; follower_present is that
+       life cycle, and the other lanes are zero while she is absent. */
+    uint8_t follower_present[4];
+    uint8_t follower_facing[4];
+    uint8_t follower_stocks[4];
+    uint8_t item_count;
+    uint8_t pad[3];
+    /* Pokemon Stadium's transformation phase and kind (5 = home). */
+    uint16_t stadium_phase;
+    uint16_t stadium_kind;
+    uint16_t follower_action_id[4];
+    float follower_pos_x[4];
+    float follower_pos_y[4];
+    float follower_percent[4];
+    float follower_shield_hp[4];
+    OutItem items[MSL_CORE_MAX_ITEMS];
 } OutFrame;
 
 /* Run mode. Once the tape has been replayed, the caller can keep stepping the
@@ -252,6 +294,44 @@ static void fill_output(OutFrame* out, const MslCoreCompare* compare)
         out->hurtbox_state[i] = compare->hurtbox_state[i];
         out->last_attack_landed[i] = compare->last_attack_landed[i];
         out->combo_count[i] = compare->combo_count[i];
+        out->follower_present[i] = compare->follower_present[i];
+        out->follower_facing[i] = compare->follower_facing[i];
+        out->follower_stocks[i] = compare->follower_stocks[i];
+        out->follower_action_id[i] = compare->follower_action_id[i];
+        out->follower_pos_x[i] = compare->follower_pos_x[i];
+        out->follower_pos_y[i] = compare->follower_pos_y[i];
+        out->follower_percent[i] = compare->follower_percent[i];
+        out->follower_shield_hp[i] = compare->follower_shield_hp[i];
+    }
+    for (i = 0; i < MSL_CORE_MAX_ITEMS; ++i) {
+        const MslCoreItem* src = &compare->items[i];
+        OutItem* dst = &out->items[i];
+        if (!src->exists) {
+            continue;
+        }
+        out->item_count += 1;
+        dst->exists = 1;
+        dst->state = src->state;
+        dst->owner = src->owner;
+        dst->misc_mask =
+            msl_core_item_gameplay_misc_mask(src->type, src->state);
+        dst->type = src->type;
+        dst->instance_id = src->instance_id;
+        /* The other misc bytes can hold pointers or pool residue, which
+           differ run to run; zero them so a row is the same every time, as
+           native.c::fingerprint_actual_output does. */
+        dst->misc[0] = (dst->misc_mask & 1) ? src->misc0 : 0;
+        dst->misc[1] = (dst->misc_mask & 2) ? src->misc1 : 0;
+        dst->misc[2] = (dst->misc_mask & 4) ? src->misc2 : 0;
+        dst->misc[3] = (dst->misc_mask & 8) ? src->misc3 : 0;
+        dst->damage = src->damage;
+        dst->spawn_id = src->spawn_id;
+        dst->direction = src->direction;
+        dst->vel_x = src->vel_x;
+        dst->vel_y = src->vel_y;
+        dst->pos_x = src->pos_x;
+        dst->pos_y = src->pos_y;
+        dst->timer = src->timer;
     }
 }
 
@@ -460,6 +540,7 @@ int main(int argc, char** argv)
         tape.ucf_shield_drop_extended_enabled;
     config.ucf_shield_drop_084_enabled = tape.ucf_shield_drop_084_enabled;
     config.stage_event_streams = tape.stage_event_streams;
+    config.stadium_transformations = tape.stadium_transformations;
     for (player = 0; player < 4; ++player) {
         config.players[player].char_id = tape.players[player].char_id;
         config.players[player].team_id = tape.players[player].team_id;
@@ -509,6 +590,13 @@ int main(int argc, char** argv)
             return 1;
         }
         fill_output(&out, msl_core_match_output(&match));
+        {
+            int phase;
+            int kind;
+            msl_core_stadium_state(&match, &phase, &kind);
+            out.stadium_phase = (uint16_t) phase;
+            out.stadium_kind = (uint16_t) kind;
+        }
         if (fwrite(&out, 1, sizeof(out), output) != sizeof(out)) {
             fprintf(stderr, "short write at frame %u\n", index);
             return 1;
