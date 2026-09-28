@@ -180,20 +180,8 @@ def stadium_transformations(start, raw):
     nothing in the file says when that read finished."""
     if int(start["stage"]) != 3:
         return STADIUM_FROZEN
-    from tools.validation.admission import gecko_codes, stadium_is_frozen
-    codes = gecko_codes(raw)
-    if stadium_is_frozen(start, codes):
-        return STADIUM_FROZEN
-    toggle = codes.get(0xC21D457C)
-    if toggle is not None and len(toggle) > 16 and toggle[16] != 0:
-        return STADIUM_FROZEN
-    preloaded = 0xC21D45EC in codes
-    online = 0xC20165AC in codes
-    if preloaded and not online:
-        return STADIUM_PRELOADED
-    if online and not preloaded:
-        return STADIUM_ONLINE_LOADED
-    return None
+    from tools.validation.admission import gecko_codes, stadium_transformations
+    return stadium_transformations(start, gecko_codes(raw))
 
 
 def read(path):
