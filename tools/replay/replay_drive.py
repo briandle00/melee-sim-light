@@ -370,6 +370,9 @@ def read(path):
         "stadium_events": stadium_events,
         "items": items,
         "stage": int(start["stage"]),
+        # -1 is items off; anything else spawns items at random, which the
+        # simulator does not model (admission: unsupported-settings).
+        "item_spawn_frequency": start.get("item_spawn_frequency", -1),
         "ids": ids,
         "frame_seed": frame_seed,
         "players": players,
@@ -835,6 +838,8 @@ def supported(replay) -> str | None:
         return "stage-%d" % replay["stage"]
     if replay.get("stadium", 0) is None:
         return "stadium-unpatched-transformations"
+    if replay.get("item_spawn_frequency", -1) not in (-1, None):
+        return "items-on"
     return None
 
 
