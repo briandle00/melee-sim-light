@@ -492,15 +492,16 @@ static bool item_owner_port(Item* ip, int* port, int* sub)
     return true;
 }
 
-// Hookshot and grapple-beam chains: the tip, then each link from the first
-// (xDD4+4) toward the last. it_802A2568 links them with link->next pointing
-// back toward the first, so the walk follows prev. Positions are the
-// links' simulated positions, rounded to 0.01.
-static void track_chain(int frame, Item* ip, ItemLink* first)
+// A chain as [x, y] pairs: `head` first when given, then each link from
+// `start` along next (`along_next`) or prev, then `tail` when given. Points
+// still at the origin (not out yet) are left out, and a chain with none
+// left writes no event. Rounded to 0.01.
+static void track_chain(int frame, Item* ip, const Vec3* head,
+                        ItemLink* start, bool along_next, const Vec3* tail)
 {
     enum { MAX_LINKS = 64 };
     char key[TRACK_KEY_LEN];
-    char value[64 * 2 * 12 + 32];
+    char value[64 * 2 * 12 + 64];
     size_t used = 0;
     int port;
     int sub;
@@ -511,16 +512,30 @@ static void track_chain(int frame, Item* ip, ItemLink* first)
         port = -1;
         sub = 0;
     }
-    used += (size_t) snprintf(value + used, sizeof(value) - used,
-                              ",%.2f,%.2f", ip->pos.x, ip->pos.y);
-    for (link = first; link != NULL && count < MAX_LINKS;
-         link = link->prev, ++count)
+    if (head != NULL && (head->x != 0.0F || head->y != 0.0F)) {
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",%.2f,%.2f", head->x, head->y);
+    }
+    for (link = start; link != NULL && count < MAX_LINKS;
+         link = along_next ? link->next : link->prev, ++count)
     {
+        if (&link->pos == head || &link->pos == tail ||
+            (link->pos.x == 0.0F && link->pos.y == 0.0F))
+        {
+            continue;
+        }
         used += (size_t) snprintf(value + used, sizeof(value) - used,
                                   ",%.2f,%.2f", link->pos.x, link->pos.y);
-        if (used >= sizeof(value) - 32) {
+        if (used >= sizeof(value) - 64) {
             break;
         }
+    }
+    if (tail != NULL && (tail->x != 0.0F || tail->y != 0.0F)) {
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",%.2f,%.2f", tail->x, tail->y);
+    }
+    if (used == 0) {
+        return;
     }
     snprintf(key, sizeof(key), "\"hook\",%d,%d", port, sub);
     fprintf(track_out, "[%d,%s%s]\n", frame, key, value);
@@ -538,15 +553,35 @@ static void track_items(int frame, const MslCoreMatch* match)
 
         switch (ip->kind) {
         case It_Kind_Link_HShot:
-        case It_Kind_CLink_HShot:
-            track_chain(frame, ip, ip->xDD4_itemVar.linkhookshot.x4);
+        case It_Kind_CLink_HShot: {
+            // The hook is the last link (xDD4+0); the item itself stays at
+            // its spawn point. Head first, then back toward the hand.
+            ItemLink* hook = ip->xDD4_itemVar.linkhookshot.x0;
+            if (hook != NULL) {
+                track_chain(frame, ip, &hook->pos, hook, true, NULL);
+            }
             break;
-        case It_Kind_Samus_GBeam:
-            // The grapple beam's links are shaped by their joints'
-            // animation, which the headless core does not run; only the
-            // tip is simulated.
-            track_chain(frame, ip, NULL);
+        }
+        case It_Kind_Samus_GBeam: {
+            // The claw is the last link (xDD4+0), which the grapple moves and
+            // collides; the other links follow joint animation the headless
+            // core does not run, so only the ones that have moved appear.
+            ItemLink* claw = ip->xDD4_itemVar.samusgrapple.x0;
+            if (claw != NULL) {
+                track_chain(frame, ip, &claw->pos, claw, true, NULL);
+            }
             break;
+        }
+        case It_Kind_Ness_Yoyo: {
+            // Ness's yo-yo: the string's links from the hand (xDD4+C) toward
+            // the ball, then the ball (xDD4+8, the link the yo-yo's hitbox
+            // position is written to) last. The item itself stays at its
+            // spawn point.
+            ItemLink* ball = ip->xDD4_itemVar.nessyoyo.x8;
+            track_chain(frame, ip, NULL, ip->xDD4_itemVar.nessyoyo.xC, false,
+                        ball != NULL ? &ball->pos : NULL);
+            break;
+        }
         default:
             break;
         }
