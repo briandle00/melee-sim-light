@@ -152,6 +152,11 @@ enum {
     // background think (the bl at 0x8021AAE4), so the background never
     // transforms and never draws random numbers.
     MSL_PATCH_FD_BACKGROUND_FROZEN = 1 << 0,
+    // The capture's list lacks Common/PSCameraIndependentMonitor
+    // (0x801D24FC), so the Stadium jumbotron's close-up keeps going while
+    // grStadium_801D32D0's test against the gameplay camera passes, not
+    // while the fighter is inside the code's fixed bounds.
+    MSL_PATCH_PS_CLOSEUP_CAMERA_TEST = 1 << 2,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The

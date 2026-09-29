@@ -40,6 +40,9 @@
 #ifdef MSL_CORE_HOSTED
 #include <runtime/context.h>
 #include <runtime/source_state.h>
+#include <runtime/wire.h>
+#include <runtime/match.h>
+#include <runtime/camera.h>
 static void msl_stadium_show(Ground_GObj* display, int screen, int frames);
 static void msl_stadium_display_step(Ground_GObj* display);
 #endif
@@ -2265,11 +2268,13 @@ static void msl_stadium_next_screen(Ground_GObj* display)
 
 // The close-up's keep-going test. Slippi's Common/PSCameraIndependentMonitor
 // (0x801D24FC) replaces grStadium_801D32D0's camera test with fixed bounds on
-// the followed fighter's position, [-120, 120] x [-20, 80]; that is the
-// only form modelled, and a capture without it keeps the close-up while
-// the fighter is inside those same bounds.
+// the followed fighter's position, [-120, 120] x [-20, 80]. Without it
+// (MSL_PATCH_PS_CLOSEUP_CAMERA_TEST) the close-up keeps going while a 124x80
+// box around the fighter's camera point fits in the gameplay camera's
+// viewport.
 // refs/slippi-ssbm-asm/Common/PSCameraIndependentMonitor/
 //   PSCameraIndependentMonitor.asm
+// refs/melee/src/melee/gr/grpstadium.c::grStadium_801D32D0
 static bool msl_stadium_closeup_keeps(Ground* gp)
 {
     HSD_GObj* player = Player_GetEntity(gp->u.display.xEE);
@@ -2278,6 +2283,10 @@ static bool msl_stadium_closeup_keeps(Ground* gp)
         return false;
     }
     fp = (Fighter*) player->user_data;
+    if (msl_slippi_patch(MSL_PATCH_PS_CLOSEUP_CAMERA_TEST)) {
+        return fp->x890_cameraBox != NULL &&
+               msl_camera_stadium_closeup_fits(&fp->x890_cameraBox->x1C);
+    }
     return !(fp->cur_pos.x < -120.0F || fp->cur_pos.x > 120.0F ||
              fp->cur_pos.y > 80.0F || fp->cur_pos.y < -20.0F);
 }
