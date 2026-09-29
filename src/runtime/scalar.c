@@ -1448,10 +1448,9 @@ static int match_construct(MslCoreMatch* match,
     // refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::ftKb_SpecialN_800EFB4C
     // An unfrozen Pokemon Stadium adds its transformations' grounds in play
     // (see the island reserve below). Its per-pool terms are about twice the
-    // largest extra peak measured over frozen games: AObjs +11, FObjs +21,
-    // IDs +30, GObjs +19, procs +47, Vecs +25. JObjs are bounded by the
-    // data: fire's 26-joint layout beside home's while they swap, plus the
-    // camera-quake model, stays under 35.
+    // largest extra peak over the same recording replayed frozen, across 18
+    // console recordings under Common/Preload Stadium Transformations: AObjs
+    // +7, FObjs +13, IDs +26, GObjs +5, procs +25, Vecs +4, JObjs +37.
     stadium_transforms =
         match->config.stadium_transformations != MSL_STADIUM_FROZEN ? 1 : 0;
     HSD_ObjAllocEnsureFree(&fighter_x2040_alloc_data, 4 * kirby_count);
@@ -1467,7 +1466,7 @@ static int match_construct(MslCoreMatch* match,
     }
     HSD_ObjAllocEnsureFree(HSD_AObjGetAllocData(),
                            128 + 64 * samus_count + 64 * mewtwo_count +
-                               64 * kirby_count + 32 * stadium_transforms);
+                               64 * kirby_count + 16 * stadium_transforms);
     // Article animation loads a whole joint graph in a single frame, so the
     // FObj bound is the sum of the concurrent per-fighter bursts. Every port
     // can contribute its own, and bursts from different fighters overlap, so
@@ -1502,7 +1501,7 @@ static int match_construct(MslCoreMatch* match,
                            256 + 128 * ness_count + 256 * samus_count +
                                32 * link_count + 32 * peach_count +
                                192 * mewtwo_count + 256 * kirby_count +
-                               64 * stadium_transforms);
+                               32 * stadium_transforms);
     // Costume-hat loaders publish every descriptor key against fighter parts;
     // those IDs remain after a hat is replaced. Bound all preloaded costume
     // and accessory trees per Kirby, in addition to transient hat/item IDs.
@@ -1524,7 +1523,7 @@ static int match_construct(MslCoreMatch* match,
     HSD_ObjAllocEnsureFree(&gobj_alloc_data,
                            128 + 64 * samus_count + 32 * link_count +
                                32 * sheik_count + 64 * ics_count +
-                               32 * kirby_count + 32 * stadium_transforms);
+                               32 * kirby_count + 16 * stadium_transforms);
     // Every live item GObj schedules a proc, and Ness's steered PK Thunder
     // plus PK Fire pillars keep the most item GObjs alive at once: an
     // hour-long four-Ness chaos soak peaked at 365 live procs against the
@@ -1532,7 +1531,7 @@ static int match_construct(MslCoreMatch* match,
     // Pikachu measured 267, so one Ness already leaves the flat figure thin.
     // tests/melee_core/pool_chaos_soak.c
     HSD_ObjAllocEnsureFree(&gobjproc_alloc_data,
-                           256 + 64 * ness_count + 96 * stadium_transforms);
+                           256 + 64 * ness_count + 64 * stadium_transforms);
     // The reached Peach article graph consumes twelve temporary matrix-pool
     // slots. The resulting fifteen-item bound rounds to the established
     // 256-slot small-object reserve.
@@ -1550,7 +1549,7 @@ static int match_construct(MslCoreMatch* match,
     // refs/melee/src/sysdolphin/baselib/mtx.c::{HSD_VecAlloc,HSD_VecFree}
     HSD_ObjAllocEnsureFree(HSD_VecGetAllocData(),
                            match->fighter_pose.joint_count + 128 +
-                               96 * kirby_count + 64 * stadium_transforms);
+                               96 * kirby_count + 16 * stadium_transforms);
     // Retain dev's full source item reserve and the incoming per-tether link
     // reserves. Shy Guys are a separate stage-owned producer; grStory_801E3418
     // admits one wave of at most five while no prior wave remains alive.
@@ -1577,7 +1576,7 @@ static int match_construct(MslCoreMatch* match,
     msl_class_reserve_pieces(
         sizeof(HSD_JObj), 128 + 128 * match->config.num_players +
                               (peach_count != 0 ? 17 * runtime_item_count : 0) +
-                              64 * stadium_transforms);
+                              80 * stadium_transforms);
 
     // An unfrozen Pokemon Stadium builds each transformation's ground in play:
     // its joint tree and animation objects, a GObj and procs, and the
