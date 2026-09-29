@@ -35,7 +35,7 @@ ARITY = {"fx": 10, "fxend": 2, "gen": 6, "tint": (4, 9), "charge": 4, "part": 4,
          "pos": 9, "shake": 5, "hide": 3, "ganim": 5, "bg": 3, "fd": 5,
          "gcolor": 2, "bgcolor": 1, "cam": 9,
          "hook": None, "irot": 4, "stadscreen": 2, "bird": 5, "sgen": 7,
-         "fdrot": 3}
+         "fdrot": 3, "tex": 4}
 
 
 def _locate(name: str) -> Path | None:
@@ -103,6 +103,11 @@ def test_viewer_track_schema(tmp_path, path, name):
         assert any(e[1] == "tint" and e[3] == 1 for e in data["events"])
     if name == "bf":
         assert "bg" in kinds
+    texes = [e for e in data["events"] if e[1] == "tex"]
+    assert texes, "no texture changes"
+    # A slot and a texture, or the reset (slot -1, texture 0).
+    for e in texes:
+        assert e[4] >= 0 or e[4] == -1 and e[5] == 0, e
     if name == "ps":
         screens = [e for e in data["events"] if e[1] == "stadscreen"]
         # Ready at -123, GO at -39, the ordinary screen at 0.

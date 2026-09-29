@@ -306,6 +306,18 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
             (unsigned) seed_now());
 }
 
+void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)
+{
+    Fighter* fp;
+
+    if (track_out == NULL || fighter == NULL) {
+        return;
+    }
+    fp = GET_FIGHTER(fighter);
+    fprintf(track_out, "[%d,\"tex\",%d,%d,%d,%.6g]\n", hook_frame(),
+            (int) fp->player_id, fp->x221F_b4 ? 1 : 0, slot, index);
+}
+
 static void track_overlay(int frame, int port, int sub, int slot,
                           const ColorOverlay* co)
 {

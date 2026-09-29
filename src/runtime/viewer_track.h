@@ -43,5 +43,9 @@ void msl_viewer_track_bird(int kind, int count, const Vec3* pos);
 // grLib_801C97DC on `jobj`).
 void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
                            HSD_JObj* jobj);
+// A fighter's switchable texture (eyes, mouth): ftAnim_800704F0 sets slot
+// `slot` to texture `index`; ftAnim_80070654 puts every slot back to its
+// default, written as slot -1, index 0.
+void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index);
 
 #endif

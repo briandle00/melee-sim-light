@@ -1021,7 +1021,7 @@ VIEWER_TRACK_VERSION = 1
 VIEWER_TRACK_TYPES = ("fx", "fxend", "gen", "tint", "charge", "part", "pos",
                       "shake", "hide", "ganim", "bg", "fd", "gcolor", "bgcolor",
                       "cam", "hook", "irot", "stadscreen", "bird", "sgen",
-                      "fdrot")
+                      "fdrot", "tex")
 VIEWER_TRACK_MISSING = {
     "gen (fighter)": "only joint-animation particle events from stage "
                      "animations are recorded; fighter animations' particle "
