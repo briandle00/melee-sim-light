@@ -152,6 +152,11 @@ enum {
     // background think (the bl at 0x8021AAE4), so the background never
     // transforms and never draws random numbers.
     MSL_PATCH_FD_BACKGROUND_FROZEN = 1 << 0,
+    // Slippi 3.3's recorder sends the post-frame event from the end of
+    // Fighter_procMap (its injection at 0x8006C5D8), before the damage,
+    // shield and hit procs run; later versions send it at 0x8006DA34. The
+    // recorded post-frame lanes are the fighter as it stood at that point.
+    MSL_PATCH_POST_FRAME_AT_MAP = 1 << 1,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The

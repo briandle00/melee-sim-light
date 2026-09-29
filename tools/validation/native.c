@@ -2505,8 +2505,8 @@ static PyObject* validate_replay(PyObject* self, PyObject* args, PyObject* kwarg
   if (msl_set_fnmsubs_profile(&replay, fnmsubs_profile) != 0) {
     goto done;
   }
-  if (slippi_patches < 0 || slippi_patches > 1) {
-    PyErr_SetString(PyExc_ValueError, "slippi_patches must be 0 to 1");
+  if (slippi_patches < 0 || slippi_patches > 3) {
+    PyErr_SetString(PyExc_ValueError, "slippi_patches must be 0 to 3");
     goto done;
   }
   replay.slippi_patches = (uint8_t)slippi_patches;

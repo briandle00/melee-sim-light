@@ -80,6 +80,7 @@ def stadium_is_frozen(start: dict, codes: dict[int, bytes]) -> bool:
 
 # wire.h MSL_PATCH_*.
 PATCH_FD_BACKGROUND_FROZEN = 1 << 0
+PATCH_POST_FRAME_AT_MAP = 1 << 1
 
 
 def slippi_patches(codes: dict[int, bytes]) -> int:
@@ -89,6 +90,9 @@ def slippi_patches(codes: dict[int, bytes]) -> int:
     patches = 0
     if codes.get(0x0421AAE4, b"")[4:8] == bytes.fromhex("60000000"):
         patches |= PATCH_FD_BACKGROUND_FROZEN
+    # Slippi 3.3's SendGamePostFrame injection at the end of Fighter_procMap.
+    if 0xC206C5D8 in codes:
+        patches |= PATCH_POST_FRAME_AT_MAP
     return patches
 
 

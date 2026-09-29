@@ -172,3 +172,12 @@ def test_frozen_fd_background_is_the_nop_at_its_think():
     assert admission.slippi_patches(
         {0x0421AAE4: bytes.fromhex("0421aae448000001")}) == 0
     assert admission.slippi_patches({}) == 0
+
+
+def test_slippi_3_3_post_frame_record_point_is_read_from_the_list():
+    # 3.3 sends the post-frame event from the end of Fighter_procMap
+    # (0x8006C5D8); later versions send it at 0x8006DA34.
+    assert admission.slippi_patches({0xC206C5D8: b""}) == \
+        admission.PATCH_POST_FRAME_AT_MAP
+    assert admission.slippi_patches({0xC206DA34: b""}) & \
+        admission.PATCH_POST_FRAME_AT_MAP == 0
