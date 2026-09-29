@@ -1,0 +1,47 @@
+[
+ {
+  "fix": "map5_island_order",
+  "path": "diamond-diamond-32dc08795abd5810e5faa2e1.slp",
+  "sha256": "21c7f0761e20218c844f4f7df436883856b3a3a8601afdc2fd1ab6729d241a85"
+ },
+ {
+  "fix": "cstick_gate_fit",
+  "path": "master-master-1a113ee877e618fc6804da86.slp",
+  "sha256": "9a669599335f81d474204503790efd5ead5a71711625c4da99e1d3df267def72"
+ },
+ {
+  "fix": "fd_background_patch",
+  "path": "diamond-platinum-331658d5708ae138ffb655c0.slp",
+  "sha256": "e8ebb0994a5bcd281cc7873423e53b2f505a0b5f83bc84f7f4661e65af296cca"
+ },
+ {
+  "fix": "fd_background_patch",
+  "path": "diamond-platinum-54a6e8a2e313a1606bd620a3.slp",
+  "sha256": "1ff20dc2011ac30ce68101ad1d61187d130b0b89635f9a893b09d4192f91883f"
+ },
+ {
+  "fix": "host_without_fma3",
+  "path": "platinum-platinum-ab04b49fc7f3b06be608d3c2.slp",
+  "sha256": "58d338524572a3f21d18ce2fdebd768bdd8f3c0c97b4d4283011a82c3c9da7bb"
+ },
+ {
+  "fix": "host_without_fma3",
+  "path": "platinum-platinum-c4d39e65e7ef0092de263618.slp",
+  "sha256": "ac4573f1fd6bc9ca442493ac0a6bb399d9322f78996d52b50da2c367f8e3b14e"
+ },
+ {
+  "fix": "prevent_wobbling",
+  "path": "diamond-master_14-15__238833.slp",
+  "sha256": "b6473de0c9451873ab67de8a2008fc7810143bfc7f396f9a30f7a3b0aa8e724b"
+ },
+ {
+  "fix": "prevent_wobbling",
+  "path": "master-platinum_14-22__213498.slp",
+  "sha256": "e2c9418af4403c0bc75606456b3a819fb0554e5c59d387749f0c149ca2f4a44e"
+ },
+ {
+  "fix": "stage_particles_and_human_level",
+  "path": "platinum-platinum_10-14__47101.slp",
+  "sha256": "d2a4f76e7bf6998b88255f068e6816106b97b45d731f969e972590e0b7837fae"
+ }
+]
