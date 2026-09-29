@@ -287,7 +287,12 @@ static void msl_effect_release(MslCoreEffectQueueNode* node)
 static void msl_effect_consume_generator_rng(s32 generator_id)
 {
     int bank = generator_id / 1000;
-    int index = generator_id - bank * 1000;
+    // hsd_8039EFAC(linkNo, bank, id) indexes ptclref[bank] by the full
+    // generator id (Mario's fireball: bank 1, 0x3E9), and a version-0x4x bank
+    // is located so that its [id_base, count) entries sit at those ids. The
+    // id modulo 1000 is below id_base for every such bank and found nothing.
+    // refs/melee/src/sysdolphin/baselib/generator.c::hsd_8039F05C
+    int index = generator_id;
     const MslCoreEffectGeneratorBank* data;
     HSD_PSCmdList* command;
 
@@ -298,12 +303,9 @@ static void msl_effect_consume_generator_rng(s32 generator_id)
     }
     data = &msl_effect_banks[bank];
     // Version-0x4x per-character banks store commands indexed by the full
-    // generator id: only [id_base, count) exists in the archive. The native
-    // translation exposes a dense array whose entries below id_base are NULL,
-    // and the recorded corpus is bit-exact with those lookups consuming
-    // nothing; mirror that boundary here instead of walking off the front of
-    // the source command table (the PPC oracle crashed dereferencing that
-    // garbage on Fox's 0xBC0 reflector generator).
+    // generator id: only [id_base, count) exists in the archive, and the
+    // native translation exposes a dense array whose entries below id_base
+    // are NULL.
     if (index < data->id_base || index >= data->count ||
         data->commands == NULL)
     {
