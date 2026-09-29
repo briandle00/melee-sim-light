@@ -10,6 +10,7 @@
 #include "gr/inlines.h"
 #include "gr/types.h"
 #include "it/inlines.h"
+#include "it/itCharItems.h"
 #include "it/types.h"
 #include "lb/types.h"
 #include "runtime/context.h"
@@ -480,6 +481,91 @@ static void track_stage(int frame, const MslCoreMatch* match)
     emit_state(frame, "\"cam\"", value);
 }
 
+// Owner port and sub (0 leader, 1 Nana) of an item whose owner is a fighter.
+static bool item_owner_port(Item* ip, int* port, int* sub)
+{
+    if (ip->owner == NULL || ip->owner->classifier != HSD_GOBJ_CLASS_FIGHTER) {
+        return false;
+    }
+    *port = GET_FIGHTER(ip->owner)->player_id;
+    *sub = GET_FIGHTER(ip->owner)->x221F_b4 ? 1 : 0;
+    return true;
+}
+
+// Hookshot and grapple-beam chains: the tip, then each link from the first
+// (xDD4+4) toward the last. it_802A2568 links them with link->next pointing
+// back toward the first, so the walk follows prev. Positions are the
+// links' simulated positions, rounded to 0.01.
+static void track_chain(int frame, Item* ip, ItemLink* first)
+{
+    enum { MAX_LINKS = 64 };
+    char key[TRACK_KEY_LEN];
+    char value[64 * 2 * 12 + 32];
+    size_t used = 0;
+    int port;
+    int sub;
+    int count = 0;
+    ItemLink* link;
+
+    if (!item_owner_port(ip, &port, &sub)) {
+        port = -1;
+        sub = 0;
+    }
+    used += (size_t) snprintf(value + used, sizeof(value) - used,
+                              ",%.2f,%.2f", ip->pos.x, ip->pos.y);
+    for (link = first; link != NULL && count < MAX_LINKS;
+         link = link->prev, ++count)
+    {
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",%.2f,%.2f", link->pos.x, link->pos.y);
+        if (used >= sizeof(value) - 32) {
+            break;
+        }
+    }
+    snprintf(key, sizeof(key), "\"hook\",%d,%d", port, sub);
+    fprintf(track_out, "[%d,%s%s]\n", frame, key, value);
+}
+
+static void track_items(int frame, const MslCoreMatch* match)
+{
+    Item_GObj* gobj = (Item_GObj*) match->gobj.entities->items;
+    char key[TRACK_KEY_LEN];
+    char value[TRACK_VALUE_LEN];
+
+    while (gobj != NULL) {
+        Item* ip = GET_ITEM(gobj);
+        HSD_JObj* jobj = GET_JOBJ(gobj);
+
+        switch (ip->kind) {
+        case It_Kind_Link_HShot:
+        case It_Kind_CLink_HShot:
+            track_chain(frame, ip, ip->xDD4_itemVar.linkhookshot.x4);
+            break;
+        case It_Kind_Samus_GBeam:
+            // The grapple beam's links are shaped by their joints'
+            // animation, which the headless core does not run; only the
+            // tip is simulated.
+            track_chain(frame, ip, NULL);
+            break;
+        default:
+            break;
+        }
+        // The root joint's Euler rotation, on change (spinning throws,
+        // turnips, bombs).
+        if (jobj != NULL && !(jobj->flags & JOBJ_USE_QUATERNION)) {
+            snprintf(key, sizeof(key), "\"irot\",%d", (int) ip->x1C);
+            snprintf(value, sizeof(value), ",%.4f,%.4f,%.4f", jobj->rotate.x,
+                     jobj->rotate.y, jobj->rotate.z);
+            if (last_state(key) != NULL || jobj->rotate.x != 0.0F ||
+                jobj->rotate.y != 0.0F || jobj->rotate.z != 0.0F)
+            {
+                emit_state(frame, key, value);
+            }
+        }
+        gobj = (Item_GObj*) gobj->next;
+    }
+}
+
 void msl_viewer_track_frame(MslCoreMatch* match)
 {
     int frame;
@@ -501,4 +587,5 @@ void msl_viewer_track_frame(MslCoreMatch* match)
         }
     }
     track_stage(frame, match);
+    track_items(frame, match);
 }

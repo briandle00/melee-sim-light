@@ -16,6 +16,8 @@ from tools.replay import replay_drive as rd
 # A Final Destination Ice Climbers game (Nana, the background cycle) and a
 # Battlefield game (the background switches).
 RECORDINGS = [
+    ("Game_001DBC4B8B63_20210912T165507.slp",
+     "link"),
     ("Game_20230311T193835.slp",
      "fdic"),
     ("Game_0019FD43AEAE_20240905T011354.slp",
@@ -25,7 +27,8 @@ RECORDINGS = [
 # Values after [frame, type]; "*" is any count.
 ARITY = {"fx": 10, "fxend": 2, "gen": 6, "tint": (4, 9), "charge": 4, "part": 4,
          "pos": 9, "shake": 5, "hide": 3, "ganim": 5, "bg": 3, "fd": 5,
-         "gcolor": 2, "bgcolor": 1, "cam": 9}
+         "gcolor": 2, "bgcolor": 1, "cam": 9,
+         "hook": None, "irot": 4}
 
 
 def _locate(name: str) -> Path | None:
@@ -53,7 +56,10 @@ def _check_event(event):
     assert kind in rd.VIEWER_TRACK_TYPES
     arity = ARITY[kind]
     count = len(event) - 2
-    if isinstance(arity, tuple):
+    if arity is None:
+        # hook: port, sub, then the tip and each link as x, y pairs.
+        assert count >= 4 and count % 2 == 0, event
+    elif isinstance(arity, tuple):
         assert count in arity, event
     else:
         assert count == arity, event
@@ -90,6 +96,10 @@ def test_viewer_track_schema(tmp_path, path, name):
         assert any(e[1] == "tint" and e[3] == 1 for e in data["events"])
     if name == "bf":
         assert "bg" in kinds
+    if name == "link":
+        assert {"hook", "irot"} <= kinds
+        hooks = [e for e in data["events"] if e[1] == "hook"]
+        assert max(len(e) for e in hooks) > 10
     assert result["seconds"] > 0
 
 
