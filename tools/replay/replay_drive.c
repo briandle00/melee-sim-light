@@ -26,6 +26,7 @@
 #include "runtime/savestate.h"
 #include "runtime/scalar.h"
 #include "runtime/wire.h"
+#include "runtime/viewer_track.h"
 
 #if defined(_WIN32)
 /* Run mode trades packed structs over the standard streams, and Windows
@@ -493,6 +494,7 @@ int main(int argc, char** argv)
     OutFrame out;
     FILE* input;
     FILE* output;
+    FILE* track_file = NULL;
     uint32_t index;
     int player;
     int lanes;
@@ -564,6 +566,19 @@ int main(int argc, char** argv)
         fprintf(stderr, "game data init failed\n");
         return 1;
     }
+    // MSL_VIEWER_TRACK=<path>: also write the viewer track there
+    // (runtime/viewer_track.h). It only reads simulation state.
+    {
+        const char* track_path = getenv("MSL_VIEWER_TRACK");
+        if (track_path != NULL && track_path[0] != '\0') {
+            track_file = fopen(track_path, "w");
+            if (track_file == NULL) {
+                fprintf(stderr, "cannot write %s\n", track_path);
+                return 1;
+            }
+            msl_viewer_track_begin(track_file);
+        }
+    }
     if (msl_core_match_storage_init(&match) != 0 ||
         msl_core_match_reset(&match, &game_data, &config, &previous) != 0)
     {
@@ -592,6 +607,7 @@ int main(int argc, char** argv)
             fprintf(stderr, "step failed at frame %u\n", index);
             return 1;
         }
+        msl_viewer_track_frame(&match);
         fill_output(&out, msl_core_match_output(&match));
         {
             int phase;
@@ -606,6 +622,13 @@ int main(int argc, char** argv)
         }
     }
     fclose(input);
+    if (track_file != NULL) {
+        msl_viewer_track_end();
+        if (fclose(track_file) != 0) {
+            fprintf(stderr, "failed to flush the viewer track\n");
+            return 1;
+        }
+    }
     if (fclose(output) != 0) {
         fprintf(stderr, "failed to flush output\n");
         return 1;

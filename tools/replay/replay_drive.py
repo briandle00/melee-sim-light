@@ -1015,8 +1015,91 @@ def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
     }
 
 
+# Viewer track (runtime/viewer_track.h): event types the core writes, and the
+# ones a replay viewer might want that the headless core does not run.
+VIEWER_TRACK_VERSION = 1
+VIEWER_TRACK_TYPES = ("fx", "fxend", "tint", "charge", "part", "pos", "shake",
+                      "hide", "ganim", "bg", "fd", "gcolor", "bgcolor", "cam")
+VIEWER_TRACK_MISSING = {
+    "gen": "particle.c is not run; generator creation is modelled only for "
+           "its random draw",
+    "gjoint": "code-moved stage joints (Dream Land's birds) are not run",
+}
+
+
+def viewer_track_build() -> int:
+    """sim_build for the viewer track: the driver executable's modification
+    time, which changes whenever the core is rebuilt."""
+    return int(DRIVER.stat().st_mtime)
+
+
+def export_viewer_track(path, out_json):
+    """Replay `path` through the core and write its viewer track to
+    `out_json`: {"version", "sim_build", "exact", "events"}, each event
+    [frame, type, ...values] with frame in the game's numbering (-123 first).
+
+    The inputs are fitted the way state_matches_recording() fits them (the
+    recording's UCF profile, the C-stick gate readings, the capture's host
+    arithmetic); a final drive with those inputs writes the track. "exact"
+    says whether that drive reproduced the recording. Returns the dict
+    written, plus "seconds"."""
+    started = time.time()
+    replay = read(path)
+    reason = supported(replay)
+    if reason:
+        raise ValueError("not supported: %s" % reason)
+    count = len(replay["ids"])
+    own = replay.get("ucf_profile")
+    profiles = [own] if own else list(candidate_profiles(replay))
+    chosen = None
+    first = None
+    for profile in profiles:
+        blob, _ = drive_arithmetic(replay, count, profile)
+        first = first_difference(replay, blob)
+        chosen = profile
+        if first is None:
+            break
+    with tempfile.TemporaryDirectory(prefix="msl_track_") as folder:
+        track_path = os.path.join(folder, "track.jsonl")
+        previous = os.environ.get("MSL_VIEWER_TRACK")
+        os.environ["MSL_VIEWER_TRACK"] = track_path
+        try:
+            blob = drive(replay, count, chosen)
+        finally:
+            if previous is None:
+                del os.environ["MSL_VIEWER_TRACK"]
+            else:
+                os.environ["MSL_VIEWER_TRACK"] = previous
+        events = []
+        with open(track_path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line:
+                    event = json.loads(line)
+                    # The core writes [frame, type, ...]; the file is
+                    # [frame, type, ...] as well.
+                    events.append(event)
+    events.sort(key=lambda event: event[0])
+    result = {
+        "version": VIEWER_TRACK_VERSION,
+        "sim_build": viewer_track_build(),
+        "exact": first_difference(replay, blob) is None,
+        "events": events,
+    }
+    with open(out_json, "w", encoding="utf-8") as handle:
+        json.dump(result, handle, separators=(",", ":"))
+    result["seconds"] = round(time.time() - started, 3)
+    return result
+
+
 def main() -> None:
     args = list(sys.argv[1:])
+    if args[:1] == ["--viewer-track"]:
+        result = export_viewer_track(args[1], args[2])
+        print(json.dumps({"events": len(result["events"]),
+                          "exact": result["exact"],
+                          "seconds": result["seconds"]}))
+        return
     out = profile = None
     limit = None
     raw_cstick = "--no-raw-cstick" not in args

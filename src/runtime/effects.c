@@ -6,9 +6,11 @@
 #include "ef/types.h"
 #include "gr/ground.h"
 #include "lb/lb_00B0.h"
+#include "runtime/viewer_track.h"
 #include "lb/lbarchive.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -579,9 +581,45 @@ static void msl_effect_consume_common_dispatch_generator(s32 gfx_id)
     }
 }
 
+// Viewer track only: a vararg that should be a pointer, or NULL when it
+// cannot be one. A float passed by value arrives as a double whose bits
+// are far above user-space addresses; NULL and misaligned values are out.
+static const void* msl_effect_plausible(void* p)
+{
+    uintptr_t v = (uintptr_t) p;
+    if (v < 0x10000U || (v & 3U) != 0) {
+        return NULL;
+    }
+#if UINTPTR_MAX > 0xFFFFFFFFU
+    if (v >= ((uintptr_t) 1 << 47)) {
+        return NULL;
+    }
+#endif
+    return p;
+}
+
+// Set while a queued efAsync effect is processed, whose spawn the viewer
+// track already recorded at the efAsync_Spawn call.
+static int msl_effect_processing_queued;
+
 void* efSync_Spawn(s32 gfx_id, HSD_GObj* gobj, ...)
 {
-    (void) gobj;
+    if (msl_viewer_track_on && !msl_effect_processing_queued) {
+        va_list args;
+        void* first;
+        va_start(args, gobj);
+        first = va_arg(args, void*);
+        va_end(args);
+        // Generators take a position (efLib_CreateGenerator); the other
+        // dispatches take the joint they attach to first.
+        if (gfx_id < 0x250 || gfx_id / 1000 == 0x1E) {
+            msl_viewer_track_fx(gobj, gfx_id, NULL,
+                                msl_effect_plausible(first), 0.0F, 0.0F);
+        } else {
+            msl_viewer_track_fx(gobj, gfx_id, (HSD_JObj*) first, NULL, 0.0F,
+                                0.0F);
+        }
+    }
     // Visual objects are excluded, but immediate generator initialization and
     // explicit dispatch randomness share the gameplay HSD stream. The lookup
     // above reads `kind` and `random` directly from EfCoData/EfFxData and
@@ -754,7 +792,9 @@ static void msl_effect_process(HSD_GObj* gobj, MslCoreEffectQueueNode* node)
         lb_8000B1CC(node->jobj, &node->params, &position);
         Camera_80030E44(node->gfx_id, &position);
     } else {
+        msl_effect_processing_queued = 1;
         efSync_Spawn(node->gfx_id, gobj);
+        msl_effect_processing_queued = 0;
     }
 }
 
@@ -789,6 +829,42 @@ void efAsync_Spawn(HSD_GObj* gobj, void* queue_head, u32 spawn_kind,
     node->spawn_kind = spawn_kind;
     node->gfx_id = gfx_id;
     node->jobj = jobj;
+    if (msl_viewer_track_on) {
+        // The arguments as efasync.c::efAsync_Spawn reads them per kind.
+        // Some decomp call sites pass floats where retail passes f32*, so
+        // only a plausible pointer is read.
+        va_list args;
+        const Vec3* at = NULL;
+        const f32* p0 = NULL;
+        const f32* p1 = NULL;
+        va_start(args, jobj);
+        switch (spawn_kind) {
+        case EF_SPAWN_POS_OFFSET:
+        case EF_SPAWN_ATTACH_OFFSET:
+        case EF_SPAWN_CAMERA_SHAKE:
+            at = msl_effect_plausible(va_arg(args, void*));
+            break;
+        case EF_SPAWN_ATTACH_PARAM:
+        case EF_SPAWN_POS_PARAM:
+            p0 = msl_effect_plausible(va_arg(args, void*));
+            break;
+        case EF_SPAWN_POS_OFFSET_PARAM:
+            at = msl_effect_plausible(va_arg(args, void*));
+            p0 = msl_effect_plausible(va_arg(args, void*));
+            break;
+        case EF_SPAWN_POS_OFFSET_PARAM2:
+            at = msl_effect_plausible(va_arg(args, void*));
+            p0 = msl_effect_plausible(va_arg(args, void*));
+            p1 = msl_effect_plausible(va_arg(args, void*));
+            break;
+        default:
+            break;
+        }
+        va_end(args);
+        msl_viewer_track_fx(gobj, (s32) gfx_id, jobj, at,
+                            p0 != NULL ? *p0 : 0.0F,
+                            p1 != NULL ? *p1 : 0.0F);
+    }
     if (spawn_kind == EF_SPAWN_CAMERA_SHAKE) {
         va_list args;
         va_start(args, jobj);
