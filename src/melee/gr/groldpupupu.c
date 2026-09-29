@@ -33,6 +33,7 @@
 #include <platform/slippi.h>
 #include <runtime/context.h>
 #include <runtime/source_state.h>
+#include <runtime/viewer_track.h>
 #endif
 
 typedef struct DreamLandParams {
@@ -70,7 +71,10 @@ static int grOp_804D48C8[1][2] = { { 4, 0 } };
 static int grOp_804D48D0[1][2] = { { 5, 1 } };
 static int grOp_804D48D8[1][2] = { { 2, 3 } };
 
-static int grOp_804D48E0[1][2] = { { 0, 0 } };
+// GALE01 0x804D48E0 holds { 1, 0 }: Whispy's blow effect (object 6) plays
+// animation 1. Local (viewer track): upstream keeps { 0, 0 } as visual-only;
+// the viewer track's stage animation events name the animation played.
+static int grOp_804D48E0[1][2] = { { 1, 0 } };
 
 typedef struct grOldPupupuSpawnDesc {
     s8 x0;
@@ -263,6 +267,14 @@ static void msl_oldpupupu_load_particle_tracks(HSD_JObj* joint,
 static void msl_oldpupupu_particle_animation(Ground_GObj* gobj, int map_id,
                                              int animation_id)
 {
+    // Local (viewer track): with the track on, the background animation is
+    // the game's whole one (grAnime_801C8138), so its joints move and the
+    // track's stage animation and generator events are the game's. Its
+    // particle tracks, and so its gameplay random draws, are the same.
+    if (msl_viewer_track_on) {
+        grAnime_801C8138(gobj, map_id, animation_id);
+        return;
+    }
     UnkArchiveStruct* archive = grDatFiles_801C6330(map_id);
     HSD_JObj* joint = GET_JOBJ(gobj);
     HSD_AnimJoint** animations = archive->unk4->unk8[map_id].unk4;

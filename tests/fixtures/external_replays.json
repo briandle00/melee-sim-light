@@ -73,5 +73,10 @@
   "fix": "subaction_effect_id_byte_order",
   "path": "diamond-platinum_0-5__115989.slp",
   "sha256": "333b3f6756e274673edd433b4277d94d9b71a107f906ce145f7ead9d78c10317"
+ },
+ {
+  "fix": "dreamland_background_particles",
+  "path": "diamond-diamond_2-14__218040.slp",
+  "sha256": "63c109e4395adac512b5bb48a1cdbea7e46e00db61cf062c7a5003bfedba37d5"
  }
 ]
