@@ -895,6 +895,12 @@ def supported(replay) -> str | None:
         return "stadium-unpatched-transformations"
     if replay.get("item_spawn_frequency", -1) not in (-1, None):
         return "items-on"
+    # A match starts every fighter at 0%. A first row with damage already on
+    # it is a recording that does not begin at the match's start (seen on a
+    # ranked file starting at 27% and 78% with a 453-second timer).
+    if any(len(p.get("percent", ())) and float(p["percent"][0]) != 0.0
+           for p in replay["players"]):
+        return "not-from-match-start"
     return None
 
 

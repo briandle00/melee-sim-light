@@ -95,6 +95,16 @@ def test_stadium_patch_set_decides_the_transformations(monkeypatch):
     assert rd.stadium_transformations({"stage": 31}, b"") == rd.STADIUM_FROZEN
 
 
+def test_recording_that_does_not_start_at_zero_percent_is_not_driven():
+    # Every match starts each fighter at 0%; a first row with damage on it
+    # did not begin at the match's start.
+    base = {"stage": 31, "stadium": 0}
+    fresh = [{"percent": np.array([0.0, 3.0])}, {"percent": np.array([0.0])}]
+    assert rd.supported(dict(base, players=fresh)) is None
+    late = [{"percent": np.array([27.0])}, {"percent": np.array([78.0])}]
+    assert rd.supported(dict(base, players=late)) == "not-from-match-start"
+
+
 def _row(**lanes):
     """One OutFrame row, zero but for the named lanes."""
     values = list(struct.unpack(rd.OUT_FMT, bytes(rd.OUT_SIZE)))

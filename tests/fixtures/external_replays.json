@@ -43,5 +43,20 @@
   "fix": "stage_particles_and_human_level",
   "path": "platinum-platinum_10-14__47101.slp",
   "sha256": "d2a4f76e7bf6998b88255f068e6816106b97b45d731f969e972590e0b7837fae"
+ },
+ {
+  "fix": "mr_saturn_unwritten_misc1",
+  "path": "master-platinum_12-25__243494.slp",
+  "sha256": "740d6879277659ce5f9a9e25ec4f2b40fb02c1219e91e8f91af932fe59325028"
+ },
+ {
+  "fix": "subaction_effect_id_byte_order",
+  "path": "diamond-diamond-4bcb56e6aaa2879096891eed.slp",
+  "sha256": "ff3f33a8e9fa22c14198c63e8034235746e5565f91e266eba34eb1ad28611079"
+ },
+ {
+  "fix": "subaction_effect_id_byte_order",
+  "path": "diamond-platinum_0-5__115989.slp",
+  "sha256": "333b3f6756e274673edd433b4277d94d9b71a107f906ce145f7ead9d78c10317"
  }
 ]
