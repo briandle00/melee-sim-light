@@ -28,6 +28,9 @@ void msl_viewer_track_frame(struct MslCoreMatch* match);
 void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
                          const Vec3* pos, float a0, float a1);
 void msl_viewer_track_fxend(HSD_GObj* owner);
+// A joint-animation particle event (efLib_Cb_DPtcl): bank, generator id,
+// and the joint it fires on.
+void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj);
 void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
                             float start_frame, float rate);
 

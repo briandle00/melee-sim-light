@@ -1018,11 +1018,13 @@ def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
 # Viewer track (runtime/viewer_track.h): event types the core writes, and the
 # ones a replay viewer might want that the headless core does not run.
 VIEWER_TRACK_VERSION = 1
-VIEWER_TRACK_TYPES = ("fx", "fxend", "tint", "charge", "part", "pos", "shake",
-                      "hide", "ganim", "bg", "fd", "gcolor", "bgcolor", "cam")
+VIEWER_TRACK_TYPES = ("fx", "fxend", "gen", "tint", "charge", "part", "pos",
+                      "shake", "hide", "ganim", "bg", "fd", "gcolor", "bgcolor",
+                      "cam")
 VIEWER_TRACK_MISSING = {
-    "gen": "particle.c is not run; generator creation is modelled only for "
-           "its random draw",
+    "gen (fighter)": "only joint-animation particle events from stage "
+                     "animations are recorded; fighter animations' particle "
+                     "events are not run",
     "gjoint": "code-moved stage joints (Dream Land's birds) are not run",
 }
 

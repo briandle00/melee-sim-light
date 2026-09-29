@@ -23,7 +23,7 @@ RECORDINGS = [
 ]
 
 # Values after [frame, type]; "*" is any count.
-ARITY = {"fx": 10, "fxend": 2, "tint": (4, 9), "charge": 4, "part": 4,
+ARITY = {"fx": 10, "fxend": 2, "gen": 6, "tint": (4, 9), "charge": 4, "part": 4,
          "pos": 9, "shake": 5, "hide": 3, "ganim": 5, "bg": 3, "fd": 5,
          "gcolor": 2, "bgcolor": 1, "cam": 9}
 

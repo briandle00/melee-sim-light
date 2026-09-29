@@ -309,6 +309,9 @@ int msl_effect_load_stage_bank(MslCoreEffectData* data,
 static void msl_effect_match_dptcl(int link_no, int bank, int gfx_id,
                                    HSD_JObj* jobj)
 {
+    if (msl_viewer_track_on) {
+        msl_viewer_track_gen(bank, gfx_id, jobj);
+    }
     if (bank != 0x1E || msl_bound_effect_state == NULL) {
         return;
     }

@@ -222,6 +222,24 @@ void msl_viewer_track_fxend(HSD_GObj* owner)
     fprintf(track_out, "[%d,\"fxend\",\"%c\",%d]\n", hook_frame(), kind, id);
 }
 
+void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
+{
+    float x = 0.0F;
+    float y = 0.0F;
+    float z = 0.0F;
+
+    if (track_out == NULL) {
+        return;
+    }
+    if (jobj != NULL) {
+        x = jobj->mtx[0][3];
+        y = jobj->mtx[1][3];
+        z = jobj->mtx[2][3];
+    }
+    fprintf(track_out, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u]\n",
+            hook_frame(), bank, gen_id, x, y, z, (unsigned) seed_now());
+}
+
 void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
                             float start_frame, float rate)
 {
