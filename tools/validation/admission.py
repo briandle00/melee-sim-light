@@ -88,6 +88,27 @@ def slippi_patches(codes: dict[int, bytes]) -> int:
     if codes.get(0x0421AAE4, b"")[4:8] == bytes.fromhex("60000000"):
         patches |= PATCH_FD_BACKGROUND_FROZEN
     return patches
+def raw_player_levels(raw: bytes) -> list[int] | None:
+    """Each port's level byte from the raw Game Start event (offset
+    0x74 + 0x24 * port), or None when the file cannot be walked. Slippi
+    records it for every port, humans included; peppi reports it only for
+    CPU players. A human Ice Climber's Nana sets her AI up from it."""
+    import struct
+    try:
+        at = raw.index(b"raw[$U#l") + 8
+        size = struct.unpack(">I", raw[at:at + 4])[0]
+        body = raw[at + 4:at + 4 + size]
+        if body[0] != 0x35:
+            return None
+        sizes = {}
+        for k in range(2, 1 + body[1], 3):
+            sizes[body[k]] = struct.unpack(">H", body[k + 1:k + 3])[0]
+        start = 1 + body[1]
+        if body[start] != 0x36 or sizes.get(0x36, 0) < 0x74 + 0x24 * 3:
+            return None
+        return [body[start + 0x74 + 0x24 * port] for port in range(4)]
+    except (ValueError, IndexError, struct.error):
+        return None
 
 
 def capture_issues(game, raw: bytes, *, played_on: str | None = None,
