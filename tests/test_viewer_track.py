@@ -22,13 +22,20 @@ RECORDINGS = [
      "fdic"),
     ("Game_0019FD43AEAE_20240905T011354.slp",
      "bf"),
+    ('Game_20230311T165721.slp',
+     "ps"),
+    ('Game_0017AB4B0FE7_20061202T042834.slp',
+     "dl"),
+    ('Game_0017ABDD3478_20241218T234347.slp',
+     "fd"),
 ]
 
 # Values after [frame, type]; "*" is any count.
 ARITY = {"fx": 10, "fxend": 2, "gen": 6, "tint": (4, 9), "charge": 4, "part": 4,
          "pos": 9, "shake": 5, "hide": 3, "ganim": 5, "bg": 3, "fd": 5,
          "gcolor": 2, "bgcolor": 1, "cam": 9,
-         "hook": None, "irot": 4}
+         "hook": None, "irot": 4, "stadscreen": 2, "bird": 5, "sgen": 7,
+         "fdrot": 3}
 
 
 def _locate(name: str) -> Path | None:
@@ -96,6 +103,17 @@ def test_viewer_track_schema(tmp_path, path, name):
         assert any(e[1] == "tint" and e[3] == 1 for e in data["events"])
     if name == "bf":
         assert "bg" in kinds
+    if name == "ps":
+        screens = [e for e in data["events"] if e[1] == "stadscreen"]
+        # Ready at -123, GO at -39, the ordinary screen at 0.
+        assert [e[2] for e in screens if e[0] in (-39, 0)] == [11, 1]
+        # A close-up names its player; other screens do not.
+        assert all((e[3] >= 0) == (e[2] == 8) for e in screens)
+        assert "sgen" in kinds
+    if name == "dl":
+        assert "bird" in kinds
+    if name == "fd":
+        assert {"fd", "fdrot", "sgen"} <= kinds
     if name == "link":
         assert {"hook", "irot"} <= kinds
         hooks = [e for e in data["events"] if e[1] == "hook"]

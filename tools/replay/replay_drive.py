@@ -1020,15 +1020,18 @@ def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
 VIEWER_TRACK_VERSION = 1
 VIEWER_TRACK_TYPES = ("fx", "fxend", "gen", "tint", "charge", "part", "pos",
                       "shake", "hide", "ganim", "bg", "fd", "gcolor", "bgcolor",
-                      "cam", "hook", "irot")
+                      "cam", "hook", "irot", "stadscreen", "bird", "sgen",
+                      "fdrot")
 VIEWER_TRACK_MISSING = {
     "gen (fighter)": "only joint-animation particle events from stage "
                      "animations are recorded; fighter animations' particle "
                      "events are not run",
-    "gjoint": "code-moved stage joints (Dream Land's birds) are not run",
-    "hook (grapple links)": "the grapple beam's links follow joint "
-                            "animation the headless core does not run; its "
-                            "hook events carry the tip only",
+    "gjoint": "code-moved stage joints are not run; Dream Land's birds "
+              "are reported where they start (bird events), their model "
+              "is not built",
+    "hook (grapple links)": "the grapple beam's links that joint animation "
+                            "moves are not simulated; hook events carry the "
+                            "claw and the links the grapple has pulled out",
 }
 
 

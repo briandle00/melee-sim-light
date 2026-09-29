@@ -34,6 +34,7 @@ extern HSD_Generator* hsd_804D78FC;
 
 #ifdef MSL_CORE_HOSTED
 #include "runtime/context.h"
+#include "runtime/viewer_track.h"
 #define grLib_8049EF58 ((VecMtxPtr) msl_core_ground_stage_positions())
 #else
 static VecMtx grLib_8049EF58;
@@ -50,9 +51,9 @@ bool grLib_801C96E8(HSD_GObj* arg0)
 HSD_Generator* grLib_801C96F8(s32 arg0, s32 arg1, Vec3* arg2)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on) {
+        msl_viewer_track_sgen(arg1, arg0, arg2, NULL);
+    }
     return NULL;
 #else
     HSD_Generator* temp_r3;
@@ -87,9 +88,9 @@ void grLib_801C97DC(s32 arg0, s32 arg1, HSD_JObj* arg2)
 #ifndef MSL_CORE_HOSTED
     hsd_8039F6CC(0, arg1, arg0, arg2);
 #else
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on) {
+        msl_viewer_track_sgen(arg1, arg0, NULL, arg2);
+    }
 #endif
 }
 

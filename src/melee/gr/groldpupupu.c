@@ -465,6 +465,13 @@ void grOldPupupu_80210D10(Ground_GObj* gobj)
             y = direction *
                 (((f32) grOp_804D6A98->x4 * ((2.0F * rand) - 1.0F)) + 20.0F);
         }
+        if (msl_viewer_track_on) {
+            Vec3 first;
+            first.x = direction * x;
+            first.y = y;
+            first.z = -150.0F * direction;
+            msl_viewer_track_bird(index, count, &first);
+        }
         for (i = 0; i < count; i++) {
             HSD_GObj* spawn;
             spawn = grOldPupupu_802108B4_noinline(2);

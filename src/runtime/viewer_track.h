@@ -33,5 +33,15 @@ void msl_viewer_track_fxend(HSD_GObj* owner);
 void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj);
 void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
                             float start_frame, float rate);
+// A Pokemon Stadium jumbotron screen change (grStadium_801D2528): the screen
+// shown and, for a close-up (8), the followed player; -1 otherwise.
+void msl_viewer_track_stadscreen(int mode, int player);
+// Dream Land's background birds (grOldPupupu_80210D10): the row of the bird
+// table chosen, how many fly, and where the first starts.
+void msl_viewer_track_bird(int kind, int count, const Vec3* pos);
+// A generator the stage code spawns itself (grLib_801C96F8 at `pos`, or
+// grLib_801C97DC on `jobj`).
+void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
+                           HSD_JObj* jobj);
 
 #endif

@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <baselib/gobj.h>
+#include <baselib/gobjproc.h>
 #include <baselib/jobj.h>
 #include <baselib/random.h>
 
@@ -254,6 +255,57 @@ void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
             rate);
 }
 
+void msl_viewer_track_stadscreen(int mode, int player)
+{
+    if (track_out == NULL) {
+        return;
+    }
+    fprintf(track_out, "[%d,\"stadscreen\",%d,%d]\n", hook_frame(), mode,
+            mode == 8 ? player : -1);
+}
+
+void msl_viewer_track_bird(int kind, int count, const Vec3* pos)
+{
+    if (track_out == NULL) {
+        return;
+    }
+    fprintf(track_out, "[%d,\"bird\",%d,%d,%.6g,%.6g,%.6g]\n", hook_frame(),
+            kind, count, pos->x, pos->y, pos->z);
+}
+
+// The stage object whose proc is running, or -1 (construction, or a proc
+// that is not a stage's).
+static int running_map_id(void)
+{
+    HSD_GObjProc* proc = HSD_GObj_804D7838;
+    if (proc != NULL && proc->gobj != NULL &&
+        proc->gobj->classifier == HSD_GOBJ_CLASS_STAGE)
+    {
+        return (int) GET_GROUND(proc->gobj)->map_id;
+    }
+    return -1;
+}
+
+void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
+                           HSD_JObj* jobj)
+{
+    Vec3 at = { 0.0F, 0.0F, 0.0F };
+
+    if (track_out == NULL) {
+        return;
+    }
+    if (pos != NULL) {
+        at = *pos;
+    } else if (jobj != NULL) {
+        at.x = jobj->mtx[0][3];
+        at.y = jobj->mtx[1][3];
+        at.z = jobj->mtx[2][3];
+    }
+    fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u]\n",
+            hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
+            (unsigned) seed_now());
+}
+
 static void track_overlay(int frame, int port, int sub, int slot,
                           const ColorOverlay* co)
 {
@@ -435,6 +487,18 @@ static void track_stage(int frame, const MslCoreMatch* match)
                          gp->u.map.xE8, gp->u.map.xEC,
                          frames > 0.0F ? frames : 0.0F);
                 emit_state(frame, "\"fd\"", value);
+                // Part 7's root turns while the background is in phases 9
+                // and 10 (grLast_8021C40C and its animation).
+                if (gp->u.map.xC4_b2_25 == 9 || gp->u.map.xC4_b2_25 == 10) {
+                    HSD_GObj* part = Ground_801C2BA4(7);
+                    HSD_JObj* root = part != NULL ? part->hsd_obj : NULL;
+                    if (root != NULL) {
+                        snprintf(value, sizeof(value), ",%.6g,%.6g,%.6g",
+                                 root->rotate.x, root->rotate.y,
+                                 root->rotate.z);
+                        emit_state(frame, "\"fdrot\"", value);
+                    }
+                }
             }
         }
     }
