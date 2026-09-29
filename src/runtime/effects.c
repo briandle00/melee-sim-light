@@ -598,6 +598,24 @@ static const void* msl_effect_plausible(void* p)
     return p;
 }
 
+// Viewer track only: a float vararg slot. Retail passes f32*; some decomp
+// call sites pass the float itself, which arrives promoted to double. A
+// plausible pointer is read through; otherwise the slot is taken as a
+// double when that gives a finite, reasonably sized value.
+static float msl_effect_float_arg(uint64_t bits)
+{
+    const void* p = msl_effect_plausible((void*) (uintptr_t) bits);
+    double d;
+    if (p != NULL) {
+        return *(const f32*) p;
+    }
+    memcpy(&d, &bits, sizeof(d));
+    if (d == d && d > -1.0e7 && d < 1.0e7) {
+        return (float) d;
+    }
+    return 0.0F;
+}
+
 // Set while a queued efAsync effect is processed, whose spawn the viewer
 // track already recorded at the efAsync_Spawn call.
 static int msl_effect_processing_queued;
@@ -831,12 +849,13 @@ void efAsync_Spawn(HSD_GObj* gobj, void* queue_head, u32 spawn_kind,
     node->jobj = jobj;
     if (msl_viewer_track_on) {
         // The arguments as efasync.c::efAsync_Spawn reads them per kind.
-        // Some decomp call sites pass floats where retail passes f32*, so
-        // only a plausible pointer is read.
+        // Some decomp call sites pass floats (promoted to double) where
+        // retail passes f32*; msl_effect_float_arg takes either. A Vec3 the
+        // call passes by value arrives by reference on this ABI.
         va_list args;
         const Vec3* at = NULL;
-        const f32* p0 = NULL;
-        const f32* p1 = NULL;
+        float a0 = 0.0F;
+        float a1 = 0.0F;
         va_start(args, jobj);
         switch (spawn_kind) {
         case EF_SPAWN_POS_OFFSET:
@@ -846,24 +865,23 @@ void efAsync_Spawn(HSD_GObj* gobj, void* queue_head, u32 spawn_kind,
             break;
         case EF_SPAWN_ATTACH_PARAM:
         case EF_SPAWN_POS_PARAM:
-            p0 = msl_effect_plausible(va_arg(args, void*));
+            a0 = msl_effect_float_arg(va_arg(args, uint64_t));
             break;
         case EF_SPAWN_POS_OFFSET_PARAM:
             at = msl_effect_plausible(va_arg(args, void*));
-            p0 = msl_effect_plausible(va_arg(args, void*));
+            a0 = msl_effect_float_arg(va_arg(args, uint64_t));
             break;
         case EF_SPAWN_POS_OFFSET_PARAM2:
             at = msl_effect_plausible(va_arg(args, void*));
-            p0 = msl_effect_plausible(va_arg(args, void*));
-            p1 = msl_effect_plausible(va_arg(args, void*));
+            a0 = msl_effect_float_arg(va_arg(args, uint64_t));
+            a1 = msl_effect_float_arg(va_arg(args, uint64_t));
             break;
         default:
             break;
         }
         va_end(args);
         msl_viewer_track_fx(gobj, (s32) gfx_id, jobj, at,
-                            p0 != NULL ? *p0 : 0.0F,
-                            p1 != NULL ? *p1 : 0.0F);
+                            a0, a1);
     }
     if (spawn_kind == EF_SPAWN_CAMERA_SHAKE) {
         va_list args;

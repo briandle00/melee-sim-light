@@ -1027,10 +1027,28 @@ VIEWER_TRACK_MISSING = {
 }
 
 
+_TRACK_BUILD = {}
+
+
 def viewer_track_build() -> int:
-    """sim_build for the viewer track: the driver executable's modification
-    time, which changes whenever the core is rebuilt."""
-    return int(DRIVER.stat().st_mtime)
+    """sim_build for the viewer track: the first 48 bits of the SHA-256 of
+    the driver executable with its PE link timestamp and checksum zeroed, so
+    it changes only when the code does, not on every relink. Cached per
+    path, size and modification time."""
+    stat = DRIVER.stat()
+    key = (str(DRIVER), stat.st_size, stat.st_mtime_ns)
+    if key not in _TRACK_BUILD:
+        import hashlib
+        image = bytearray(DRIVER.read_bytes())
+        if image[:2] == b"MZ":
+            pe = struct.unpack_from("<I", image, 0x3C)[0]
+            if image[pe:pe + 4] == b"PE\0\0":
+                image[pe + 8:pe + 12] = bytes(4)          # TimeDateStamp
+                image[pe + 88:pe + 92] = bytes(4)         # CheckSum
+        digest = hashlib.sha256(image).hexdigest()
+        _TRACK_BUILD.clear()
+        _TRACK_BUILD[key] = int(digest[:12], 16)
+    return _TRACK_BUILD[key]
 
 
 def export_viewer_track(path, out_json):
