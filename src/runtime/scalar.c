@@ -179,7 +179,12 @@ static const MslCoreStageSpec stage_specs[] = {
       OLDPUPUPU,
       "/GrOp.dat",
       &grOp_803E6748,
-      (1U << 2) | (1U << 7),
+      // Map 1's animation carries particle events (stage generators
+      // 30000-30002), and creating each generator draws from the gameplay
+      // RNG ahead of that frame's CPU decisions (Nana's ledge option).
+      // Keep it animating.
+      // refs/melee/src/melee/ef/eflib.c::efLib_Cb_DPtcl
+      (1U << 1) | (1U << 2) | (1U << 7),
       0,
       { { -46.6F, 37.2F, 0.0F }, { 47.4F, 37.3F, 0.0F },
         { 0.0F, 7.0F, 0.0F }, { 0.0F, 58.5F, 0.0F } },
