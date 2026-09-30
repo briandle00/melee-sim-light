@@ -267,8 +267,12 @@ static inline uint8_t msl_core_item_gameplay_misc_mask(uint16_t kind,
         return MSL_CORE_ITEM_MISC0;
     case MSL_CORE_ITEM_KIND_SHEIK_CHAIN:
         // The first samples are ItemLink pointers; x14/x18 are scalars.
+        // x18 is first assigned by it_802BC080 in state 3; in the picked-up
+        // states 0-2 Slippi samples whatever the pool slot held.
         // refs/melee/src/melee/it/itCharItems.h::itSeakChain_ItemVars
-        return MSL_CORE_ITEM_MISC2 | MSL_CORE_ITEM_MISC3;
+        // refs/melee/src/melee/it/items/itseakchain.c::it_802BC080
+        return state < 3 ? MSL_CORE_ITEM_MISC2
+                         : MSL_CORE_ITEM_MISC2 | MSL_CORE_ITEM_MISC3;
     case MSL_CORE_ITEM_KIND_PEACH_EXPLODE:
     case MSL_CORE_ITEM_KIND_PEACH_PARASOL:
     case MSL_CORE_ITEM_KIND_PEACH_TOAD:
