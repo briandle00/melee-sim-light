@@ -15,7 +15,6 @@
 #include "ft/ftlib.h"
 #include "gr/grdatfiles.h"
 #include "gr/grizumi.h"
-#include "gr/grpstadium.h"
 #include "gr/ground.h"
 #include "gr/grpstadium.h"
 #include "gr/types.h"
@@ -1447,10 +1446,11 @@ static int match_construct(MslCoreMatch* match,
     // for every Kirby in the match.
     // refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::ftKb_SpecialN_800EFB4C
     // An unfrozen Pokemon Stadium adds its transformations' grounds in play
-    // (see the island reserve below). Its per-pool terms are about twice the
-    // largest extra peak over the same recording replayed frozen, across 18
-    // console recordings under Common/Preload Stadium Transformations: AObjs
-    // +7, FObjs +13, IDs +26, GObjs +5, procs +25, Vecs +4, JObjs +37.
+    // (see the island reserve below). Each per-pool term is twice the largest
+    // extra peak over the same recording replayed frozen, rounded up to a
+    // multiple of 16, across 18 console recordings under Common/Preload
+    // Stadium Transformations: AObjs +7 (16), FObjs +13 (32), IDs +26 (64),
+    // GObjs +5 (16), procs +25 (64), Vecs +4 (16), JObjs +37 (80).
     stadium_transforms =
         match->config.stadium_transformations != MSL_STADIUM_FROZEN ? 1 : 0;
     HSD_ObjAllocEnsureFree(&fighter_x2040_alloc_data, 4 * kirby_count);

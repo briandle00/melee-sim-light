@@ -289,6 +289,18 @@ void grStadium_801D1290(Ground_GObj* gobj)
         gp->u.display.xF2 = 0;
         gp->u.display.xF4 = NULL;
         msl_stadium_show(gobj, 0, 0);
+        // One part of the jumbotron is gameplay-visible once the stage
+        // transforms: at the match start fn_801D11E4 gives it a camera
+        // subject, and every transformation screen (grStadium_801D2528 modes
+        // 2-6) makes it Active (x8 = 0), so the camera frames the stage
+        // centre while the screen is up. The camera decides the vanilla
+        // magnifier, and so the 1% offscreen damage. Every other screen, and
+        // the one grStadium_801D2A60 picks when a transformation screen's x28
+        // frames run out (8, 7, 1 or 14: yakumono weight x4E for 15 is zero),
+        // leaves it Inactive (x8 = 1). A frozen stadium never shows a
+        // transformation screen, so only an unfrozen one needs the subject.
+        // refs/melee/src/melee/gr/grpstadium.c::{fn_801D11E4,
+        //   grStadium_801D2528,grStadium_801D2A60}
         if (msl_stadium_transformations() != MSL_STADIUM_FROZEN) {
             Ground_801C10B8(gobj, fn_801D11E4);
         }
