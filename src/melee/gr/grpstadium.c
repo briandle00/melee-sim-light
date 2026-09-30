@@ -266,21 +266,12 @@ void fn_801D11E4(Ground_GObj* gobj)
 void grStadium_801D1290(Ground_GObj* gobj)
 {
 #ifdef MSL_CORE_HOSTED
-    // The jumbotron model/material setup is renderer-owned. Its scheduled
-    // callback retains the source RNG projection below.
-    //
-    // One part of it is gameplay-visible once the stage transforms: at the
-    // match start fn_801D11E4 gives the jumbotron a camera subject, and every
-    // transformation screen (grStadium_801D2528 modes 2-6) makes it Active
-    // (x8 = 0), so the camera frames the stage centre while the screen is up.
-    // The camera decides the vanilla magnifier, and so the 1% offscreen
-    // damage. Every other screen, and the one grStadium_801D2A60 picks when
-    // a transformation screen's x28 frames run out (8, 7, 1 or 14: yakumono
-    // weight x4E for 15 is zero), leaves it Inactive (x8 = 1). A frozen
-    // stadium never shows a transformation screen, so only an unfrozen one
-    // needs the subject.
-    // refs/melee/src/melee/gr/grpstadium.c::{fn_801D11E4,grStadium_801D2528,
-    //   grStadium_801D2344,grStadium_801D2A60}
+    // The jumbotron model/material setup is renderer-owned. Its screen
+    // schedule is not: choosing the next screen draws random numbers, so the
+    // display state starts as grStadium_801D2278 leaves it, on screen 0, and
+    // msl_stadium_display_step runs the schedule each frame.
+    // refs/melee/src/melee/gr/grpstadium.c::{grStadium_801D2278,
+    //   grStadium_801D2344}
     {
         Ground* gp = GET_GROUND(gobj);
         // grStadium_801D2278's state, then its first screen (0).
@@ -2309,10 +2300,7 @@ static void msl_stadium_display_step(Ground_GObj* display)
             msl_stadium_next_screen(display);
             break;
         }
-        if (Player_GetEntity(gp->u.display.xEE) == NULL ||
-            Player_8003219C(gp->u.display.xEE) ||
-            !msl_stadium_closeup_keeps(gp))
-        {
+        if (!msl_stadium_closeup_keeps(gp)) {
             msl_stadium_next_screen(display);
         }
         break;
