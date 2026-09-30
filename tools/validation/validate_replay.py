@@ -23,7 +23,7 @@ from tools.validation.slpz import (
     resolve_replay_path,
     set_native_unorder_events,
 )
-from tools.validation.admission import (require_admissible)
+from tools.validation.admission import require_admissible
 from tools.validation.suite_io import ReplaySuite, display_path_under_repo, load_suite
 
 
