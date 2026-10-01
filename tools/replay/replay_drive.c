@@ -14,7 +14,16 @@
  * agent there, say - replays the recording forward to that frame and compares.
  *
  *   replay_drive --sizes
- *   replay_drive <data_root> <tape> <out>
+ *   replay_drive <data_root> <tape> <out> [--run <lanes>] [--save <state>]
+ *   replay_drive <data_root> <tape> <out> --load <state> --run <lanes>
+ *
+ * --save writes the match as it stands at the end of the tape (the position
+ * run mode forks its lanes from) to <state>, a core savestate. --load starts
+ * from such a state instead of replaying the tape: the tape is read only for
+ * the match's settings and its first frame's inputs, and <out> is not
+ * written. A state is good only for the build that saved it (the savestate
+ * header checks the layout, the game data and the image); a state this build
+ * cannot take is an error, exit code 3, so the caller can replay instead.
  */
 
 #include <stdint.h>
@@ -483,6 +492,63 @@ static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
     }
 }
 
+/* The whole of a file, or NULL. */
+static uint8_t* read_whole(const char* path, size_t* size)
+{
+    FILE* f = fopen(path, "rb");
+    uint8_t* bytes;
+    long n;
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0 ||
+        fseek(f, 0, SEEK_SET) != 0)
+    {
+        fclose(f);
+        return NULL;
+    }
+    bytes = (uint8_t*) malloc(n > 0 ? (size_t) n : 1);
+    if (bytes == NULL || fread(bytes, 1, (size_t) n, f) != (size_t) n) {
+        free(bytes);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    *size = (size_t) n;
+    return bytes;
+}
+
+/* The match's savestate written to `path` (via a temporary name, so a reader
+   never sees half of one). */
+static int save_state(const MslCoreMatch* match, const char* path)
+{
+    size_t needed = msl_core_match_save_size(match);
+    size_t written = 0;
+    uint8_t* state = (uint8_t*) malloc(needed > 0 ? needed : 1);
+    char part[4096];
+    FILE* f;
+    int ok;
+    if (state == NULL ||
+        msl_core_match_save(match, state, needed, &written) != 0 ||
+        snprintf(part, sizeof(part), "%s.part", path) >= (int) sizeof(part))
+    {
+        free(state);
+        return -1;
+    }
+    f = fopen(part, "wb");
+    ok = f != NULL && fwrite(state, 1, written, f) == written;
+    if (f != NULL && fclose(f) != 0) {
+        ok = 0;
+    }
+    free(state);
+    remove(path);
+    if (!ok || rename(part, path) != 0) {
+        remove(part);
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     TapeConfig tape;
@@ -497,22 +563,38 @@ int main(int argc, char** argv)
     FILE* track_file = NULL;
     uint32_t index;
     int player;
-    int lanes;
+    int lanes = 0;
+    int arg;
+    const char* save_path = NULL;
+    const char* load_path = NULL;
 
     if (argc == 2 && strcmp(argv[1], "--sizes") == 0) {
         printf("{\"config\": %u, \"frame\": %u, \"out\": %u, "
-               "\"run_out\": %u, \"run_in\": %u, \"max_lanes\": %d}\n",
+               "\"run_out\": %u, \"run_in\": %u, \"max_lanes\": %d, "
+               "\"save_load\": 1}\n",
                (unsigned) sizeof(TapeConfig), (unsigned) sizeof(TapeFrame),
                (unsigned) sizeof(OutFrame), (unsigned) sizeof(RunOut),
                (unsigned) sizeof(RunIn), (int) MAX_LANES);
         return 0;
     }
-    if (argc != 4 && !(argc == 6 && strcmp(argv[4], "--run") == 0)) {
-        fprintf(stderr, "usage: %s <data_root> <tape> <out> [--run <lanes>]\n",
-                argv[0]);
+    for (arg = 4; arg + 1 < argc; arg += 2) {
+        if (strcmp(argv[arg], "--run") == 0) {
+            lanes = atoi(argv[arg + 1]);
+        } else if (strcmp(argv[arg], "--save") == 0) {
+            save_path = argv[arg + 1];
+        } else if (strcmp(argv[arg], "--load") == 0) {
+            load_path = argv[arg + 1];
+        } else {
+            break;
+        }
+    }
+    if (argc < 4 || arg != argc || (load_path != NULL && lanes < 1) ||
+        (load_path != NULL && save_path != NULL))
+    {
+        fprintf(stderr, "usage: %s <data_root> <tape> <out> [--run <lanes>] "
+                "[--save <state> | --load <state>]\n", argv[0]);
         return 2;
     }
-    lanes = argc == 6 ? atoi(argv[5]) : 0;
     input = fopen(argv[2], "rb");
     if (input == NULL || fread(&tape, 1, sizeof(tape), input) != sizeof(tape)) {
         fprintf(stderr, "cannot read tape %s\n", argv[2]);
@@ -585,6 +667,30 @@ int main(int argc, char** argv)
         fprintf(stderr, "match reset failed\n");
         return 1;
     }
+    if (load_path != NULL) {
+        /* the position saved before (--save), not the tape replayed again */
+        size_t size = 0;
+        uint8_t* state = read_whole(load_path, &size);
+        int status;
+        fclose(input);
+        if (track_file != NULL) {
+            msl_viewer_track_end();
+            fclose(track_file);
+        }
+        if (state == NULL) {
+            fprintf(stderr, "cannot read state %s\n", load_path);
+            return 3;
+        }
+        if (msl_core_match_restore(&match, state, size) != 0) {
+            free(state);
+            fprintf(stderr, "this build cannot take the state %s\n", load_path);
+            return 3;
+        }
+        free(state);
+        status = run_mode(&match, &game_data, &previous, lanes);
+        msl_core_game_data_deinit(&game_data);
+        return status;
+    }
     output = fopen(argv[3], "wb");
     if (output == NULL) {
         fprintf(stderr, "cannot write %s\n", argv[3]);
@@ -631,6 +737,10 @@ int main(int argc, char** argv)
     }
     if (fclose(output) != 0) {
         fprintf(stderr, "failed to flush output\n");
+        return 1;
+    }
+    if (save_path != NULL && save_state(&match, save_path) != 0) {
+        fprintf(stderr, "cannot save the state to %s\n", save_path);
         return 1;
     }
     if (lanes > 0) {

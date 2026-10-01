@@ -26,6 +26,59 @@ def test_output_row_layout_matches_the_driver():
     assert sizes["frame"] == rd.FRAME_SIZE
 
 
+def _run_mode(args, steps, lanes, run_out, run_in):
+    """A run-mode driver's rows: the start and one per step of `steps`."""
+    proc = subprocess.Popen([str(rd.DRIVER), str(rd.DATA_ROOT)] + args,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    rows = [proc.stdout.read(run_out * lanes)]
+    for step in steps:
+        proc.stdin.write(step)
+        proc.stdin.flush()
+        rows.append(proc.stdout.read(run_out * lanes))
+    proc.stdin.close()
+    err = proc.stderr.read()
+    assert proc.wait() == 0, err
+    return rows
+
+
+def test_a_saved_state_plays_as_the_replayed_one(tmp_path):
+    # --save writes the position run mode forks its lanes from; --load starts
+    # there without the tape: the same rows, step for step, lane for lane
+    recordings = sorted((rd.ROOT / "replays" / "validation").rglob("*.slp"))
+    if not rd.available() or not recordings:
+        pytest.skip("replay_drive, the extracted data or a recording is missing")
+    sizes = json.loads(subprocess.run([str(rd.DRIVER), "--sizes"],
+                                      capture_output=True, text=True,
+                                      check=True).stdout)
+    if not sizes.get("save_load"):
+        pytest.skip("this replay_drive has no --save/--load")
+    replay = rd.read(recordings[0])
+    count = min(900, len(replay["ids"]))
+    tape = tmp_path / "tape.bin"
+    tape.write_bytes(rd.build_tape(replay, count))
+    state = tmp_path / "state.bin"
+    lanes, run_out, run_in = 3, sizes["run_out"], sizes["run_in"]
+    rng = np.random.default_rng(0)
+    steps = [rng.integers(0, 256, run_in * lanes, dtype=np.uint8).tobytes()
+             for _ in range(40)]
+    replayed = _run_mode([str(tape), str(tmp_path / "a.out"), "--run", str(lanes),
+                          "--save", str(state)], steps, lanes, run_out, run_in)
+    loaded = _run_mode([str(tape), str(tmp_path / "b.out"), "--load", str(state),
+                        "--run", str(lanes)], steps, lanes, run_out, run_in)
+    assert state.stat().st_size > 0
+    assert replayed == loaded
+    # a state this build cannot take is exit code 3, for the caller to replay
+    bad = tmp_path / "bad.bin"
+    blob = bytearray(state.read_bytes())
+    blob[100] ^= 0xFF
+    bad.write_bytes(bytes(blob))
+    got = subprocess.run([str(rd.DRIVER), str(rd.DATA_ROOT), str(tape),
+                          str(tmp_path / "c.out"), "--load", str(bad), "--run", "1"],
+                         capture_output=True, input=b"")
+    assert got.returncode == 3
+
+
 def test_recorded_profile_comes_first_and_fitted_ones_follow():
     replay = {"ucf_profile": "ucf:000000"}
     assert rd.candidate_profiles(replay) == (
