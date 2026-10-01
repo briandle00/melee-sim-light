@@ -79,6 +79,62 @@ def test_a_saved_state_plays_as_the_replayed_one(tmp_path):
     assert got.returncode == 3
 
 
+def test_a_serving_driver_plays_several_positions_as_run_mode_does(tmp_path):
+    # --serve: the game data read once, runs one after another, each run's
+    # lanes from several positions (a tape replayed and kept, or its state)
+    recordings = sorted((rd.ROOT / "replays" / "validation").rglob("*.slp"))
+    if not rd.available() or len(recordings) < 2:
+        pytest.skip("replay_drive, the extracted data or recordings are missing")
+    sizes = json.loads(subprocess.run([str(rd.DRIVER), "--sizes"],
+                                      capture_output=True, text=True,
+                                      check=True).stdout)
+    if not sizes.get("serve"):
+        pytest.skip("this replay_drive has no --serve")
+    run_out, run_in = sizes["run_out"], sizes["run_in"]
+    tapes = []
+    for k, path in enumerate(recordings[:2]):
+        replay = rd.read(path)
+        tape = tmp_path / ("tape%d.bin" % k)
+        tape.write_bytes(rd.build_tape(replay, min(700 + 200 * k, len(replay["ids"]))))
+        tapes.append(tape)
+    lanes = [2, 3]
+    rng = np.random.default_rng(1)
+    steps = [rng.integers(0, 256, run_in * sum(lanes), dtype=np.uint8).tobytes()
+             for _ in range(30)]
+    # each position on its own, in run mode
+    alone = []
+    at = 0
+    for tape, n in zip(tapes, lanes):
+        mine = [s[at * run_in:(at + n) * run_in] for s in steps]
+        alone.append(_run_mode([str(tape), str(tmp_path / "x.out"), "--run", str(n)],
+                               mine, n, run_out, run_in))
+        at += n
+    proc = subprocess.Popen([str(rd.DRIVER), str(rd.DATA_ROOT), "--serve"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    total = sum(lanes)
+    for attempt in range(2):          # the first replays and keeps, the second loads
+        groups = ["%d\t%s\t%s\t%s" % (n, tape, tmp_path / ("s%d.bin" % k),
+                                      tmp_path / ("o%d.out" % k))
+                  for k, (tape, n) in enumerate(zip(tapes, lanes))]
+        proc.stdin.write(("run %d\n" % len(groups) + "\n".join(groups) + "\n").encode())
+        proc.stdin.flush()
+        rows = [proc.stdout.read(run_out * total)]
+        for step in steps:
+            proc.stdin.write(b"S" + step)
+            proc.stdin.flush()
+            rows.append(proc.stdout.read(run_out * total))
+        proc.stdin.write(b"E")
+        proc.stdin.flush()
+        for f, row in enumerate(rows):
+            assert row[:run_out * lanes[0]] == alone[0][f], (attempt, f)
+            assert row[run_out * lanes[0]:] == alone[1][f], (attempt, f)
+        assert (tmp_path / "s0.bin").stat().st_size > 0
+    proc.stdin.write(b"quit\n")
+    proc.stdin.close()
+    assert proc.wait(timeout=60) == 0, proc.stderr.read()
+
+
 def test_recorded_profile_comes_first_and_fitted_ones_follow():
     replay = {"ucf_profile": "ucf:000000"}
     assert rd.candidate_profiles(replay) == (

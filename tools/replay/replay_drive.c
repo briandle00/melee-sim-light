@@ -16,6 +16,7 @@
  *   replay_drive --sizes
  *   replay_drive <data_root> <tape> <out> [--run <lanes>] [--save <state>]
  *   replay_drive <data_root> <tape> <out> --load <state> --run <lanes>
+ *   replay_drive <data_root> --serve
  *
  * --save writes the match as it stands at the end of the tape (the position
  * run mode forks its lanes from) to <state>, a core savestate. --load starts
@@ -24,6 +25,15 @@
  * written. A state is good only for the build that saved it (the savestate
  * header checks the layout, the game data and the image); a state this build
  * cannot take is an error, exit code 3, so the caller can replay instead.
+ *
+ * --serve keeps one driver for many runs, the game data read once (most of
+ * a driver's start): each run is a line "run <groups>" and a line a group,
+ * "<lanes>\t<tape>\t<state>\t<out>" (state and out may be "-"). A group's
+ * position is its state when this build can take it, else its tape replayed
+ * (its rows written to <out>, the state saved to <state>). The run's lanes,
+ * every group's in order, answer as run mode's do; then each step is a byte
+ * 'S' and the lanes' inputs, and 'E' ends the run. "quit" or the end of the
+ * input ends the driver.
  */
 
 #include <stdint.h>
@@ -492,6 +502,47 @@ static int run_mode(MslCoreMatch* replayed, const MslCoreGameData* game_data,
     }
 }
 
+/* A tape's settings as the core's match config. */
+static void config_from_tape(MslCoreMatchConfig* config, const TapeConfig* tape)
+{
+    int player;
+    memset(config, 0, sizeof(*config));
+    config->stage_id = (uint32_t) tape->stage_id;
+    config->frame_id = tape->frame_id;
+    config->frame_pre_random_seed = tape->frame_seed;
+    config->initial_random_seed = tape->initial_seed;
+    config->match_damage_ratio = tape->damage_ratio;
+    config->num_players = tape->num_players;
+    config->is_teams = tape->is_teams;
+    config->friendly_fire = tape->friendly_fire;
+    config->stock_count = tape->stock_count;
+    config->online_fnmsubs_zero = tape->online_fnmsubs_zero;
+    config->brawl_offscreen_damage = tape->brawl_offscreen_damage;
+    config->freeze_dead_up_fall_physics = tape->freeze_dead_up_fall_physics;
+    config->whispy_dead_fighter_fix = tape->whispy_dead_fighter_fix;
+    config->ucf_cardinals_1_0_enabled = tape->ucf_cardinals_1_0_enabled;
+    config->ucf_shield_sdi_enabled = tape->ucf_shield_sdi_enabled;
+    config->ucf_sdi_enabled = tape->ucf_sdi_enabled;
+    config->ucf_shield_drop_extended_enabled =
+        tape->ucf_shield_drop_extended_enabled;
+    config->ucf_shield_drop_084_enabled = tape->ucf_shield_drop_084_enabled;
+    config->stage_event_streams = tape->stage_event_streams;
+    config->stadium_transformations = tape->stadium_transformations;
+    config->slippi_patches = tape->slippi_patches;
+    config->jit_arithmetic = tape->jit_arithmetic;
+    for (player = 0; player < 4; ++player) {
+        config->players[player].char_id = tape->players[player].char_id;
+        config->players[player].team_id = tape->players[player].team_id;
+        config->players[player].facing_and_port =
+            tape->players[player].facing_and_port;
+        config->players[player].costume_id = tape->players[player].costume_id;
+        config->players[player].handicap = tape->players[player].handicap;
+        config->players[player].start_percent =
+            tape->players[player].start_percent;
+        config->players[player].cpu_level = tape->players[player].cpu_level;
+    }
+}
+
 /* The whole of a file, or NULL. */
 static uint8_t* read_whole(const char* path, size_t* size)
 {
@@ -549,6 +600,284 @@ static int save_state(const MslCoreMatch* match, const char* path)
     return 0;
 }
 
+/* A run's position for --serve: the state when this build takes it, else
+   the tape replayed (rows to out_path, the state saved to state_path).
+   NULL on failure (said on stderr). */
+static MslCoreMatch* serve_position(const MslCoreGameData* game_data,
+                                    const char* tape_path,
+                                    const char* state_path,
+                                    const char* out_path,
+                                    MslCoreInput* previous)
+{
+    TapeConfig tape;
+    TapeFrame frame;
+    MslCoreMatchConfig config;
+    MslCoreMatch* match;
+    FILE* input = fopen(tape_path, "rb");
+    FILE* output = NULL;
+    uint32_t index;
+
+    if (input == NULL || fread(&tape, 1, sizeof(tape), input) != sizeof(tape) ||
+        tape.magic != 0x314C534DU ||
+        fread(&frame, 1, sizeof(frame), input) != sizeof(frame))
+    {
+        fprintf(stderr, "serve: cannot read tape %s\n", tape_path);
+        if (input != NULL) {
+            fclose(input);
+        }
+        return NULL;
+    }
+    config_from_tape(&config, &tape);
+    fill_input(previous, &frame, tape.num_players);
+    match = (MslCoreMatch*) calloc(1, sizeof(*match));
+    if (match == NULL || msl_core_match_storage_init(match) != 0 ||
+        msl_core_match_reset(match, game_data, &config, previous) != 0)
+    {
+        fprintf(stderr, "serve: match reset failed\n");
+        fclose(input);
+        free(match);
+        return NULL;
+    }
+    if (state_path != NULL) {
+        size_t size = 0;
+        uint8_t* state = read_whole(state_path, &size);
+        if (state != NULL) {
+            int ok = msl_core_match_restore(match, state, size) == 0;
+            free(state);
+            if (ok) {
+                fclose(input);
+                return match;
+            }
+            /* not this build's: replayed below, from a fresh match */
+            msl_core_match_destroy(match);
+            memset(match, 0, sizeof(*match));
+            if (msl_core_match_storage_init(match) != 0 ||
+                msl_core_match_reset(match, game_data, &config, previous) != 0)
+            {
+                fprintf(stderr, "serve: match reset failed\n");
+                fclose(input);
+                free(match);
+                return NULL;
+            }
+        }
+    }
+    if (out_path != NULL) {
+        output = fopen(out_path, "wb");
+    }
+    for (index = 0; index < tape.frame_count; ++index) {
+        MslCoreInput step_input;
+        MslCoreStageEvents events;
+        if (index > 0 &&
+            fread(&frame, 1, sizeof(frame), input) != sizeof(frame))
+        {
+            fprintf(stderr, "serve: short tape at frame %u\n", index);
+            break;
+        }
+        fill_input(&step_input, &frame, tape.num_players);
+        fill_events(&events, &frame);
+        if (msl_core_match_step(match, &step_input, frame.frame_seed,
+                                &events) != 0)
+        {
+            fprintf(stderr, "serve: step failed at frame %u\n", index);
+            fclose(input);
+            if (output != NULL) {
+                fclose(output);
+            }
+            msl_core_match_destroy(match);
+            free(match);
+            return NULL;
+        }
+        if (output != NULL) {
+            OutFrame out;
+            int phase;
+            int kind;
+            fill_output(&out, msl_core_match_output(match));
+            msl_core_stadium_state(match, &phase, &kind);
+            out.stadium_phase = (uint16_t) phase;
+            out.stadium_kind = (uint16_t) kind;
+            fwrite(&out, 1, sizeof(out), output);
+        }
+    }
+    fclose(input);
+    if (output != NULL) {
+        fclose(output);
+    }
+    if (state_path != NULL) {
+        save_state(match, state_path);  /* a later run's start; none is fine */
+    }
+    return match;
+}
+
+/* "-" or nothing: no path. The line's own text otherwise (it is cut in place). */
+static char* serve_field(char** cursor)
+{
+    char* start = *cursor;
+    char* end;
+    if (start == NULL) {
+        return NULL;
+    }
+    end = strchr(start, '\t');
+    if (end != NULL) {
+        *end = '\0';
+        *cursor = end + 1;
+    } else {
+        *cursor = NULL;
+        end = start + strlen(start);
+        while (end > start && (end[-1] == '\n' || end[-1] == '\r')) {
+            *--end = '\0';
+        }
+    }
+    return (start[0] == '\0' || strcmp(start, "-") == 0) ? NULL : start;
+}
+
+enum { SERVE_GROUPS_MAX = 512 };
+
+static int serve_mode(const MslCoreGameData* game_data)
+{
+    static char line[16384];
+    MSL_BINARY_STREAMS();
+    for (;;) {
+        MslCoreMatch* bases[SERVE_GROUPS_MAX];
+        MslCoreInput previous[SERVE_GROUPS_MAX];
+        int counts[SERVE_GROUPS_MAX];
+        MslCoreMatch* storage;
+        MslCoreMatch** matches;
+        RunOut* out;
+        RunIn* in;
+        int groups = 0;
+        int group;
+        int total = 0;
+        int lane;
+        int at;
+        int status = 0;
+
+        if (fgets(line, sizeof(line), stdin) == NULL ||
+            strncmp(line, "quit", 4) == 0)
+        {
+            return 0;
+        }
+        if (sscanf(line, "run %d", &groups) != 1 || groups < 1 ||
+            groups > SERVE_GROUPS_MAX)
+        {
+            fprintf(stderr, "serve: expected \"run <groups>\"\n");
+            return 2;
+        }
+        for (group = 0; group < groups; ++group) {
+            char* cursor = line;
+            char* lanes_text;
+            char* tape_path;
+            char* state_path;
+            char* out_path;
+            if (fgets(line, sizeof(line), stdin) == NULL) {
+                return 2;
+            }
+            lanes_text = serve_field(&cursor);
+            tape_path = serve_field(&cursor);
+            state_path = serve_field(&cursor);
+            out_path = serve_field(&cursor);
+            counts[group] = lanes_text != NULL ? atoi(lanes_text) : 0;
+            if (tape_path == NULL || counts[group] < 1 ||
+                total + counts[group] > MAX_LANES)
+            {
+                fprintf(stderr, "serve: a group is \"<lanes>\\t<tape>\\t<state>\\t<out>\"\n");
+                return 2;
+            }
+            bases[group] = serve_position(game_data, tape_path, state_path,
+                                          out_path, &previous[group]);
+            if (bases[group] == NULL) {
+                return 1;
+            }
+            total += counts[group];
+        }
+        storage = (MslCoreMatch*) calloc((size_t) total, sizeof(*storage));
+        matches = (MslCoreMatch**) calloc((size_t) total, sizeof(*matches));
+        out = (RunOut*) calloc((size_t) total, sizeof(*out));
+        in = (RunIn*) calloc((size_t) total, sizeof(*in));
+        if (storage == NULL || matches == NULL || out == NULL || in == NULL) {
+            fprintf(stderr, "serve: not enough memory for %d lanes\n", total);
+            return 1;
+        }
+        /* each group's first lane is its position itself; the others are
+           copies of it */
+        at = 0;
+        for (group = 0; group < groups; ++group) {
+            for (lane = 0; lane < counts[group]; ++lane, ++at) {
+                if (lane == 0) {
+                    matches[at] = bases[group];
+                    continue;
+                }
+                matches[at] = &storage[at];
+                if (msl_core_match_init(matches[at], game_data,
+                                        &bases[group]->config,
+                                        &previous[group]) != 0 ||
+                    msl_core_match_copy(matches[at], bases[group]) != 0)
+                {
+                    fprintf(stderr, "serve: lane %d could not be made\n", at);
+                    return 1;
+                }
+            }
+        }
+        for (lane = 0; lane < total; ++lane) {
+            fill_run(&out[lane], msl_core_match_output(matches[lane]));
+        }
+        if (fwrite(out, sizeof(*out), (size_t) total, stdout) !=
+                (size_t) total || fflush(stdout) != 0)
+        {
+            return 1;
+        }
+        for (;;) {
+            static const MslCoreStageEvents no_events = { 0 };
+            int c = fgetc(stdin);
+            if (c == EOF) {
+                status = -1;
+                break;
+            }
+            if (c == 'E') {
+                break;
+            }
+            if (c != 'S' ||
+                fread(in, sizeof(*in), (size_t) total, stdin) != (size_t) total)
+            {
+                fprintf(stderr, "serve: expected a step\n");
+                return 2;
+            }
+            for (lane = 0; lane < total; ++lane) {
+                MslCoreInput input;
+                TapeFrame carrier;
+                memset(&carrier, 0, sizeof(carrier));
+                memcpy(carrier.p, in[lane].p, sizeof(carrier.p));
+                fill_input(&input, &carrier, matches[lane]->config.num_players);
+                if (msl_core_match_step(matches[lane], &input,
+                                        matches[lane]->random_seed,
+                                        &no_events) != 0)
+                {
+                    fprintf(stderr, "serve: step failed on lane %d\n", lane);
+                    return 1;
+                }
+                fill_run(&out[lane], msl_core_match_output(matches[lane]));
+            }
+            if (fwrite(out, sizeof(*out), (size_t) total, stdout) !=
+                    (size_t) total || fflush(stdout) != 0)
+            {
+                return 1;
+            }
+        }
+        for (lane = 0; lane < total; ++lane) {
+            msl_core_match_destroy(matches[lane]);
+        }
+        for (group = 0; group < groups; ++group) {
+            free(bases[group]);
+        }
+        free(storage);
+        free(matches);
+        free(out);
+        free(in);
+        if (status < 0) {
+            return 0;                   /* the caller is done */
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     TapeConfig tape;
@@ -562,16 +891,25 @@ int main(int argc, char** argv)
     FILE* output;
     FILE* track_file = NULL;
     uint32_t index;
-    int player;
     int lanes = 0;
     int arg;
     const char* save_path = NULL;
     const char* load_path = NULL;
 
+    if (argc == 3 && strcmp(argv[2], "--serve") == 0) {
+        int status;
+        if (msl_core_game_data_init(&game_data, argv[1]) != 0) {
+            fprintf(stderr, "game data init failed\n");
+            return 1;
+        }
+        status = serve_mode(&game_data);
+        msl_core_game_data_deinit(&game_data);
+        return status;
+    }
     if (argc == 2 && strcmp(argv[1], "--sizes") == 0) {
         printf("{\"config\": %u, \"frame\": %u, \"out\": %u, "
                "\"run_out\": %u, \"run_in\": %u, \"max_lanes\": %d, "
-               "\"save_load\": 1}\n",
+               "\"save_load\": 1, \"serve\": 1}\n",
                (unsigned) sizeof(TapeConfig), (unsigned) sizeof(TapeFrame),
                (unsigned) sizeof(OutFrame), (unsigned) sizeof(RunOut),
                (unsigned) sizeof(RunIn), (int) MAX_LANES);
@@ -604,41 +942,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "bad tape magic %08x\n", tape.magic);
         return 1;
     }
-    memset(&config, 0, sizeof(config));
-    config.stage_id = (uint32_t) tape.stage_id;
-    config.frame_id = tape.frame_id;
-    config.frame_pre_random_seed = tape.frame_seed;
-    config.initial_random_seed = tape.initial_seed;
-    config.match_damage_ratio = tape.damage_ratio;
-    config.num_players = tape.num_players;
-    config.is_teams = tape.is_teams;
-    config.friendly_fire = tape.friendly_fire;
-    config.stock_count = tape.stock_count;
-    config.online_fnmsubs_zero = tape.online_fnmsubs_zero;
-    config.brawl_offscreen_damage = tape.brawl_offscreen_damage;
-    config.freeze_dead_up_fall_physics = tape.freeze_dead_up_fall_physics;
-    config.whispy_dead_fighter_fix = tape.whispy_dead_fighter_fix;
-    config.ucf_cardinals_1_0_enabled = tape.ucf_cardinals_1_0_enabled;
-    config.ucf_shield_sdi_enabled = tape.ucf_shield_sdi_enabled;
-    config.ucf_sdi_enabled = tape.ucf_sdi_enabled;
-    config.ucf_shield_drop_extended_enabled =
-        tape.ucf_shield_drop_extended_enabled;
-    config.ucf_shield_drop_084_enabled = tape.ucf_shield_drop_084_enabled;
-    config.stage_event_streams = tape.stage_event_streams;
-    config.stadium_transformations = tape.stadium_transformations;
-    config.slippi_patches = tape.slippi_patches;
-    config.jit_arithmetic = tape.jit_arithmetic;
-    for (player = 0; player < 4; ++player) {
-        config.players[player].char_id = tape.players[player].char_id;
-        config.players[player].team_id = tape.players[player].team_id;
-        config.players[player].facing_and_port =
-            tape.players[player].facing_and_port;
-        config.players[player].costume_id = tape.players[player].costume_id;
-        config.players[player].handicap = tape.players[player].handicap;
-        config.players[player].start_percent =
-            tape.players[player].start_percent;
-        config.players[player].cpu_level = tape.players[player].cpu_level;
-    }
+    config_from_tape(&config, &tape);
     if (fread(&frame, 1, sizeof(frame), input) != sizeof(frame)) {
         fprintf(stderr, "tape has no frames\n");
         return 1;
