@@ -686,6 +686,34 @@ static void track_items(int frame, const MslCoreMatch* match)
         default:
             break;
         }
+        // Which of its owner's articles (ftData x48_items, the list each
+        // fighter's OnLoad registers its items' kinds from: it_8026B3F8)
+        // this kind of item is drawn with, once per kind: [frame,"art",kind,
+        // owner's character, index], -1 when it is none of them (a Kirby
+        // copy's, an item of the stage's).
+        snprintf(key, sizeof(key), "\"art\",%d", (int) ip->kind);
+        if (last_state(key) == NULL) {
+            int found = -1;
+            int character = -1;
+            if (ip->owner != NULL &&
+                ip->owner->classifier == HSD_GOBJ_CLASS_FIGHTER)
+            {
+                Fighter* fp = GET_FIGHTER(ip->owner);
+                Article** items = fp->ft_data != NULL
+                                      ? (Article**) fp->ft_data->x48_items
+                                      : NULL;
+                int k;
+                character = (int) fp->kind;
+                for (k = 0; items != NULL && k < 16; ++k) {
+                    if (items[k] == ip->xC4_article_data) {
+                        found = k;
+                        break;
+                    }
+                }
+            }
+            snprintf(value, sizeof(value), ",%d,%d", character, found);
+            emit_state(frame, key, value);
+        }
         // The root joint's Euler rotation, on change (spinning throws,
         // turnips, bombs).
         if (jobj != NULL && !(jobj->flags & JOBJ_USE_QUATERNION)) {

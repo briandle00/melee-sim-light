@@ -451,6 +451,11 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
             out.callback = callback_name(p->effect.update);
             out.lifetime = p->effect.lifetime;
             out.params = p->effect.params;
+            // (one made on no joint that the dispatch then hung on one: it
+            // follows that joint, at its callback's offset)
+            if (out.joint == NULL) {
+                out.joint = p->effect.attach_jobj;
+            }
         } else {
             out.t = strcmp(p->how, "place") == 0 ? p->gen.pos : p->srt.translate;
             out.r.x = p->srt.rot.x;
