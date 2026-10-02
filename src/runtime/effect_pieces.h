@@ -26,6 +26,8 @@ typedef struct MslEffectPiece {
     int lifetime;         // a model's lifetime, when the dispatch set one
     Vec3 params;          // a model's callback parameters
     int mirrored;         // a generator mirrored to face left
+    Vec3 at;              // where it was made: its place, or its joint's
+                          // world position as it was made
 } MslEffectPiece;
 
 // A spawn efSync_Spawn makes now, with its own arguments.

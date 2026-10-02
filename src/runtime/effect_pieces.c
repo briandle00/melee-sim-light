@@ -442,6 +442,7 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
         out.id = p->id;
         out.how = p->how;
         out.joint = p->joint;
+        out.at = p->at;
         if (p->kind == 'm') {
             out.t = p->jobj.translate;
             out.r.x = p->jobj.rotate.x;

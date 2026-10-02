@@ -213,7 +213,8 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
 }
 
 // [frame,"fxp",gfx_id,owner kind,owner id,index,"m"|"g",id,how,joint,
-//  tx,ty,tz,rx,ry,rz,sx,sy,sz,callback,lifetime,p0,p1,p2,mirrored]
+//  tx,ty,tz,rx,ry,rz,sx,sy,sz,callback,lifetime,p0,p1,p2,mirrored,
+//  ax,ay,az: where it was made, its joint's world position for one on a joint]
 void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
                           const MslEffectPiece* p)
 {
@@ -228,12 +229,12 @@ void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
     fprintf(track_out,
             "[%d,\"fxp\",%d,\"%c\",%d,%d,\"%c\",%d,\"%s\",%d,"
             "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,\"%s\",%d,"
-            "%.6g,%.6g,%.6g,%d]\n",
+            "%.6g,%.6g,%.6g,%d,%.6g,%.6g,%.6g]\n",
             hook_frame(), (int) gfx_id, kind, id, p->index, p->kind,
             (int) p->id, p->how, joint, p->t.x, p->t.y, p->t.z, p->r.x,
             p->r.y, p->r.z, p->s.x, p->s.y, p->s.z, p->callback,
             p->lifetime, p->params.x, p->params.y, p->params.z,
-            p->mirrored);
+            p->mirrored, p->at.x, p->at.y, p->at.z);
 }
 
 void msl_viewer_track_fxend(HSD_GObj* owner)
