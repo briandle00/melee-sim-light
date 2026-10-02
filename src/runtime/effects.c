@@ -6,6 +6,7 @@
 #include "ef/types.h"
 #include "gr/ground.h"
 #include "lb/lb_00B0.h"
+#include "runtime/effect_pieces.h"
 #include "runtime/viewer_track.h"
 #include "lb/lbarchive.h"
 
@@ -584,6 +585,26 @@ static void msl_effect_consume_common_dispatch_generator(s32 gfx_id)
     }
 }
 
+// Viewer track only (runtime/effect_pieces.c): the random numbers a real
+// creation of this generator, or of this common model, draws.
+void msl_effect_pieces_consume_generator(s32 generator_id)
+{
+    msl_effect_consume_generator_rng(generator_id);
+}
+
+void msl_effect_pieces_consume_model(int model_id)
+{
+    msl_effect_consume_common_model_start(model_id);
+}
+
+// Viewer track only: a queued spawn's arguments, by its queue node, for
+// the pieces it makes when it is processed (not part of the match state).
+static _Thread_local struct {
+    Vec3 params;
+    float extra1;
+    float extra2;
+} msl_effect_piece_args[MSL_CORE_EFFECT_QUEUE_CAPACITY];
+
 // Viewer track only: a vararg that should be a pointer, or NULL when it
 // cannot be one. A float passed by value arrives as a double whose bits
 // are far above user-space addresses; NULL and misaligned values are out.
@@ -640,6 +661,9 @@ void* efSync_Spawn(s32 gfx_id, HSD_GObj* gobj, ...)
             msl_viewer_track_fx(gobj, gfx_id, (HSD_JObj*) first, NULL, 0.0F,
                                 0.0F);
         }
+        va_start(args, gobj);
+        msl_effect_pieces(gfx_id, gobj, args);
+        va_end(args);
     }
     // Visual objects are excluded, but immediate generator initialization and
     // explicit dispatch randomness share the gameplay HSD stream. The lookup
@@ -813,6 +837,14 @@ static void msl_effect_process(HSD_GObj* gobj, MslCoreEffectQueueNode* node)
         lb_8000B1CC(node->jobj, &node->params, &position);
         Camera_80030E44(node->gfx_id, &position);
     } else {
+        if (msl_viewer_track_on) {
+            int slot = (int) (node - msl_effect_nodes);
+            msl_effect_pieces_deferred(gobj, node->gfx_id, node->spawn_kind,
+                                       node->jobj,
+                                       &msl_effect_piece_args[slot].params,
+                                       msl_effect_piece_args[slot].extra1,
+                                       msl_effect_piece_args[slot].extra2);
+        }
         msl_effect_processing_queued = 1;
         efSync_Spawn(node->gfx_id, gobj);
         msl_effect_processing_queued = 0;
@@ -885,6 +917,18 @@ void efAsync_Spawn(HSD_GObj* gobj, void* queue_head, u32 spawn_kind,
         va_end(args);
         msl_viewer_track_fx(gobj, (s32) gfx_id, jobj, at,
                             a0, a1);
+        {
+            int slot = (int) (node - msl_effect_nodes);
+            Vec3 none = { 0.0F, 0.0F, 0.0F };
+            msl_effect_piece_args[slot].params = at != NULL ? *at : none;
+            if (spawn_kind == EF_SPAWN_ATTACH_PARAM ||
+                spawn_kind == EF_SPAWN_POS_PARAM)
+            {
+                msl_effect_piece_args[slot].params.x = a0;
+            }
+            msl_effect_piece_args[slot].extra1 = a0;
+            msl_effect_piece_args[slot].extra2 = a1;
+        }
     }
     if (spawn_kind == EF_SPAWN_CAMERA_SHAKE) {
         va_list args;
