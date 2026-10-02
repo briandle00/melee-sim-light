@@ -95,6 +95,8 @@
 #include "ft/types.h"
 #include "lb/lb_00B0.h"
 #include "runtime/effect_pieces.h"
+#include "runtime/context.h"
+#include "runtime/scalar.h"
 #include "runtime/viewer_track.h"
 
 #include <baselib/gobj.h>
@@ -108,13 +110,48 @@ void* efAlt_Spawn(s32 gfx_id, HSD_GObj* gobj, va_list vlist_arg);
 volatile u32 efLib_LoadKind;
 volatile s32 efLib_AnimCount;
 EF_ParamEntry efLib_AnimQueue[0x10];
-// every effect file loaded (the dispatch asks only whether Mario's is)
+// the effect files this match loaded, as the dispatch asks (only whether
+// Mario's is: efsync.c 0x479)
 static char msl_pieces_loaded;
 EF_DAT_Entry efAsync_DatEntries[51];
 
 // the random numbers a real creation draws (runtime/effects.c)
 void msl_effect_pieces_consume_generator(s32 generator_id);
 void msl_effect_pieces_consume_model(int model_id);
+
+// the effect files the game would have loaded: the common one and each of
+// the match's fighters' (ftData_UnkBytePerCharacter, which their loaders
+// pass to efAsync_LoadSync). Every bank is loaded up front here, but the
+// dispatch asks whether the game would have Mario's: efsync.c 0x479 is
+// Luigi's fireball (0x506) without it.
+extern u8 ftData_UnkBytePerCharacter[];
+static unsigned char msl_pieces_banks[51];
+
+static void loaded_banks(void)
+{
+    MslCoreMatch* match = msl_core_active_match();
+    int i;
+
+    memset(msl_pieces_banks, 0, sizeof(msl_pieces_banks));
+    msl_pieces_banks[0] = 1;
+    if (match == NULL) {
+        return;
+    }
+    for (i = 0; i < match->config.num_players; ++i) {
+        HSD_GObj* both[2] = { match->fighters[i], match->follower_fighters[i] };
+        int k;
+        for (k = 0; k < 2; ++k) {
+            int bank;
+            if (both[k] == NULL) {
+                continue;
+            }
+            bank = ftData_UnkBytePerCharacter[GET_FIGHTER(both[k])->kind];
+            if (bank < (int) sizeof(msl_pieces_banks)) {
+                msl_pieces_banks[bank] = 1;
+            }
+        }
+    }
+}
 
 // --- the stand-ins ------------------------------------------------------------
 
@@ -483,10 +520,12 @@ static void run(s32 gfx_id, HSD_GObj* gobj, va_list args)
     saved = *seed_ptr;
     piece_count = 0;
     msl_pieces_loaded = 1;
-    if (efAsync_DatEntries[1].data == NULL) {
+    loaded_banks();
+    {
         int i;
         for (i = 0; i < 51; ++i) {
-            efAsync_DatEntries[i].data = &msl_pieces_loaded;
+            efAsync_DatEntries[i].data =
+                msl_pieces_banks[i] ? &msl_pieces_loaded : NULL;
         }
     }
     efSync_Spawn_v(gfx_id, gobj, args);
