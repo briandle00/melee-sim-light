@@ -1017,6 +1017,8 @@ def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
 
 # Viewer track (runtime/viewer_track.h): event types the core writes, and the
 # ones a replay viewer might want that the headless core does not run.
+# (diverged_at and the fields with it are additions a version 1 reader
+# leaves alone: still version 1)
 VIEWER_TRACK_VERSION = 1
 VIEWER_TRACK_TYPES = ("fx", "fxend", "gen", "tint", "charge", "part", "pos",
                       "shake", "hide", "ganim", "bg", "fd", "gcolor", "bgcolor",
@@ -1061,14 +1063,23 @@ def viewer_track_build() -> int:
 
 def export_viewer_track(path, out_json):
     """Replay `path` through the core and write its viewer track to
-    `out_json`: {"version", "sim_build", "exact", "events"}, each event
-    [frame, type, ...values] with frame in the game's numbering (-123 first).
+    `out_json`: {"version", "sim_build", "exact", "diverged_at",
+    "diverged_fields", "profile", "events"}, each event [frame, type,
+    ...values] with frame in the game's numbering (-123 first).
 
     The inputs are fitted the way state_matches_recording() fits them (the
     recording's UCF profile, the C-stick gate readings, the capture's host
-    arithmetic); a final drive with those inputs writes the track. "exact"
-    says whether that drive reproduced the recording. Returns the dict
-    written, plus "seconds"."""
+    arithmetic). "exact" says whether the drive that wrote the track
+    reproduced the recording; when it did not, "diverged_at" is the first
+    game frame whose state differs from the recording's and
+    "diverged_fields" what differed there ("field:lane"). The track's events from that
+    frame on are of another game: a viewer uses the ones before it only.
+
+    The track is written during the fit when the fit's first drive
+    reproduces the recording (most games: one drive in all); otherwise one
+    more drive, with the inputs that matched furthest, writes it. Returns
+    the dict written, plus "seconds" and "drives"."""
+    global LAST_DRIVES
     started = time.time()
     replay = read(path)
     reason = supported(replay)
@@ -1077,20 +1088,35 @@ def export_viewer_track(path, out_json):
     count = len(replay["ids"])
     own = replay.get("ucf_profile")
     profiles = [own] if own else list(candidate_profiles(replay))
-    chosen = None
-    first = None
-    for profile in profiles:
-        blob, _ = drive_arithmetic(replay, count, profile)
-        first = first_difference(replay, blob)
-        chosen = profile
-        if first is None:
-            break
+    best = None             # (reach, profile)
+    blob = None
+    drives = 0
     with tempfile.TemporaryDirectory(prefix="msl_track_") as folder:
         track_path = os.path.join(folder, "track.jsonl")
         previous = os.environ.get("MSL_VIEWER_TRACK")
         os.environ["MSL_VIEWER_TRACK"] = track_path
         try:
-            blob = drive(replay, count, chosen)
+            written = False
+            for profile in profiles:
+                blob, _ = drive_arithmetic(replay, count, profile)
+                drives += LAST_DRIVES
+                first = first_difference(replay, blob)
+                reach = len(blob) // OUT_SIZE if first is None else first
+                if best is None or reach > best[0]:
+                    best = (reach, profile, first)
+                if first is None:
+                    # the file is the last drive's: this one's when it was
+                    # the only one
+                    written = drives == 1
+                    break
+            if not written:
+                # the inputs that matched furthest, fitted again (a later
+                # profile's fit replaced them), and this drive's track
+                if best[1] != profile:
+                    blob, _ = drive_arithmetic(replay, count, best[1])
+                    drives += LAST_DRIVES
+                blob = drive(replay, count, best[1])
+                drives += 1
         finally:
             if previous is None:
                 del os.environ["MSL_VIEWER_TRACK"]
@@ -1101,20 +1127,30 @@ def export_viewer_track(path, out_json):
             for line in handle:
                 line = line.strip()
                 if line:
-                    event = json.loads(line)
                     # The core writes [frame, type, ...]; the file is
                     # [frame, type, ...] as well.
-                    events.append(event)
+                    events.append(json.loads(line))
     events.sort(key=lambda event: event[0])
+    first = first_difference(replay, blob)
+    diverged_at = fields = None
+    if first is not None:
+        diverged_at = int(replay["ids"][first])
+        fields = sorted({"%s:%d" % (name, lane)
+                         for name, lane, *_ in frame_diff(replay, blob, first)})
     result = {
         "version": VIEWER_TRACK_VERSION,
         "sim_build": viewer_track_build(),
-        "exact": first_difference(replay, blob) is None,
+        "exact": first is None,
+        "diverged_at": diverged_at,
+        "diverged_fields": fields,
+        "profile": best[1],
+        "frames": count,
         "events": events,
     }
     with open(out_json, "w", encoding="utf-8") as handle:
         json.dump(result, handle, separators=(",", ":"))
     result["seconds"] = round(time.time() - started, 3)
+    result["drives"] = drives
     return result
 
 
@@ -1124,6 +1160,8 @@ def main() -> None:
         result = export_viewer_track(args[1], args[2])
         print(json.dumps({"events": len(result["events"]),
                           "exact": result["exact"],
+                          "diverged_at": result["diverged_at"],
+                          "drives": result["drives"],
                           "seconds": result["seconds"]}))
         return
     out = profile = None
