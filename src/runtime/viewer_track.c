@@ -20,6 +20,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <baselib/gobj.h>
 #include <baselib/gobjproc.h>
@@ -41,6 +42,12 @@ enum {
 
 static FILE* track_out;
 
+// A probe (not part of the track): each fighter part's world position every
+// frame, to the binary file MSL_POSE_WORLD names - the reference the
+// player's poses are measured against (tools/pose_parity.ts). Each record:
+// int16 frame, port, sub, parts; then parts x (x, y, z) floats.
+static FILE* world_out;
+
 // Last value written for each state key, so a state is written only when it
 // changes. Keys are the type and identity fields of the line.
 enum { TRACK_KEYS = 2048, TRACK_KEY_LEN = 48, TRACK_VALUE_LEN = 200 };
@@ -54,12 +61,23 @@ void msl_viewer_track_begin(FILE* out)
     track_out = out;
     msl_viewer_track_on = out != NULL;
     memset(track_state, 0, sizeof(track_state));
+    if (world_out != NULL) {
+        fclose(world_out);
+        world_out = NULL;
+    }
+    if (out != NULL && getenv("MSL_POSE_WORLD") != NULL) {
+        world_out = fopen(getenv("MSL_POSE_WORLD"), "wb");
+    }
 }
 
 void msl_viewer_track_end(void)
 {
     if (track_out != NULL) {
         fflush(track_out);
+    }
+    if (world_out != NULL) {
+        fclose(world_out);
+        world_out = NULL;
     }
     track_out = NULL;
     msl_viewer_track_on = 0;
@@ -456,6 +474,38 @@ static void track_fighter(int frame, Fighter_GObj* gobj)
         snprintf(key, sizeof(key), "\"part\",%d,%d,%d", port, sub, i);
         snprintf(value, sizeof(value), ",%d", (int) fp->x5F4_arr[i].idx);
         emit_state(frame, key, value);
+    }
+
+    // The animation as the game plays it: its index in the subaction table,
+    // whose table (the fighter's own kind, or a thrower's), the frame, the
+    // rate, and the blend into it (blend frames, and how far in: ftAnim_8006EBA4
+    // ftAnim_8006FE9C).
+    snprintf(key, sizeof(key), "\"anim\",%d,%d", port, sub);
+    snprintf(value, sizeof(value), ",%d,%d,%.6g,%.6g,%.6g,%.6g",
+             (int) fp->anim_id, (int) Fighter_AnimSourceKind(fp),
+             fp->cur_anim_frame, fp->frame_speed_mul,
+             fp->x8A4_animBlendFrames, fp->x8A8_anim_frame);
+    emit_state(frame, key, value);
+
+    if (world_out != NULL && fp->parts != NULL) {
+        int16_t head[4];
+        int n = (int) ftPartsTable[fp->kind]->parts_num;
+        head[0] = (int16_t) frame;
+        head[1] = (int16_t) port;
+        head[2] = (int16_t) sub;
+        head[3] = (int16_t) n;
+        fwrite(head, sizeof(head), 1, world_out);
+        for (i = 0; i < n; ++i) {
+            float v[3] = { 0.0F, 0.0F, 0.0F };
+            HSD_JObj* j = fp->parts[i].joint;
+            if (j != NULL) {
+                HSD_JObjSetupMatrix(j);
+                v[0] = j->mtx[0][3];
+                v[1] = j->mtx[1][3];
+                v[2] = j->mtx[2][3];
+            }
+            fwrite(v, sizeof(v), 1, world_out);
+        }
     }
 
     // DeadUpStar/DeadUpFall (Slippi action states 4-10) or off the plane.
