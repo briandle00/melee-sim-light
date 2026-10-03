@@ -42,10 +42,14 @@ enum {
 
 static FILE* track_out;
 
-// A probe (not part of the track): each fighter part's world position every
-// frame, to the binary file MSL_POSE_WORLD names - the reference the
-// player's poses are measured against (tools/pose_parity.ts). Each record:
-// int16 frame, port, sub, parts; then parts x (x, y, z) floats.
+// A probe (not part of the track): each fighter part's joint as the game
+// posed it every frame, to the binary file MSL_POSE_WORLD names - the
+// reference the player's poses are measured against (tools/pose_parity.ts:
+// laid on the player's own skeleton). Each record: int16 frame, port, sub,
+// parts; then per part a uint32 of its flags (JOBJ_USE_QUATERNION: its turn
+// a quaternion) and its turn x, y, z, w, scale x, y, z and place x, y, z as
+// floats, in its parent's frame. (Its world matrix is no reference: the
+// headless core makes only the ones gameplay reads.)
 static FILE* world_out;
 
 // Last value written for each state key, so a state is written only when it
@@ -496,14 +500,17 @@ static void track_fighter(int frame, Fighter_GObj* gobj)
         head[3] = (int16_t) n;
         fwrite(head, sizeof(head), 1, world_out);
         for (i = 0; i < n; ++i) {
-            float v[3] = { 0.0F, 0.0F, 0.0F };
+            uint32_t flags = 0;
+            float v[10] = { 0 };
             HSD_JObj* j = fp->parts[i].joint;
             if (j != NULL) {
-                HSD_JObjSetupMatrix(j);
-                v[0] = j->mtx[0][3];
-                v[1] = j->mtx[1][3];
-                v[2] = j->mtx[2][3];
+                flags = j->flags;
+                v[0] = j->rotate.x; v[1] = j->rotate.y; v[2] = j->rotate.z;
+                v[3] = j->rotate.w; v[4] = j->scale.x; v[5] = j->scale.y;
+                v[6] = j->scale.z; v[7] = j->translate.x;
+                v[8] = j->translate.y; v[9] = j->translate.z;
             }
+            fwrite(&flags, sizeof(flags), 1, world_out);
             fwrite(v, sizeof(v), 1, world_out);
         }
     }
