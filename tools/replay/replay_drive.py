@@ -1061,6 +1061,84 @@ def viewer_track_build() -> int:
     return _TRACK_BUILD[key]
 
 
+def recorded_positions(replay, count):
+    """The replay's own positions as replay_drive.c's MSL_RECORDED takes
+    them: per frame a uint16 item count, 4 ports' fighter x, y, 4 followers'
+    x, y (NaN for none) and each item's x, y and velocity x, y, as float32."""
+    nan = float("nan")
+    out = bytearray()
+    items = replay.get("items")
+    for index in range(count):
+        rows = recorded_items(replay, index) or []
+        out += struct.pack("<H", len(rows))
+        lanes = []
+        for lane in range(4):
+            p = replay["players"][lane] if lane < len(replay["players"]) else None
+            ok = p is not None and bool(p["valid"][index])
+            lanes += [float(p["post_x"][index]), float(p["post_y"][index])] if ok else [nan, nan]
+        for lane in range(4):
+            p = replay["players"][lane] if lane < len(replay["players"]) else None
+            ok = p is not None and "f_valid" in p and bool(p["f_valid"][index])
+            lanes += [float(p["f_x"][index]), float(p["f_y"][index])] if ok else [nan, nan]
+        out += struct.pack("<16f", *lanes)
+        for row in rows:
+            out += struct.pack("<4f", float(items["pos_x"][row]), float(items["pos_y"][row]),
+                               float(items["vel_x"][row]), float(items["vel_y"][row]))
+    return bytes(out)
+
+
+def drive_resynced(replay, count, profile):
+    """One drive that puts the replay's own positions back wherever the
+    simulator's come out a few float bits away (replay_drive.c MSL_RECORDED):
+    (blob, resyncs) - each resync [index, kind, lane, field, simulated,
+    recorded]."""
+    with tempfile.TemporaryDirectory(prefix="msl_resync_") as folder:
+        positions = os.path.join(folder, "recorded.bin")
+        log = os.path.join(folder, "resync.txt")
+        with open(positions, "wb") as handle:
+            handle.write(recorded_positions(replay, count))
+        saved = {k: os.environ.get(k) for k in ("MSL_RECORDED", "MSL_RESYNC_LOG")}
+        os.environ["MSL_RECORDED"] = positions
+        os.environ["MSL_RESYNC_LOG"] = log
+        try:
+            blob = drive(replay, count, profile)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    del os.environ[k]
+                else:
+                    os.environ[k] = v
+        resyncs = []
+        if os.path.exists(log):
+            with open(log, encoding="utf-8") as handle:
+                for line in handle:
+                    index, kind, lane, field, simulated, recorded = line.split()
+                    resyncs.append([int(index), kind, int(lane), int(field), float.fromhex(simulated),
+                                    float.fromhex(recorded)])
+    return blob, resyncs
+
+
+# What a viewer can see past: an item's misc bytes (some are a float's
+# low byte: its last bits) and a position or velocity a few float bits off.
+VIEWER_NEAR = 1e-3
+VIEWER_NEAR_LANES = {"item.pos_x", "item.pos_y", "item.vel_x", "item.vel_y", "pos_x", "pos_y",
+                     "follower.pos_x", "follower.pos_y"}
+
+
+def viewer_difference(replay, blob):
+    """The first frame whose game a viewer would see differ from the
+    recording's (first_difference, less the differences of VIEWER_NEAR), or
+    None."""
+    for index in range(len(blob) // OUT_SIZE):
+        for name, _, simulated, recorded in frame_diff(replay, blob, index):
+            if name.startswith("item.misc"):
+                continue
+            if name in VIEWER_NEAR_LANES and abs(simulated - recorded) <= VIEWER_NEAR:
+                continue
+            return index
+    return None
+
+
 def export_viewer_track(path, out_json):
     """Replay `path` through the core and write its viewer track to
     `out_json`: {"version", "sim_build", "exact", "diverged_at",
@@ -1117,6 +1195,13 @@ def export_viewer_track(path, out_json):
                     drives += LAST_DRIVES
                 blob = drive(replay, count, best[1])
                 drives += 1
+            # a game that parts from the replay by a few float bits: one more
+            # drive that puts the replay's own positions back there, so the
+            # track holds on
+            resyncs = []
+            if first_difference(replay, blob) is not None:
+                blob, resyncs = drive_resynced(replay, count, best[1])
+                drives += 1
         finally:
             if previous is None:
                 del os.environ["MSL_VIEWER_TRACK"]
@@ -1131,7 +1216,10 @@ def export_viewer_track(path, out_json):
                     # [frame, type, ...] as well.
                     events.append(json.loads(line))
     events.sort(key=lambda event: event[0])
-    first = first_difference(replay, blob)
+    # where a viewer sees the game part from the recording (the last bits of
+    # a float in an item's misc bytes, or a resync's near miss, it does not)
+    exact = first_difference(replay, blob) is None
+    first = None if exact else viewer_difference(replay, blob)
     diverged_at = fields = None
     if first is not None:
         diverged_at = int(replay["ids"][first])
@@ -1141,10 +1229,16 @@ def export_viewer_track(path, out_json):
         "version": VIEWER_TRACK_VERSION,
         "sim_build": viewer_track_build(),
         "exact": first is None,
+        # every lane the same as recorded, with no positions put back
+        "exact_bits": exact and not resyncs,
         "diverged_at": diverged_at,
         "diverged_fields": fields,
         "profile": best[1],
         "frames": count,
+        # positions put back from the replay: how many, and the largest
+        # difference among them
+        "resynced": len(resyncs),
+        "resynced_most": max((abs(r[4] - r[5]) for r in resyncs), default=0.0),
         "events": events,
     }
     with open(out_json, "w", encoding="utf-8") as handle:

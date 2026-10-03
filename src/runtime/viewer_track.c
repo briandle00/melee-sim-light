@@ -754,3 +754,43 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     track_stage(frame, match);
     track_items(frame, match);
 }
+
+int msl_viewer_track_resync(MslCoreMatch* match, char kind, int lane,
+                            int field, float value)
+{
+    if (kind == 'i') {
+        Item_GObj* gobj = (Item_GObj*) match->gobj.entities->items;
+        int slot;
+        for (slot = 0; gobj != NULL && slot < lane; ++slot) {
+            gobj = (Item_GObj*) gobj->next;
+        }
+        if (gobj == NULL) {
+            return -1;
+        }
+        switch (field) {
+        case 0: GET_ITEM(gobj)->pos.x = value; break;
+        case 1: GET_ITEM(gobj)->pos.y = value; break;
+        case 2: GET_ITEM(gobj)->x40_vel.x = value; break;
+        default: GET_ITEM(gobj)->x40_vel.y = value; break;
+        }
+        return 0;
+    }
+    if ((kind == 'f' || kind == 'n') && lane >= 0 &&
+        lane < match->config.num_players)
+    {
+        HSD_GObj* gobj = kind == 'f' ? match->fighters[lane]
+                                     : match->follower_fighters[lane];
+        Fighter* fp;
+        if (gobj == NULL) {
+            return -1;
+        }
+        fp = GET_FIGHTER(gobj);
+        if (field == 0) {
+            fp->cur_pos.x = value;
+        } else {
+            fp->cur_pos.y = value;
+        }
+        return 0;
+    }
+    return -1;
+}

@@ -53,4 +53,13 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
 // default, written as slot -1, index 0.
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index);
 
+// Put a value the replay recorded back in the simulator's game, where the
+// simulator's own came out a few float bits away (a joint's matrix a few
+// last bits off: a laser's spawn point): kind 'i' the item in that slot of
+// the item list, 'f' a port's fighter, 'n' its follower; field 0 the x
+// position, 1 the y (an item's 2 and 3: its velocity's). 0 when it was put,
+// -1 when there is no such one.
+int msl_viewer_track_resync(struct MslCoreMatch* match, char kind, int lane,
+                            int field, float value);
+
 #endif

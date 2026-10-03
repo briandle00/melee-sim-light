@@ -36,6 +36,7 @@
  * input ends the driver.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -878,6 +879,76 @@ static int serve_mode(const MslCoreGameData* game_data)
     }
 }
 
+/* MSL_RECORDED=<file>: the replay's own positions, frame by frame, to
+   resync with (runtime/viewer_track.h, msl_viewer_track_resync). Per frame:
+   a uint16 item count, then 4 ports' fighter x, y, 4 followers' x, y (NaN
+   for none) and each item's x, y and velocity x, y, all float32. After a
+   frame, a position (or an item's velocity) of
+   the simulator's within RESYNC_MOST of the recorded one but not equal to it
+   (a few float bits: a joint's matrix's last bits) is put back to the
+   recorded one, and the row says so; each one is listed in MSL_RESYNC_LOG
+   ("<frame index> <kind i|f|n> <slot or port> <field 0 x|1 y> <simulated>
+   <recorded>"). A larger difference is left: the game has parted. */
+#define RESYNC_MOST 1e-3F
+
+static FILE* recorded;
+static FILE* resync_log;
+
+static void resync_one(MslCoreMatch* match, uint32_t index, char kind,
+                       int lane, int field, float* simulated, float want)
+{
+    if (want != want || *simulated == want ||
+        fabsf(*simulated - want) > RESYNC_MOST ||
+        msl_viewer_track_resync(match, kind, lane, field, want) != 0)
+    {
+        return;
+    }
+    if (resync_log != NULL) {
+        fprintf(resync_log, "%u %c %d %d %a %a\n", index, kind, lane, field,
+                *simulated, want);
+    }
+    *simulated = want;
+}
+
+static void resync_frame(MslCoreMatch* match, uint32_t index, OutFrame* out)
+{
+    uint16_t items;
+    float fighters[16];
+    float item_pos[MSL_CORE_MAX_ITEMS * 4];
+    int i;
+    if (recorded == NULL || fread(&items, sizeof(items), 1, recorded) != 1 ||
+        fread(fighters, sizeof(fighters), 1, recorded) != 1 ||
+        (items > 0 && fread(item_pos, sizeof(float) * 4,
+                            items < MSL_CORE_MAX_ITEMS ? items
+                                                       : MSL_CORE_MAX_ITEMS,
+                            recorded) == 0))
+    {
+        recorded = NULL;
+        return;
+    }
+    for (i = 0; i < 4; ++i) {
+        resync_one(match, index, 'f', i, 0, &out->pos_x[i], fighters[i * 2]);
+        resync_one(match, index, 'f', i, 1, &out->pos_y[i], fighters[i * 2 + 1]);
+        resync_one(match, index, 'n', i, 0, &out->follower_pos_x[i],
+                   fighters[8 + i * 2]);
+        resync_one(match, index, 'n', i, 1, &out->follower_pos_y[i],
+                   fighters[8 + i * 2 + 1]);
+    }
+    if (items != out->item_count) {
+        return;
+    }
+    for (i = 0; i < items && i < MSL_CORE_MAX_ITEMS; ++i) {
+        resync_one(match, index, 'i', i, 0, &out->items[i].pos_x,
+                   item_pos[i * 4]);
+        resync_one(match, index, 'i', i, 1, &out->items[i].pos_y,
+                   item_pos[i * 4 + 1]);
+        resync_one(match, index, 'i', i, 2, &out->items[i].vel_x,
+                   item_pos[i * 4 + 2]);
+        resync_one(match, index, 'i', i, 3, &out->items[i].vel_y,
+                   item_pos[i * 4 + 3]);
+    }
+}
+
 int main(int argc, char** argv)
 {
     TapeConfig tape;
@@ -1000,6 +1071,12 @@ int main(int argc, char** argv)
         fprintf(stderr, "cannot write %s\n", argv[3]);
         return 1;
     }
+    if (getenv("MSL_RECORDED") != NULL && getenv("MSL_RECORDED")[0] != '\0') {
+        recorded = fopen(getenv("MSL_RECORDED"), "rb");
+        if (getenv("MSL_RESYNC_LOG") != NULL) {
+            resync_log = fopen(getenv("MSL_RESYNC_LOG"), "w");
+        }
+    }
     for (index = 0; index < tape.frame_count; ++index) {
         MslCoreInput step_input;
         MslCoreStageEvents events;
@@ -1017,8 +1094,9 @@ int main(int argc, char** argv)
             fprintf(stderr, "step failed at frame %u\n", index);
             return 1;
         }
-        msl_viewer_track_frame(&match);
         fill_output(&out, msl_core_match_output(&match));
+        resync_frame(&match, index, &out);
+        msl_viewer_track_frame(&match);
         {
             int phase;
             int kind;
@@ -1032,6 +1110,9 @@ int main(int argc, char** argv)
         }
     }
     fclose(input);
+    if (resync_log != NULL) {
+        fclose(resync_log);
+    }
     if (track_file != NULL) {
         msl_viewer_track_end();
         if (fclose(track_file) != 0) {
