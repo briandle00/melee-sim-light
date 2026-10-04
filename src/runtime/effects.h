@@ -65,6 +65,9 @@ typedef struct MslCoreEffectState {
 // The particle probe's (sysdolphin/baselib/ps_probe.c): a loaded bank, or
 // NULL.
 const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank);
+// The particle probe's: a joint animation's particle keys go to `callback`
+// while it runs its own models; NULL puts the match's own back.
+void msl_effect_probe_dptcl(void (*callback)(int, int, int, HSD_JObj*));
 
 void msl_effect_game_data_init(MslCoreEffectData* data);
 #ifdef MSL_CORE_NATIVE

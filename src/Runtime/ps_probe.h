@@ -32,6 +32,18 @@ void msl_particle_probe_placed(void* made, int frame, s32 gfx_id, int how,
                                u32 seed_at, const Vec3* pos, u32 kind_set,
                                const Vec3* translate, const Vec3* rotate,
                                const Vec3* scale);
+// An effect model made as the game makes it (efLib_Create and its attach
+// variants, by the recorder's `how`), with what the dispatch then set on
+// it; NULL when the probe is off or the model is not one it can load.
+void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
+                               HSD_JObj* joint, const Vec3* translate,
+                               const Vec3* rotate, const Vec3* scale,
+                               const char* callback, int lifetime,
+                               const Vec3* params, HSD_JObj* attach,
+                               int scale_flags);
+// Its animation's first step (the generators its particle keys start),
+// from the random state `seed_at` (put back after).
+void msl_particle_probe_model_started(void* model, int frame, u32 seed_at);
 // An owner's effects all ended (efLib_DestroyAll): its joints' generators.
 void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame);
 // The frame's update (after its gameplay), and everything written.

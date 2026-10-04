@@ -328,6 +328,11 @@ static void msl_effect_match_dptcl(int link_no, int bank, int gfx_id,
 #endif
 }
 
+void msl_effect_probe_dptcl(void (*callback)(int, int, int, HSD_JObj*))
+{
+    HSD_JObjSetDPtclCallback(callback != NULL ? callback : msl_effect_match_dptcl);
+}
+
 void msl_effect_install_match_callbacks(void)
 {
     HSD_JObjSetDPtclCallback(msl_effect_match_dptcl);

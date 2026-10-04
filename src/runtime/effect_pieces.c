@@ -160,8 +160,8 @@ enum { PIECES = 16, KIDS = 8 };
 
 typedef struct Piece {
     u32 rng_at;
-    void* probe;         // the particle probe's real generator, and how it made it
-    int probe_how;
+    int probe_how;       // how the particle probe makes its real generator
+    int probe_link;
     char kind;           // 'm' a model, 'g' a particle generator
     s32 id;              // bank * 1000 + its index
     const char* how;     // how it was made: the creation call
@@ -309,7 +309,7 @@ static HSD_Generator* generator_as(s32 gfx_id, HSD_JObj* jobj, const char* how, 
     // (the random state its creation draws from: hsd_8039F05C's first count)
     p->rng_at = *seed_ptr;
     p->probe_how = probe_how;
-    p->probe = msl_particle_probe_generator(gfx_id, jobj, probe_how, link_no, p->rng_at);
+    p->probe_link = link_no;
     msl_effect_pieces_consume_generator(gfx_id);
     p->gen.bank = (u8) (gfx_id / 1000);
     p->gen.jobj = jobj;
@@ -490,9 +490,61 @@ void* efSync_Spawn(s32 gfx_id, HSD_GObj* gobj, ...)
 
 // --- running it -----------------------------------------------------------------
 
-static void emit(HSD_GObj* owner, s32 gfx_id)
+// The random state after what a piece's making draws, from `state`: a
+// generator's first count, or the generators a model's animation starts on
+// its first step (the draws runtime/effects.c makes for them).
+static u32 drawn(const Piece* p, u32 state)
+{
+    u32 keep = *seed_ptr;
+    u32 out;
+    *seed_ptr = state;
+    if (p->kind == 'g') {
+        msl_effect_pieces_consume_generator(p->id);
+    } else if (p->id / 1000 == 0) {
+        msl_effect_pieces_consume_model((int) (p->id % 1000));
+    }
+    out = *seed_ptr;
+    *seed_ptr = keep;
+    return out;
+}
+
+static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
 {
     int i;
+    int frame = msl_viewer_track_hook_frame();
+    void* made[PIECES];
+
+    // (the probe's, for now: the track's own seeds are as they were, in the
+    // order the simulator draws them)
+    // The game's order: each generator as the dispatch makes it, then - the
+    // dispatch done - the models' animations' first steps, the last made
+    // first (efLib_AnimQueue, flushed after the dispatch).
+    // refs/melee/src/melee/ef/{eflib.c::efLib_Create,efasync.c,efalt.c}
+    for (i = 0; i < piece_count; ++i) {
+        Piece* p = &pieces[i];
+        made[i] = NULL;
+        if (p->kind == 'g') {
+            u32 at = state;
+            state = drawn(p, state);
+            made[i] = msl_particle_probe_generator(p->id, p->joint, p->probe_how, p->probe_link, at);
+            msl_particle_probe_placed(made[i], frame, p->id, p->probe_how, at, &p->gen.pos,
+                                      p->gen.kind & 0x40000, &p->srt.translate, (const Vec3*) &p->srt.rot,
+                                      &p->srt.scale);
+        } else if (msl_particle_probe_on()) {
+            made[i] = msl_particle_probe_model(p->id, p->how, p->effect.parent_gobj, p->joint, &p->jobj.translate,
+                                               (const Vec3*) &p->jobj.rotate, &p->jobj.scale,
+                                               callback_name(p->effect.update), p->effect.lifetime,
+                                               &p->effect.params, p->effect.attach_jobj, p->effect.scale_flags);
+        }
+    }
+    for (i = piece_count - 1; i >= 0; --i) {
+        Piece* p = &pieces[i];
+        if (p->kind == 'm') {
+            u32 at = state;
+            state = drawn(p, state);
+            msl_particle_probe_model_started(made[i], frame, at);
+        }
+    }
 
     for (i = 0; i < piece_count; ++i) {
         Piece* p = &pieces[i];
@@ -528,9 +580,6 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
             out.callback = "";
             out.mirrored = (p->gen.kind & 0x40000) != 0;
             out.rng_at = p->rng_at;
-            msl_particle_probe_placed(p->probe, msl_viewer_track_hook_frame(), p->id, p->probe_how, p->rng_at,
-                                      &p->gen.pos, p->gen.kind & 0x40000, &p->srt.translate,
-                                      (const Vec3*) &p->srt.rot, &p->srt.scale);
         }
         msl_viewer_track_fxp(owner, gfx_id, &out);
     }
@@ -560,7 +609,7 @@ static void run(s32 gfx_id, HSD_GObj* gobj, va_list args)
     efSync_Spawn_v(gfx_id, gobj, args);
     efLib_AnimCount = 0;
     *seed_ptr = saved;
-    emit(gobj, gfx_id);
+    emit(gobj, gfx_id, saved);
     busy = 0;
 }
 
