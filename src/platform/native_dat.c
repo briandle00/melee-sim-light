@@ -2124,6 +2124,56 @@ void msl_native_archive_locate_extern(HSD_Archive* archive,
     }
 }
 
+// The particle probe's (sysdolphin/baselib/ps_probe.c): each translated
+// command's script. The translation keeps a command's header only (the
+// headless core runs no particle scripts); the probe runs them, so with
+// MSL_PARTICLE_PROBE set the bytes after the header are kept beside it.
+typedef struct MslParticleScript {
+    const HSD_PSCmdList* command;
+    uint8_t* bytes;
+    uint32_t size;
+} MslParticleScript;
+static MslParticleScript* particle_scripts;
+static size_t particle_script_count;
+static size_t particle_script_capacity;
+
+static void note_particle_script(const HSD_PSCmdList* command,
+                                 const uint8_t* bytes, uint32_t size)
+{
+    MslParticleScript* slot;
+    const char* on = getenv("MSL_PARTICLE_PROBE");
+
+    if (on == NULL || on[0] == '\0' || command == NULL) {
+        return;
+    }
+    if (particle_script_count == particle_script_capacity) {
+        particle_script_capacity =
+            particle_script_capacity ? particle_script_capacity * 2 : 1024;
+        particle_scripts =
+            realloc(particle_scripts,
+                    particle_script_capacity * sizeof(*particle_scripts));
+    }
+    slot = &particle_scripts[particle_script_count++];
+    slot->command = command;
+    slot->size = size;
+    slot->bytes = malloc(size ? size : 1);
+    memcpy(slot->bytes, bytes, size);
+}
+
+const uint8_t* msl_native_particle_script(const HSD_PSCmdList* command,
+                                          uint32_t* size)
+{
+    size_t i;
+    // (the newest first: an archive loaded again is translated again)
+    for (i = particle_script_count; i > 0; --i) {
+        if (particle_scripts[i - 1].command == command) {
+            *size = particle_scripts[i - 1].size;
+            return particle_scripts[i - 1].bytes;
+        }
+    }
+    return NULL;
+}
+
 // psInitDataBankLoad's command bank: version 0 lists [0, count); versions
 // 0x40..0x43 list [first, first + count) and are indexed by the full id.
 // refs/melee/src/sysdolphin/baselib/particle.c::psInitDataBankLoad
@@ -2165,8 +2215,24 @@ static int msl_translate_particle_bank(MslNativeArchive* context, uint32_t bank,
             context->data + entries +
             (version == 0 ? i : i - first_count) * 4);
         if (relative != 0) {
+            // (its script runs to the next command's header, or the data's end)
+            uint32_t start = bank + relative + 0x3C;
+            uint32_t end = context->data_size;
+            uint32_t j;
             result[i - *id_base] = translate_target_count(
                 context, bank + relative, msl_dat_root_HSD_PSCmdList, 1);
+            for (j = version == 0 ? 0 : first_count; j < total; ++j) {
+                uint32_t other = read_be32(
+                    context->data + entries +
+                    (version == 0 ? j : j - first_count) * 4);
+                if (other != 0 && bank + other >= start && bank + other < end) {
+                    end = bank + other;
+                }
+            }
+            if (start <= context->data_size) {
+                note_particle_script(result[i - *id_base], context->data + start,
+                                     end - start);
+            }
         }
     }
     *count = (int) total;

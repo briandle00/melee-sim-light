@@ -27,6 +27,8 @@ void msl_viewer_track_frame(struct MslCoreMatch* match);
 // Event hooks, called only when msl_viewer_track_on is set.
 void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
                          const Vec3* pos, float a0, float a1);
+// The frame a hook fires in (the particle probe's lines).
+int msl_viewer_track_hook_frame(void);
 void msl_viewer_track_fxend(HSD_GObj* owner);
 // One piece of the spawn just written (runtime/effect_pieces.c): what the
 // game's dispatch made for it, as an "fxp" event after its "fx".

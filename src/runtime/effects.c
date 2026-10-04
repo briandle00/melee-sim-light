@@ -400,6 +400,16 @@ static void msl_effect_release(MslCoreEffectQueueNode* node)
     msl_effect_free = node;
 }
 
+const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank)
+{
+    if (msl_bound_effect_data == NULL || bank < 0 ||
+        bank >= (int) (sizeof(msl_effect_banks) / sizeof(msl_effect_banks[0])))
+    {
+        return NULL;
+    }
+    return &msl_effect_banks[bank];
+}
+
 static void msl_effect_consume_generator_rng(s32 generator_id)
 {
     int bank = generator_id / 1000;

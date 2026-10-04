@@ -233,6 +233,11 @@ void msl_native_archive_locate_extern(HSD_Archive* archive,
 int msl_native_effect_bank(HSD_Archive* archive, const char* symbol,
                            int* count, int* id_base,
                            HSD_PSCmdList*** commands);
+// The particle probe's: a translated command's script (the bytes after its
+// header in the archive, to the next command's), kept only while
+// MSL_PARTICLE_PROBE is set. NULL when it is not known.
+const uint8_t* msl_native_particle_script(const HSD_PSCmdList* command,
+                                          uint32_t* size);
 int msl_native_particle_bank(HSD_Archive* archive, const char* symbol,
                              int* count, int* id_base,
                              HSD_PSCmdList*** commands);

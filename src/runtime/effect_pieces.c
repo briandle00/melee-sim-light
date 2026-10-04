@@ -95,6 +95,7 @@
 #include "ft/types.h"
 #include "lb/lb_00B0.h"
 #include "runtime/effect_pieces.h"
+#include "runtime/ps_probe.h"
 #include "runtime/context.h"
 #include "runtime/scalar.h"
 #include "runtime/viewer_track.h"
@@ -159,6 +160,8 @@ enum { PIECES = 16, KIDS = 8 };
 
 typedef struct Piece {
     u32 rng_at;
+    void* probe;         // the particle probe's real generator, and how it made it
+    int probe_how;
     char kind;           // 'm' a model, 'g' a particle generator
     s32 id;              // bank * 1000 + its index
     const char* how;     // how it was made: the creation call
@@ -295,7 +298,7 @@ EF_Effect* efLib_Create_Attach_Pos(u32 gfx_id, HSD_GObj* gobj, Vec3* position)
 
 // --- generators (eflib.c's efLib_CreateGenerator*, particle.c's hsd_8039EFAC) --
 
-static HSD_Generator* generator(s32 gfx_id, HSD_JObj* jobj, const char* how)
+static HSD_Generator* generator_as(s32 gfx_id, HSD_JObj* jobj, const char* how, int probe_how, int link_no)
 {
     Piece* p = piece('g', gfx_id, how, jobj);
     if (p == NULL) {
@@ -303,17 +306,31 @@ static HSD_Generator* generator(s32 gfx_id, HSD_JObj* jobj, const char* how)
     }
     // (the random state its creation draws from: hsd_8039F05C's first count)
     p->rng_at = *seed_ptr;
+    p->probe_how = probe_how;
+    p->probe = msl_particle_probe_generator(gfx_id, jobj, probe_how, link_no, p->rng_at);
     msl_effect_pieces_consume_generator(gfx_id);
     p->gen.bank = (u8) (gfx_id / 1000);
     p->gen.jobj = jobj;
     return &p->gen;
 }
 
+static HSD_Generator* generator(s32 gfx_id, HSD_JObj* jobj, const char* how)
+{
+    int probe_how = MSL_PROBE_PLACE;
+    if (strcmp(how, "srt") == 0) {
+        probe_how = MSL_PROBE_SRT;
+    } else if (strcmp(how, "joint") == 0) {
+        probe_how = MSL_PROBE_JOINT;
+    } else if (strcmp(how, "joint-srt") == 0) {
+        probe_how = MSL_PROBE_JOINT_SRT;
+    }
+    return generator_as(gfx_id, jobj, how, probe_how, 0);
+}
+
 HSD_Generator* hsd_8039EFAC(s32 linkNo, s32 bank, s32 gfx_id, HSD_JObj* jobj)
 {
-    (void) linkNo;
     (void) bank;
-    return generator(gfx_id, jobj, "joint");
+    return generator_as(gfx_id, jobj, "joint", MSL_PROBE_JOINT_RAW, linkNo);
 }
 
 HSD_Generator* efLib_CreateGenerator(s32 gfx_id, Vec3* pos)
@@ -506,6 +523,9 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
             out.callback = "";
             out.mirrored = (p->gen.kind & 0x40000) != 0;
             out.rng_at = p->rng_at;
+            msl_particle_probe_placed(p->probe, msl_viewer_track_hook_frame(), p->id, p->probe_how, p->rng_at,
+                                      &p->gen.pos, p->gen.kind & 0x40000, &p->srt.translate,
+                                      (const Vec3*) &p->srt.rot, &p->srt.scale);
         }
         msl_viewer_track_fxp(owner, gfx_id, &out);
     }

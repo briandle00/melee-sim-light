@@ -15,6 +15,7 @@
 #include "lb/types.h"
 #include "runtime/context.h"
 #include "runtime/effect_pieces.h"
+#include "runtime/ps_probe.h"
 #include "runtime/scalar.h"
 
 #include <math.h>
@@ -72,6 +73,9 @@ void msl_viewer_track_begin(FILE* out)
     if (out != NULL && getenv("MSL_POSE_WORLD") != NULL) {
         world_out = fopen(getenv("MSL_POSE_WORLD"), "wb");
     }
+    if (out != NULL) {
+        msl_particle_probe_begin();
+    }
 }
 
 void msl_viewer_track_end(void)
@@ -85,6 +89,7 @@ void msl_viewer_track_end(void)
     }
     track_out = NULL;
     msl_viewer_track_on = 0;
+    msl_particle_probe_end();
 }
 
 // The frame a hook fires in: the match advances frame_id after the gameplay
@@ -150,6 +155,11 @@ static uint32_t rgba(GXColor c)
 {
     return ((uint32_t) c.r << 24) | ((uint32_t) c.g << 16) |
            ((uint32_t) c.b << 8) | (uint32_t) c.a;
+}
+
+int msl_viewer_track_hook_frame(void)
+{
+    return hook_frame();
 }
 
 static uint32_t seed_now(void)
@@ -271,6 +281,7 @@ void msl_viewer_track_fxend(HSD_GObj* owner)
     }
     describe_owner(owner, NULL, &kind, &id, &joint);
     fprintf(track_out, "[%d,\"fxend\",\"%c\",%d]\n", hook_frame(), kind, id);
+    msl_particle_probe_owner_ended(owner, hook_frame());
 }
 
 void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
@@ -816,6 +827,7 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     // from. The replay gives each frame a fresh seed, so this is not the
     // next frame's.
     fprintf(track_out, "[%d,\"rng\",%u]\n", frame, (unsigned) seed_now());
+    msl_particle_probe_frame(frame);
 }
 
 int msl_viewer_track_resync(MslCoreMatch* match, char kind, int lane,

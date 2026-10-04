@@ -62,6 +62,10 @@ typedef struct MslCoreEffectState {
     MslCoreEffectQueueNode* free;
 } MslCoreEffectState;
 
+// The particle probe's (sysdolphin/baselib/ps_probe.c): a loaded bank, or
+// NULL.
+const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank);
+
 void msl_effect_game_data_init(MslCoreEffectData* data);
 #ifdef MSL_CORE_NATIVE
 // Load immutable map_ptcl commands before GameData seals.
