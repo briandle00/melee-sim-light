@@ -247,7 +247,7 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
 // [frame,"fxp",gfx_id,owner kind,owner id,index,"m"|"g",id,how,joint,
 //  tx,ty,tz,rx,ry,rz,sx,sy,sz,callback,lifetime,p0,p1,p2,mirrored,
 //  ax,ay,az: where it was made, its joint's world position for one on a joint,
-//  seed: a generator's random state as it was made (0 for a model)]
+//  seed: the random state as it was made]
 void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
                           const MslEffectPiece* p)
 {

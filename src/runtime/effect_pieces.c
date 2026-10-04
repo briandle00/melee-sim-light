@@ -227,6 +227,8 @@ static EF_Effect* model(u32 gfx_id, HSD_GObj* gobj, HSD_JObj* jobj, const char* 
     if (p == NULL) {
         return NULL;
     }
+    // (the random state its animation's first generators draw from)
+    p->rng_at = *seed_ptr;
     if (gfx_id / 1000 == 0) {
         msl_effect_pieces_consume_model((int) (gfx_id % 1000));
     }
@@ -330,7 +332,9 @@ static HSD_Generator* generator(s32 gfx_id, HSD_JObj* jobj, const char* how)
 HSD_Generator* hsd_8039EFAC(s32 linkNo, s32 bank, s32 gfx_id, HSD_JObj* jobj)
 {
     (void) bank;
-    return generator_as(gfx_id, jobj, "joint", MSL_PROBE_JOINT_RAW, linkNo);
+    // (as the dispatch calls it itself: the generator keeps the joint's turn
+    // for its emission, which efLib_CreateGenerator_Attach takes away)
+    return generator_as(gfx_id, jobj, "joint-rot", MSL_PROBE_JOINT_RAW, linkNo);
 }
 
 HSD_Generator* efLib_CreateGenerator(s32 gfx_id, Vec3* pos)
@@ -509,6 +513,7 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
             out.callback = callback_name(p->effect.update);
             out.lifetime = p->effect.lifetime;
             out.params = p->effect.params;
+            out.rng_at = p->rng_at;
             // (one made on no joint that the dispatch then hung on one: it
             // follows that joint, at its callback's offset)
             if (out.joint == NULL) {

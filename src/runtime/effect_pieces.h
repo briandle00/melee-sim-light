@@ -16,7 +16,8 @@ typedef struct MslEffectPiece {
     char kind;            // 'm' an effect model, 'g' a particle generator
     s32 id;               // bank * 1000 + its index in the bank
     const char* how;      // "place", "attach", "child", "create", "carrier",
-                          // "joint", "joint-srt", "srt": the creation call
+                          // "joint", "joint-rot", "joint-srt", "srt": the
+                          // creation call
     HSD_JObj* joint;      // the joint it was made on (or NULL)
     Vec3 t;               // its translation (a model's, a generator's place
                           // or app SRT translation)
@@ -28,7 +29,8 @@ typedef struct MslEffectPiece {
     int mirrored;         // a generator mirrored to face left
     Vec3 at;              // where it was made: its place, or its joint's
                           // world position as it was made
-    u32 rng_at;           // a generator's: the random state as it was made
+    u32 rng_at;           // the random state as it was made (a generator's
+                          // first count, a model's animation's generators)
 } MslEffectPiece;
 
 // A spawn efSync_Spawn makes now, with its own arguments.

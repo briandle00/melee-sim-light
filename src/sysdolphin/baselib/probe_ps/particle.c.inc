@@ -601,9 +601,14 @@ s32 hsd_803991D8(HSD_Generator* gen, HSD_JObj* jobj, f32 force, f32 range)
 
     HSD_JObjSetupMatrix(jobj);
 
-    dx = jobj->mtx[0][3] - gen->fric;
-    dy = jobj->mtx[1][3] - gen->size;
-    dz = jobj->mtx[2][3] - gen->radius;
+    // (it is called with a particle: on the console a generator's fric,
+    // size and radius are where a particle's place is, and its pos.z, vel.x
+    // and vel.y where a particle's motion is. Not so on this host: the
+    // particle's own fields here)
+    HSD_Particle* pp = (HSD_Particle*) gen;
+    dx = jobj->mtx[0][3] - pp->pos.x;
+    dy = jobj->mtx[1][3] - pp->pos.y;
+    dz = jobj->mtx[2][3] - pp->pos.z;
     dist_sq = dx * dx + dy * dy + dz * dz;
 
     if (dist_sq <= range * range) {
@@ -615,9 +620,9 @@ s32 hsd_803991D8(HSD_Generator* gen, HSD_JObj* jobj, f32 force, f32 range)
     }
 
     scale = force / dist_sq;
-    gen->pos.z += scale * dx;
-    gen->vel.x += scale * dy;
-    gen->vel.y += scale * dz;
+    pp->vel.x += scale * dx;
+    pp->vel.y += scale * dy;
+    pp->vel.z += scale * dz;
     return 0;
 }
 

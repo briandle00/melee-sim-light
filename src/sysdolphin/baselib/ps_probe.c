@@ -35,6 +35,9 @@
 //   ["e", frame, uid]                          a generator ended by its owner
 //   ["x", frame]                               an owner's effects ended (the
 //                                              list was walked)
+//   ["a", frame, uid, command, count, genLife, particles, type, kind]
+//                                              a generator after the update,
+//                                              in the list's order
 //   ["p", frame, list, index, uid, kind, life, x, y, z, vx, vy, vz, size,
 //    rotate, prim, env, pose, cmdPtr, cmdWait, grav, fric, srt uid]
 //                                              a particle after the update, in
@@ -60,10 +63,68 @@
 #include "probe_ps/generator.h"
 
 // (joints are the simulation's: the library's own references on them are
-// left out, and a generator is ended with its owner before its joint goes)
-static inline void pp_no_ref(void* o) { (void) o; }
-#define ref_INC(o) pp_no_ref(o)
-#define HSD_JObjUnref(o) pp_no_ref(o)
+// left out, and a generator is ended with its owner before its joint goes.
+// The joints the library makes for itself - one for a leading particle, at
+// its place, which the particles after it are drawn to - are the probe's
+// own: a matrix whose place is set directly, none of the simulation's heap)
+enum { PP_LEADERS = 16 };
+static HSD_JObj* pp_leaders[PP_LEADERS];
+static int pp_is_leader(const void* o)
+{
+    int i;
+    for (i = 0; i < PP_LEADERS; ++i) {
+        if (o != NULL && pp_leaders[i] == o) {
+            return 1;
+        }
+    }
+    return 0;
+}
+static HSD_JObj* pp_leader_new(void)
+{
+    int i;
+    for (i = 0; i < PP_LEADERS; ++i) {
+        if (pp_leaders[i] == NULL) {
+            pp_leaders[i] = calloc(1, sizeof(HSD_JObj));
+            return pp_leaders[i];
+        }
+    }
+    return NULL;
+}
+static inline void pp_ref(void* o) { (void) o; }
+static void pp_unref(void* o)
+{
+    int i;
+    for (i = 0; i < PP_LEADERS; ++i) {
+        if (o != NULL && pp_leaders[i] == o) {
+            // (made with one reference and given one more by its slot: gone
+            // when the slot lets it go, the second time it is let go)
+            if (pp_leaders[i]->translate.x != 0.0F) {
+                free(pp_leaders[i]);
+                pp_leaders[i] = NULL;
+            } else {
+                pp_leaders[i]->translate.x = 1.0F;
+            }
+            return;
+        }
+    }
+}
+static void pp_setup_matrix(HSD_JObj* jobj)
+{
+    if (!pp_is_leader(jobj)) {
+        HSD_JObjSetupMatrix(jobj);
+    }
+}
+static void pp_add_place(HSD_JObj* jobj, int row, float by)
+{
+    jobj->mtx[row][3] += by;
+}
+#define ref_INC(o) pp_ref(o)
+#define HSD_JObjUnref(o) pp_unref(o)
+#define HSD_JObjAlloc() pp_leader_new()
+#define HSD_JObjSetupMatrix(o) pp_setup_matrix(o)
+#define HSD_JObjAddTranslationX(o, by) pp_add_place(o, 0, by)
+#define HSD_JObjAddTranslationY(o, by) pp_add_place(o, 1, by)
+#define HSD_JObjAddTranslationZ(o, by) pp_add_place(o, 2, by)
 
 // (and so are its object heaps, which are saved and restored with it: the
 // probe's particles, generators and transforms come from the C heap)
@@ -110,6 +171,11 @@ static void pp_free(void* data, void* obj)
 #include "probe_ps/generator.c.inc"
 
 #undef ref_INC
+#undef HSD_JObjAlloc
+#undef HSD_JObjSetupMatrix
+#undef HSD_JObjAddTranslationX
+#undef HSD_JObjAddTranslationY
+#undef HSD_JObjAddTranslationZ
 #undef HSD_ObjAllocInit
 #undef HSD_ObjAlloc
 #undef HSD_ObjFree
@@ -166,6 +232,8 @@ static LONG WINAPI probe_crashed(EXCEPTION_POINTERS* info)
 }
 #endif
 
+static void probe_made(HSD_Generator* gen);
+
 int msl_particle_probe_on(void)
 {
     return probe_out != NULL;
@@ -194,6 +262,7 @@ void msl_particle_probe_begin(void)
     hsd_8039D354(0);
     hsd_80398A08(0);
     psInitAppSRT(0, sizeof(HSD_psAppSRT));
+    hsd_804D7900 = probe_made;
     for (i = 0; i < PROBE_BANKS; ++i) {
         probe_commands[i] = NULL;
         probe_bank_source[i] = NULL;
@@ -311,6 +380,17 @@ static void probe_sweep(void)
     probe_gen_count = kept;
 }
 
+// every generator made gets a number: the ones made here and the ones a
+// particle's script makes (the library's own hook, run as one is made)
+static void probe_made(HSD_Generator* gen)
+{
+    if (probe_gen_count < PROBE_GENS) {
+        probe_gens[probe_gen_count].gen = gen;
+        probe_gens[probe_gen_count].uid = probe_next_uid++;
+        probe_gen_count++;
+    }
+}
+
 void* msl_particle_probe_generator(s32 gfx_id, HSD_JObj* jobj, int how,
                                    int link_no, u32 seed_at)
 {
@@ -388,11 +468,6 @@ void* msl_particle_probe_generator(s32 gfx_id, HSD_JObj* jobj, int how,
     *seed_ptr = saved;
     if (gen == NULL) {
         fprintf(probe_out, "[\"miss\",%d,%d]\n", (int) gfx_id, how);
-    }
-    if (gen != NULL && probe_gen_count < PROBE_GENS) {
-        probe_gens[probe_gen_count].gen = gen;
-        probe_gens[probe_gen_count].uid = probe_next_uid++;
-        probe_gen_count++;
     }
     return gen;
 }
@@ -537,6 +612,23 @@ void msl_particle_probe_frame(int frame)
     hsd_8039CEAC(0x10000);
     hsd_8039EE24(0x10000);
     *seed_ptr = saved;
+    for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
+        // (which command it is of: the one whose script it runs)
+        int idx = -1;
+        int i;
+        const MslCoreEffectGeneratorBank* data = msl_effect_probe_bank(gen->bank);
+        for (i = 0; data != NULL && probe_commands[gen->bank] != NULL && i < data->count; ++i) {
+            if (probe_commands[gen->bank][i] != NULL &&
+                probe_commands[gen->bank][i]->cmdList == gen->cmdList)
+            {
+                idx = i;
+                break;
+            }
+        }
+        fprintf(probe_out, "[\"a\",%d,%d,%d,%.9g,%d,%d,%u,%u]\n", frame,
+                probe_uid(gen), idx, gen->count, (int) gen->genLife,
+                (int) gen->numChild, (unsigned) gen->type, (unsigned) gen->kind);
+    }
     for (list = 0; list < 16; ++list) {
         const HSD_Particle* pp;
         int index = 0;
