@@ -66,6 +66,12 @@ enum {
 typedef struct MslCoreMatch MslCoreMatch;
 void msl_reloc_begin_match(MslCoreMatch* match);
 int msl_reloc_seal_match(MslCoreMatch* match);
+// Set by the particle probe while it makes, steps or frees one of its own
+// effect models (sysdolphin/baselib/ps_probe.c): the object allocators then
+// use the C heap and nothing is registered here, so a probe cannot use up
+// or change the match's memory. Never set otherwise.
+extern _Thread_local int msl_probe_heap;
+
 void msl_reloc_register(void* address, MslRelocType type, uint32_t count,
                         uint32_t stride, uint32_t flags);
 typedef struct _HSD_ClassInfo HSD_ClassInfo;

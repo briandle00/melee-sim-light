@@ -252,6 +252,11 @@ void* hsdAllocMemPiece(s32 size)
     s32 temp_r29;
     void* temp_r3;
 
+    // (the particle probe's own models: from the C heap, none of the match's
+    // memory - runtime/ps_probe.h)
+    if (msl_probe_heap) {
+        return calloc(1, (size_t) ((size + 0x1F) / 32) * 32);
+    }
     temp_r29 = (size + 0x1F) / 32 - 1;
     temp_r3_3 = GetMemoryEntry((size + 0x1F) / 32 - 1);
     if (temp_r3_3 == NULL) {
@@ -329,6 +334,12 @@ void hsdFreeMemPiece(void* mem, s32 size)
     HSD_MemoryEntry* entry;
     HSD_FreeList* piece = (HSD_FreeList*) mem;
 
+    // (the particle probe's own models: from the C heap, none of the match's
+    // memory - runtime/ps_probe.h)
+    if (msl_probe_heap) {
+        free(mem);
+        return;
+    }
     if (mem != NULL) {
         entry = GetMemoryEntry((size + 31) / 32 - 1);
         piece->next = entry->free_list;

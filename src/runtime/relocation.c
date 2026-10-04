@@ -204,12 +204,18 @@ int msl_reloc_seal_match(MslCoreMatch* match)
     return 0;
 }
 
+_Thread_local int msl_probe_heap;
+
 void msl_reloc_register(void* address, MslRelocType type, uint32_t count,
                         uint32_t stride, uint32_t flags)
 {
     MslCoreMatch* match = msl_core_try_active_match();
     MslRelocRegistry* registry;
     uint32_t* slot;
+
+    if (msl_probe_heap) {
+        return;
+    }
 
     if (match == NULL || address == NULL || count == 0) {
         return;
@@ -277,6 +283,10 @@ void msl_reloc_register_hsd_class(void* address, HSD_ClassInfo* info)
 {
     HSD_ClassInfo* cursor;
     MslRelocType type = MSL_RELOC_RAW;
+
+    if (msl_probe_heap) {
+        return;
+    }
 
     for (cursor = info; cursor != NULL; cursor = cursor->head.parent) {
         const char* name = cursor->head.class_name;

@@ -65,6 +65,8 @@
 #include "probe_ps/psappsrt.h"
 #include "probe_ps/generator.h"
 
+#include "runtime/relocation.h"
+
 // (joints are the simulation's: the library's own references on them are
 // left out, and a generator is ended with its owner before its joint goes.
 // The joints the library makes for itself - one for a leading particle, at
@@ -111,9 +113,20 @@ static void pp_unref(void* o)
         }
     }
 }
+static int pm_owns(const HSD_JObj* jobj);
 static void pp_setup_matrix(HSD_JObj* jobj)
 {
-    if (!pp_is_leader(jobj)) {
+    if (pp_is_leader(jobj)) {
+        return;
+    }
+    // (a probe model's joint: what its setup makes on first use is the
+    // probe's too)
+    if (pm_owns(jobj)) {
+        int was = msl_probe_heap;
+        msl_probe_heap = 1;
+        HSD_JObjSetupMatrix(jobj);
+        msl_probe_heap = was;
+    } else {
         HSD_JObjSetupMatrix(jobj);
     }
 }
@@ -186,6 +199,7 @@ static void pp_free(void* data, void* obj)
 
 #include "runtime/effects.h"
 #include "runtime/ps_probe.h"
+#include "runtime/relocation.h"
 #include "platform/native_dat.h"
 
 static FILE* probe_out;
@@ -714,6 +728,23 @@ static HSD_JObj* pm_anim_queue[32];
 static EF_ParamEntry pm_param_table[8];
 static EF_DAT_Entry pm_dat_entries[51];
 
+static int pm_owns(const HSD_JObj* jobj)
+{
+    int i;
+    if (jobj == NULL) {
+        return 0;
+    }
+    while (jobj->parent != NULL) {
+        jobj = jobj->parent;
+    }
+    for (i = 0; i < PM_MODELS; ++i) {
+        if (pm_models[i].gobj != NULL && pm_models[i].gobj->hsd_obj == (void*) jobj) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static HSD_GObj* pm_gobj_new(void)
 {
     return calloc(1, sizeof(HSD_GObj));
@@ -817,6 +848,7 @@ static void pm_step(HSD_GObj* gobj, int frame, int first)
 {
     pm_collect = 1;
     pm_pending_count = 0;
+    msl_probe_heap = 1;
     msl_effect_probe_dptcl(pm_dptcl);
     if (first) {
         HSD_JObjAnimAll(gobj->hsd_obj);
@@ -824,6 +856,7 @@ static void pm_step(HSD_GObj* gobj, int frame, int first)
         efLib_Update(gobj);
     }
     msl_effect_probe_dptcl(NULL);
+    msl_probe_heap = 0;
     pm_collect = 0;
     pm_written(frame);
 }
@@ -867,6 +900,7 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
     pp_alloc_init(&pm_alloc_data, sizeof(EF_Effect), 4);
     pm_dat_entries[0].data = (void*) common->models;
     pm_anim_count = 0;
+    msl_probe_heap = 1;
     if (strcmp(how, "create") == 0) {
         effect = efLib_Create(gfx_id, parent);
     } else if (strcmp(how, "attach") == 0 && joint != NULL) {
@@ -879,6 +913,7 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
         effect = NULL;
     }
     pm_anim_count = 0;
+    msl_probe_heap = 0;
     if (effect == NULL || effect->gobj == NULL || effect->gobj->hsd_obj == NULL) {
         return NULL;
     }
@@ -964,7 +999,9 @@ static void pm_frame(int frame)
             pm_step(gobj, frame, 0);
         }
         if (pm_models[i].dead && !pm_tree_used(gobj->hsd_obj)) {
+            msl_probe_heap = 1;
             HSD_JObjRemoveAll(gobj->hsd_obj);
+            msl_probe_heap = 0;
             free(gobj->user_data);
             free(gobj);
             pm_models[i].gobj = NULL;
