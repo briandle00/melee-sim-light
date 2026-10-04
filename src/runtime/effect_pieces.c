@@ -158,6 +158,7 @@ static void loaded_banks(void)
 enum { PIECES = 16, KIDS = 8 };
 
 typedef struct Piece {
+    u32 rng_at;
     char kind;           // 'm' a model, 'g' a particle generator
     s32 id;              // bank * 1000 + its index
     const char* how;     // how it was made: the creation call
@@ -300,6 +301,8 @@ static HSD_Generator* generator(s32 gfx_id, HSD_JObj* jobj, const char* how)
     if (p == NULL) {
         return NULL;
     }
+    // (the random state its creation draws from: hsd_8039F05C's first count)
+    p->rng_at = *seed_ptr;
     msl_effect_pieces_consume_generator(gfx_id);
     p->gen.bank = (u8) (gfx_id / 1000);
     p->gen.jobj = jobj;
@@ -502,6 +505,7 @@ static void emit(HSD_GObj* owner, s32 gfx_id)
             out.s = p->srt.scale;
             out.callback = "";
             out.mirrored = (p->gen.kind & 0x40000) != 0;
+            out.rng_at = p->rng_at;
         }
         msl_viewer_track_fxp(owner, gfx_id, &out);
     }

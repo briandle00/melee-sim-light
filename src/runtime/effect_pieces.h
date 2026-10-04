@@ -28,6 +28,7 @@ typedef struct MslEffectPiece {
     int mirrored;         // a generator mirrored to face left
     Vec3 at;              // where it was made: its place, or its joint's
                           // world position as it was made
+    u32 rng_at;           // a generator's: the random state as it was made
 } MslEffectPiece;
 
 // A spawn efSync_Spawn makes now, with its own arguments.

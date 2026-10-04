@@ -1019,11 +1019,13 @@ def summarize(path, profile="ucf10", raw_cstick=True, limit=None):
 # ones a replay viewer might want that the headless core does not run.
 # (diverged_at and the fields with it are additions a version 1 reader
 # leaves alone: still version 1)
-VIEWER_TRACK_VERSION = 1
+# 2: + "rng" (each frame's random state after gameplay) and a generator
+# piece's seed (the last value of an "fxp")
+VIEWER_TRACK_VERSION = 2
 VIEWER_TRACK_TYPES = ("fx", "fxend", "gen", "tint", "charge", "part", "pos",
                       "shake", "hide", "ganim", "bg", "fd", "gcolor", "bgcolor",
                       "cam", "hook", "irot", "stadscreen", "bird", "sgen",
-                      "fdrot", "tex")
+                      "fdrot", "tex", "rng")
 VIEWER_TRACK_MISSING = {
     "gen (fighter)": "only joint-animation particle events from stage "
                      "animations are recorded; fighter animations' particle "

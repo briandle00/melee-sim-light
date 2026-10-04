@@ -236,7 +236,8 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
 
 // [frame,"fxp",gfx_id,owner kind,owner id,index,"m"|"g",id,how,joint,
 //  tx,ty,tz,rx,ry,rz,sx,sy,sz,callback,lifetime,p0,p1,p2,mirrored,
-//  ax,ay,az: where it was made, its joint's world position for one on a joint]
+//  ax,ay,az: where it was made, its joint's world position for one on a joint,
+//  seed: a generator's random state as it was made (0 for a model)]
 void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
                           const MslEffectPiece* p)
 {
@@ -251,12 +252,12 @@ void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
     fprintf(track_out,
             "[%d,\"fxp\",%d,\"%c\",%d,%d,\"%c\",%d,\"%s\",%d,"
             "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,\"%s\",%d,"
-            "%.6g,%.6g,%.6g,%d,%.6g,%.6g,%.6g]\n",
+            "%.6g,%.6g,%.6g,%d,%.6g,%.6g,%.6g,%u]\n",
             hook_frame(), (int) gfx_id, kind, id, p->index, p->kind,
             (int) p->id, p->how, joint, p->t.x, p->t.y, p->t.z, p->r.x,
             p->r.y, p->r.z, p->s.x, p->s.y, p->s.z, p->callback,
             p->lifetime, p->params.x, p->params.y, p->params.z,
-            p->mirrored, p->at.x, p->at.y, p->at.z);
+            p->mirrored, p->at.x, p->at.y, p->at.z, (unsigned) p->rng_at);
 }
 
 void msl_viewer_track_fxend(HSD_GObj* owner)
@@ -810,6 +811,11 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     }
     track_stage(frame, match);
     track_items(frame, match);
+    // The random state after the frame's gameplay: what the particles'
+    // update (efLib_particles_proc_main, the last to draw in a frame) starts
+    // from. The replay gives each frame a fresh seed, so this is not the
+    // next frame's.
+    fprintf(track_out, "[%d,\"rng\",%u]\n", frame, (unsigned) seed_now());
 }
 
 int msl_viewer_track_resync(MslCoreMatch* match, char kind, int lane,
