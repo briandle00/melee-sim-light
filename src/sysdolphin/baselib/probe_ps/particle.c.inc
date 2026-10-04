@@ -3029,7 +3029,8 @@ void hsd_8039D0A0(HSD_Generator* gen)
         u8 pad[0x410];
         HSD_ObjAllocData alloc_data;
     } ParticleData;
-    ParticleData* data = (ParticleData*) hsd_804D08E8;
+    // (the console's layout, one block of .bss: here they are the globals
+    // themselves)
     HSD_Particle* prev;
     HSD_Particle* prt;
     HSD_Particle* next;
@@ -3038,7 +3039,7 @@ void hsd_8039D0A0(HSD_Generator* gen)
 
     prev = NULL;
     idnum = gen->idnum;
-    head = &data->particle[gen->linkNo];
+    head = &hsd_804D0908[gen->linkNo];
     prt = *head;
 
     while (prt != NULL) {
@@ -3066,13 +3067,13 @@ void hsd_8039D0A0(HSD_Generator* gen)
 
             if (prt->kind & 0x8000) {
                 s32 jidx = (prt->kind >> 12) & 7;
-                if (data->jobj[jidx] != NULL) {
-                    HSD_JObjUnref(data->jobj[jidx]);
-                    data->jobj[jidx] = NULL;
+                if (hsd_804D08E8[jidx] != NULL) {
+                    HSD_JObjUnref(hsd_804D08E8[jidx]);
+                    hsd_804D08E8[jidx] = NULL;
                 }
             }
 
-            HSD_ObjFree(&data->alloc_data, prt);
+            HSD_ObjFree(&hsd_804D0F60.alloc_data, prt);
             hsd_804D78E2--;
         } else {
             prev = prt;

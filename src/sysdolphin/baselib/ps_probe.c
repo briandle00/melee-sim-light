@@ -29,9 +29,12 @@
 //                                              a generator as it was made
 //   ["f", frame, seed]                         the state the update starts from
 //   ["u", frame, uid, type, kind, x, y, z, srt, tx, ty, tz, rx, ry, rz,
-//    sx, sy, sz]                               a generator before the update,
-//                                              gone along its joint
+//    sx, sy, sz, turned (0 or 1), m00 .. m22]  a generator before the update,
+//                                              gone along its joint; the turn
+//                                              its emission takes from it
 //   ["e", frame, uid]                          a generator ended by its owner
+//   ["x", frame]                               an owner's effects ended (the
+//                                              list was walked)
 //   ["p", frame, list, index, uid, kind, life, x, y, z, vx, vy, vz, size,
 //    rotate, prim, env, pose, cmdPtr, cmdWait, grav, fric, srt uid]
 //                                              a particle after the update, in
@@ -91,9 +94,11 @@ static void* pp_alloc(void* data)
     }
     return NULL;
 }
+static void probe_forget(const void* obj);
 static void pp_free(void* data, void* obj)
 {
     (void) data;
+    probe_forget(obj);
     free(obj);
 }
 #define HSD_ObjAllocInit(d, s, a) pp_alloc_init(d, s, a)
@@ -241,6 +246,8 @@ static int probe_bank(int bank)
         }
         copy = calloc(1, offsetof(HSD_PSCmdList, cmdList) + size + 8);
         memcpy(copy, command, offsetof(HSD_PSCmdList, cmdList));
+        // (psInitDataBankLocate's: every command's kind is given these bits)
+        copy->kind = (copy->kind & 0xF1FFFFFF) | 0x08000000;
         memcpy(copy->cmdList, script, size);
         // (past its end, should a script run off it: the end command)
         memset(copy->cmdList + size, 0xFF, 8);
@@ -254,6 +261,19 @@ static int probe_bank(int bank)
     hsd_804D0948[bank] = NULL;
     fprintf(probe_out, "[\"bank\",%d,%d,%d]\n", bank, (int) data->count, scripts);
     return 1;
+}
+
+// (a freed generator's number goes with it: its address is given out again,
+// to a particle's own generator within the same update)
+static void probe_forget(const void* obj)
+{
+    int i;
+    for (i = 0; i < probe_gen_count; ++i) {
+        if ((const void*) probe_gens[i].gen == obj) {
+            probe_gens[i] = probe_gens[--probe_gen_count];
+            return;
+        }
+    }
 }
 
 static int probe_uid(const HSD_Generator* gen)
@@ -455,6 +475,8 @@ void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame)
         probe_end_tree(root, frame);
         root->next = next;
     }
+    // (the walk itself: where the next new generator goes depends on it)
+    fprintf(probe_out, "[\"x\",%d]\n", frame);
     probe_sweep();
 }
 
@@ -485,6 +507,28 @@ void msl_particle_probe_frame(int frame)
                 probe_uid(gen), (unsigned) gen->type, (unsigned) gen->kind,
                 gen->pos.x, gen->pos.y, gen->pos.z);
         probe_srt(gen->appsrt);
+        // (the turn its emission takes from its joint, as hsd_8039DAD4 reads it)
+        if ((gen->type & 0x100) && gen->jobj != NULL && (gen->type & 0x400) &&
+            !(gen->kind & 0x30000))
+        {
+            int c;
+            float m[3][3];
+            for (c = 0; c < 3; ++c) {
+                Vec3 v;
+                v.x = gen->jobj->mtx[0][c];
+                v.y = gen->jobj->mtx[1][c];
+                v.z = gen->jobj->mtx[2][c];
+                PSVECNormalize(&v, &v);
+                m[0][c] = v.x;
+                m[1][c] = v.y;
+                m[2][c] = v.z;
+            }
+            fprintf(probe_out, ",1,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g",
+                    m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2],
+                    m[2][0], m[2][1], m[2][2]);
+        } else {
+            fprintf(probe_out, ",0");
+        }
         fprintf(probe_out, "]\n");
     }
     // efLib_particles_proc_main, then _aux: all sixteen lists between them
