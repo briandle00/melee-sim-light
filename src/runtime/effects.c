@@ -43,7 +43,7 @@ static void msl_effect_consume_bank_command(
 // and, per model, how many draws its animation's first step makes.
 enum { MSL_EFFECT_MODELS_PER_FILE = 16 };
 static const u8 msl_effect_model_counts[MSL_CORE_EFFECT_BANK_CAPACITY] = {
-    [1] = 2, [2] = 3, [3] = 6, [4] = 6, [5] = 9, [6] = 4, [7] = 5, [8] = 7,
+    [0] = 47, [1] = 2, [2] = 3, [3] = 6, [4] = 6, [5] = 9, [6] = 4, [7] = 5, [8] = 7,
     [9] = 1, [10] = 3, [11] = 1, [12] = 3, [13] = 4, [14] = 1, [15] = 1,
     [16] = 2, [17] = 7, [18] = 2, [19] = 6, [20] = 2, [21] = 2, [32] = 1,
     [33] = 1, [34] = 1, [37] = 1, [38] = 2, [39] = 2, [47] = 2, [48] = 2,
@@ -51,6 +51,22 @@ static const u8 msl_effect_model_counts[MSL_CORE_EFFECT_BANK_CAPACITY] = {
 static u8 msl_effect_model_draws[MSL_CORE_EFFECT_BANK_CAPACITY]
                                 [MSL_EFFECT_MODELS_PER_FILE];
 static u8* msl_effect_recording_draws;
+// (the common file's whole table: the simulator's own is its first 0x28)
+static EF_EffectDesc* msl_effect_common_models;
+static const MslCoreEffectData* msl_effect_tables;
+
+const EF_EffectDesc* msl_effect_model_table(int bank)
+{
+    if (bank == 0) {
+        return msl_effect_common_models;
+    }
+    if (msl_effect_tables == NULL || bank < 0 ||
+        bank >= MSL_CORE_EFFECT_BANK_CAPACITY)
+    {
+        return NULL;
+    }
+    return msl_effect_tables->banks[bank].models;
+}
 
 int msl_effect_model_count(int bank)
 {
@@ -64,7 +80,12 @@ int msl_effect_model_first_draws(int model_id)
 {
     int bank = model_id / 1000;
     int index = model_id % 1000;
-    if (model_id < 0 || bank <= 0 || bank >= MSL_CORE_EFFECT_BANK_CAPACITY ||
+    // (the common file's from 0x28 on, kept from 0)
+    if (bank == 0) {
+        index -= MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY;
+    }
+    if (model_id < 0 || index < 0 || bank < 0 ||
+        bank >= MSL_CORE_EFFECT_BANK_CAPACITY ||
         index >= MSL_EFFECT_MODELS_PER_FILE)
     {
         return 0;
@@ -146,6 +167,10 @@ static void msl_effect_load_bank(MslCoreEffectData* data, int bank,
         // their animations' first steps make and for the particle probe)
         effect_bank->models = msl_native_effect_models(
             effect_bank->archive, symbol, msl_effect_model_counts[bank]);
+    }
+    if (bank == 0) {
+        msl_effect_common_models = msl_native_effect_models(
+            effect_bank->archive, symbol, msl_effect_model_counts[0]);
     }
     if (bank == 0) {
         effect_bank->models =
@@ -305,15 +330,18 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
         msl_effect_record_model_start(data, model_id);
     }
     // (viewer track only: the other files' models' first steps, counted)
-    for (int bank = 1; bank < MSL_CORE_EFFECT_BANK_CAPACITY; ++bank) {
-        for (int model = 0; data->banks[bank].models != NULL &&
-                            model < msl_effect_model_counts[bank] &&
-                            model < MSL_EFFECT_MODELS_PER_FILE;
+    msl_effect_tables = data;
+    for (int bank = 0; bank < MSL_CORE_EFFECT_BANK_CAPACITY; ++bank) {
+        const EF_EffectDesc* table = msl_effect_model_table(bank);
+        int first = bank == 0 ? MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY : 0;
+        for (int model = first; table != NULL &&
+                                model < msl_effect_model_counts[bank] &&
+                                model - first < MSL_EFFECT_MODELS_PER_FILE;
              ++model)
         {
-            EF_EffectDesc* desc = &data->banks[bank].models[model];
+            const EF_EffectDesc* desc = &table[model];
             HSD_JObj* jobj;
-            msl_effect_model_draws[bank][model] = 0;
+            msl_effect_model_draws[bank][model - first] = 0;
             if (desc->model_desc.joint == NULL ||
                 (jobj = HSD_JObjLoadJoint(desc->model_desc.joint)) == NULL)
             {
@@ -323,7 +351,7 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
                                desc->model_desc.matanim_joint,
                                desc->model_desc.shapeanim_joint);
             HSD_JObjReqAnimAll(jobj, 0.0F);
-            msl_effect_recording_draws = &msl_effect_model_draws[bank][model];
+            msl_effect_recording_draws = &msl_effect_model_draws[bank][model - first];
             HSD_JObjAnimAll(jobj);
             msl_effect_recording_draws = NULL;
             HSD_JObjRemoveAll(jobj);

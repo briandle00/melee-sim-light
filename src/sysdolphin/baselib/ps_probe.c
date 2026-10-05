@@ -971,23 +971,22 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
 {
     int file = gfx_id / 1000;
     int index = gfx_id % 1000;
-    const MslCoreEffectGeneratorBank* common =
-        gfx_id >= 0 && file != 0x1E ? msl_effect_probe_bank(file) : NULL;
+    const EF_EffectDesc* table =
+        gfx_id >= 0 && file != 0x1E ? msl_effect_model_table(file) : NULL;
     EF_Effect* effect;
     HSD_JObj* jobj;
     size_t i;
 
     // (a model the simulator has translated: the common file's first 0x28,
     // a fighter's file's as many as its table has)
-    if (probe_out == NULL || gfx_id < 0 || common == NULL ||
-        common->models == NULL ||
-        index >= (file == 0 ? 0x28 : msl_effect_model_count(file)) ||
-        common->models[index].model_desc.joint == NULL)
+    if (probe_out == NULL || gfx_id < 0 || table == NULL ||
+        index >= msl_effect_model_count(file) ||
+        table[index].model_desc.joint == NULL)
     {
         return NULL;
     }
     pp_alloc_init(&pm_alloc_data, sizeof(EF_Effect), 4);
-    pm_dat_entries[file].data = (void*) common->models;
+    pm_dat_entries[file].data = (void*) table;
     pm_anim_count = 0;
     msl_probe_heap = 1;
     if (strcmp(how, "create") == 0) {

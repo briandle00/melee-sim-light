@@ -500,7 +500,7 @@ static u32 drawn(const Piece* p, u32 state)
     *seed_ptr = state;
     if (p->kind == 'g') {
         msl_effect_pieces_consume_generator(p->id);
-    } else if (p->id / 1000 == 0) {
+    } else if (p->id >= 0 && p->id < 0x28) {
         msl_effect_pieces_consume_model((int) (p->id % 1000));
     } else {
         // (a fighter's file's model: the simulator draws nothing for its
@@ -564,8 +564,8 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
                 p->rng_at = at;
             }
             state = drawn(p, state);
-            msl_particle_probe_model_started(made[i], frame, at, p->id / 1000 != 0);
-            if (p->id / 1000 != 0) {
+            msl_particle_probe_model_started(made[i], frame, at, p->id >= 0x28);
+            if (p->id >= 0x28) {
                 msl_viewer_track_skipped_n(msl_effect_model_first_draws(p->id));
             }
         }

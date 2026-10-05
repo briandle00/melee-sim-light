@@ -76,6 +76,9 @@ int msl_effect_generator_draws(int bank, int generator_id);
 int msl_effect_model_first_draws(int model_id);
 // How many models an effect file's table has (0: none the track knows).
 int msl_effect_model_count(int bank);
+// A file's whole model table (the common file's too, past the 0x28 the
+// simulator keeps), or NULL.
+const EF_EffectDesc* msl_effect_model_table(int bank);
 // The running stage's internal id (the particle probe's "stage" line).
 int msl_particle_probe_stage_id(void);
 // The particle probe's: a joint animation's particle keys go to `callback`
