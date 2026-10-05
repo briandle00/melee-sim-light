@@ -35,6 +35,18 @@
 //    sx, sy, sz, turned (0 or 1), m00 .. m22]  a generator before the update,
 //                                              gone along its joint; the turn
 //                                              its emission takes from it
+//   ["stage", id]                              the stage (its internal id)
+//   ["s", frame, uid, x, y, z, vx, vy, vz, ax, ay, az]
+//                                              a generator placed once from
+//                                              its joint (hsd_8039D71C): its
+//                                              place, motion and line, turned
+//   ["k", frame, skipped, drawn]               the draws the track stepped the
+//                                              state by, and the draws the
+//                                              probe's real makings made
+//   ["j", frame, uid]                          a generator taken off its joint
+//                                              (the game freed the joint)
+//   ["e", frame, uid, mode]                    mode 1: ended (hsd_8039D4DC),
+//                                              2: and its particles at once
 //   ["e", frame, uid]                          a generator ended by its owner
 //   ["x", frame]                               an owner's effects ended (the
 //                                              list was walked)
@@ -134,6 +146,31 @@ static void pp_add_place(HSD_JObj* jobj, int row, float by)
 {
     jobj->mtx[row][3] += by;
 }
+// (the list of generators waiting to be placed from their joints: its nodes
+// the probe's own, put in as the game's list functions put them)
+static HSD_SList* pp_slist_append(HSD_SList* list, void* data)
+{
+    HSD_SList* node = calloc(1, sizeof(HSD_SList));
+    node->data = data;
+    if (list != NULL) {
+        node->next = list->next;
+        list->next = node;
+        return list;
+    }
+    return node;
+}
+static HSD_SList* pp_slist_remove(HSD_SList* list)
+{
+    HSD_SList* next;
+    if (list == NULL) {
+        return NULL;
+    }
+    next = list->next;
+    free(list);
+    return next;
+}
+#define HSD_SListAllocAndAppend(l, d) pp_slist_append(l, d)
+#define HSD_SListRemove(l) pp_slist_remove(l)
 #define ref_INC(o) pp_ref(o)
 #define HSD_JObjUnref(o) pp_unref(o)
 #define HSD_JObjAlloc() pp_leader_new()
@@ -187,6 +224,8 @@ static void pp_free(void* data, void* obj)
 #include "probe_ps/generator.c.inc"
 
 #undef ref_INC
+#undef HSD_SListAllocAndAppend
+#undef HSD_SListRemove
 #undef HSD_JObjAlloc
 #undef HSD_JObjSetupMatrix
 #undef HSD_JObjAddTranslationX
@@ -250,6 +289,10 @@ static LONG WINAPI probe_crashed(EXCEPTION_POINTERS* info)
 #endif
 
 static void probe_made(HSD_Generator* gen);
+static int probe_drawn;
+static u32 saved_real;
+static HSD_Generator* probe_stage_kept;
+static int probe_stage_told;
 static void pm_frame(int frame);
 static void pm_owner_ended(HSD_GObj* owner, int frame);
 static void pm_reset(void);
@@ -288,6 +331,9 @@ void msl_particle_probe_begin(void)
         probe_bank_source[i] = NULL;
     }
     pm_reset();
+    probe_stage_kept = NULL;
+    probe_stage_told = 0;
+    probe_drawn = 0;
     probe_gen_count = 0;
     probe_next_uid = 0;
     probe_frame_no = 0;
@@ -592,7 +638,7 @@ static unsigned probe_rgba(GXColor c)
            ((unsigned) c.b << 8) | (unsigned) c.a;
 }
 
-void msl_particle_probe_frame(int frame)
+void msl_particle_probe_frame(int frame, u32 state, int skipped)
 {
     HSD_Generator* gen;
     u32 saved;
@@ -602,9 +648,28 @@ void msl_particle_probe_frame(int frame)
         return;
     }
     probe_frame_no = frame;
+    if (skipped != 0 || probe_drawn != 0) {
+        fprintf(probe_out, "[\"k\",%d,%d,%d]\n", frame, skipped, probe_drawn);
+    }
+    probe_drawn = 0;
     // (the models first: their generators go along the joints as they are now)
     pm_frame(frame);
+    // (the ones waiting to be placed from their joints, as the update's
+    // first lines place them: hsd_8039EE24)
+    while (hsd_804D78F4 != 0) {
+        HSD_Generator* gp = ((HSD_SList*) hsd_804D78F4)->data;
+        hsd_8039D71C(gp);
+        hsd_804D78F4 = (uintptr_t) pp_slist_remove((HSD_SList*) hsd_804D78F4);
+        gp->jobj = NULL;
+        fprintf(probe_out, "[\"s\",%d,%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]\n",
+                frame, probe_uid(gp), gp->pos.x, gp->pos.y, gp->pos.z,
+                gp->vel.x, gp->vel.y, gp->vel.z, gp->aux.line.x2,
+                gp->aux.line.y2, gp->aux.line.z2);
+    }
     saved = *seed_ptr;
+    *seed_ptr = state;
+    saved_real = saved;
+    saved = state;
     fprintf(probe_out, "[\"f\",%d,%u]\n", frame, (unsigned) saved);
     // each generator gone along its joint, as the update is about to take it
     for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
@@ -644,7 +709,7 @@ void msl_particle_probe_frame(int frame)
     hsd_8039EE24(0x20000 | 0x40000);
     hsd_8039CEAC(0x10000);
     hsd_8039EE24(0x10000);
-    *seed_ptr = saved;
+    *seed_ptr = saved_real;
     for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
         // (which command it is of: the one whose script it runs)
         int idx = -1;
@@ -1031,4 +1096,206 @@ static void pm_reset(void)
     pm_next_number = 0;
     pm_pending_count = 0;
     pm_collect = 0;
+}
+
+// --- the stage's generators, and the keys of the simulation's own joints -------
+//
+// refs/melee/src/melee/gr/grlib.c, refs/melee/src/melee/ef/eflib.c
+
+#include "runtime/viewer_track.h"
+
+float Ground_801C0498(void);
+
+// probe_stage_kept: the one the stage's code keeps to end later (Final
+// Destination's 0x7531, the Stadium's 0x7546 and 0x7544): the simulator
+// hands the stage none, so the probe remembers it
+
+static void probe_line(HSD_Generator* gen, int frame, s32 id, int how, u32 state)
+{
+    fprintf(probe_out, "[\"g\",%d,%d,%d,%d,%u,%d,%u,%u,%.9g,%.9g,%.9g", frame,
+            probe_uid(gen), (int) id, (int) gen->linkNo, (unsigned) state, how,
+            (unsigned) gen->type, (unsigned) gen->kind, gen->pos.x, gen->pos.y,
+            gen->pos.z);
+    probe_srt(gen->appsrt);
+    fprintf(probe_out, ",%.9g]\n", gen->count);
+}
+
+void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
+                              HSD_JObj* jobj, u32 state, int counted)
+{
+    HSD_Generator* gen = NULL;
+    u32 saved;
+
+    if (probe_out == NULL || !probe_bank(bank)) {
+        return;
+    }
+    if (!probe_stage_told) {
+        probe_stage_told = 1;
+        fprintf(probe_out, "[\"stage\",%d]\n", (int) msl_particle_probe_stage_id());
+    }
+    saved = *seed_ptr;
+    *seed_ptr = state;
+    switch (how) {
+    case MSL_PROBE_STAGE_PLACE:
+        // grLib_801C96F8
+        gen = hsd_8039F05C(0, bank, id);
+        if (gen != NULL) {
+            HSD_psAppSRT* srt = gen->appsrt;
+            if (srt == NULL) {
+                srt = psAddGeneratorAppSRT_begin(gen, 1);
+            } else {
+                srt->xA2 = 0;
+            }
+            if (srt == NULL) {
+                hsd_8039D4DC(gen);
+                gen = NULL;
+            } else {
+                float scale = Ground_801C0498();
+                srt->translate = *pos;
+                srt->scale.x *= scale;
+                srt->scale.y *= scale;
+                srt->scale.z *= scale;
+                gen->pos.x = gen->pos.y = gen->pos.z = 0.0F;
+            }
+        }
+        if (gen != NULL && (id == 0x7531 || id == 0x7546 || id == 0x7544)) {
+            probe_stage_kept = gen;
+        }
+        break;
+    case MSL_PROBE_STAGE_ONCE:
+        gen = hsd_8039F6CC(0, bank, id, jobj);
+        break;
+    case MSL_PROBE_STAGE_JOINT:
+        gen = hsd_8039EFAC(0, bank, id, jobj);
+        break;
+    default:
+        break;
+    }
+    if (counted && *seed_ptr != state) {
+        probe_drawn++;
+    }
+    *seed_ptr = saved;
+    if (gen == NULL) {
+        fprintf(probe_out, "[\"miss\",%d,%d]\n", (int) id, 6 + how);
+        return;
+    }
+    probe_line(gen, msl_viewer_track_hook_frame(), id, 6 + how, state);
+}
+
+void msl_particle_probe_key(int bank, s32 id, HSD_JObj* jobj, u32 state)
+{
+    u32 saved;
+    int i;
+
+    if (probe_out == NULL || !probe_bank(bank)) {
+        return;
+    }
+    saved = *seed_ptr;
+    *seed_ptr = state;
+    pm_collect = 1;
+    pm_pending_count = 0;
+    efLib_SpawnParticleEffect(bank, id, jobj, 1);
+    pm_collect = 0;
+    if (*seed_ptr != state) {
+        probe_drawn++;
+    }
+    *seed_ptr = saved;
+    for (i = 0; i < pm_pending_count; ++i) {
+        if (probe_live(pm_pending[i])) {
+            probe_line(pm_pending[i], msl_viewer_track_hook_frame(), id, 9, state);
+        }
+    }
+    pm_pending_count = 0;
+}
+
+static void probe_stage_end_one(HSD_Generator* gen, int now, int frame)
+{
+    if (gen == NULL || !probe_live(gen)) {
+        return;
+    }
+    fprintf(probe_out, "[\"e\",%d,%d,%d]\n", frame, probe_uid(gen), now ? 2 : 1);
+    if (now) {
+        gen->type |= 0x80;
+    }
+    hsd_8039D4DC(gen);
+    // (one that lives on for its particles: off its joint, which is not the probe's to keep)
+    if (probe_live(gen)) {
+        gen->jobj = NULL;
+    }
+}
+
+static void probe_stage_end_joint(HSD_JObj* jobj, int now, int tree, int frame)
+{
+    HSD_Generator* gen;
+    HSD_Generator* next;
+
+    if (jobj == NULL) {
+        return;
+    }
+    for (gen = hsd_804D78FC; gen != NULL; gen = next) {
+        next = gen->next;
+        if (gen->jobj == jobj) {
+            probe_stage_end_one(gen, now, frame);
+            // (the list may have changed under the walk)
+            next = hsd_804D78FC;
+            while (next != NULL && next->jobj != jobj) {
+                next = next->next;
+            }
+        }
+    }
+    if (!tree || (jobj->flags & JOBJ_INSTANCE)) {
+        return;
+    }
+    for (jobj = jobj->child; jobj != NULL; jobj = jobj->next) {
+        probe_stage_end_joint(jobj, now, tree, frame);
+    }
+}
+
+void msl_particle_probe_stage_end(int how, HSD_JObj* jobj)
+{
+    int frame;
+
+    if (probe_out == NULL) {
+        return;
+    }
+    frame = msl_viewer_track_hook_frame();
+    switch (how) {
+    case MSL_PROBE_END_KEPT:
+    case MSL_PROBE_END_KEPT_NOW:
+        probe_stage_end_one(probe_stage_kept, how == MSL_PROBE_END_KEPT_NOW, frame);
+        probe_stage_kept = NULL;
+        break;
+    case MSL_PROBE_END_JOINTS:
+        probe_stage_end_joint(jobj, 0, 1, frame);
+        break;
+    case MSL_PROBE_END_JOINT_NOW:
+        probe_stage_end_joint(jobj, 1, 0, frame);
+        break;
+    case MSL_PROBE_END_JOINTS_NOW:
+        probe_stage_end_joint(jobj, 1, 1, frame);
+        break;
+    default:
+        break;
+    }
+    fprintf(probe_out, "[\"x\",%d]\n", frame);
+    probe_sweep();
+}
+
+void msl_particle_probe_joint_gone(HSD_JObj* jobj)
+{
+    HSD_Generator* gen;
+    HSD_SList* waiting;
+
+    // (the probe's own models' joints are freed by the probe, once no
+    // generator is on them)
+    if (probe_out == NULL || msl_probe_heap) {
+        return;
+    }
+    for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
+        if (gen->jobj == jobj) {
+            gen->jobj = NULL;
+            fprintf(probe_out, "[\"j\",%d,%d]\n", msl_viewer_track_hook_frame(), probe_uid(gen));
+        }
+    }
+    (void) waiting;
 }

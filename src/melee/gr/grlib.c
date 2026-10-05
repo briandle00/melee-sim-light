@@ -1,5 +1,8 @@
 #include "grlib.h"
 
+#include "runtime/ps_probe.h"
+#include "runtime/viewer_track.h"
+
 #include "grbigblue.h"
 #include "gricemt.h"
 #include "ground.h"
@@ -52,6 +55,8 @@ HSD_Generator* grLib_801C96F8(s32 arg0, s32 arg1, Vec3* arg2)
 {
 #ifdef MSL_CORE_HOSTED
     if (msl_viewer_track_on) {
+        msl_particle_probe_stage(MSL_PROBE_STAGE_PLACE, arg0, arg1, arg2, NULL,
+                                 msl_viewer_track_state(), 1);
         msl_viewer_track_sgen(arg1, arg0, arg2, NULL);
     }
     return NULL;
@@ -89,6 +94,8 @@ void grLib_801C97DC(s32 arg0, s32 arg1, HSD_JObj* arg2)
     hsd_8039F6CC(0, arg1, arg0, arg2);
 #else
     if (msl_viewer_track_on) {
+        msl_particle_probe_stage(MSL_PROBE_STAGE_ONCE, arg0, arg1, NULL, arg2,
+                                 msl_viewer_track_state(), 1);
         msl_viewer_track_sgen(arg1, arg0, NULL, arg2);
     }
 #endif
@@ -97,9 +104,11 @@ void grLib_801C97DC(s32 arg0, s32 arg1, HSD_JObj* arg2)
 HSD_Generator* grLib_801C9808(s32 arg0, s32 arg1, HSD_JObj* arg2)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_stage(MSL_PROBE_STAGE_JOINT, arg0, arg1, NULL, arg2,
+                                 msl_viewer_track_state(), 1);
+        msl_viewer_track_skipped(arg1, arg0);
+    }
     return NULL;
 #else
     return hsd_8039EFAC(0, arg1, arg0, arg2);
@@ -112,6 +121,7 @@ void grLib_801C9834(HSD_Generator* arg0)
     hsd_8039D4DC(arg0);
 #else
     (void) arg0;
+    msl_particle_probe_stage_end(MSL_PROBE_END_KEPT, NULL);
 #endif
 }
 
@@ -120,7 +130,7 @@ void grLib_801C9854(HSD_JObj* jobj)
 #ifndef MSL_CORE_HOSTED
     hsd_8039D5DC(jobj);
 #else
-    (void) jobj;
+    msl_particle_probe_stage_end(MSL_PROBE_END_JOINTS, jobj);
 #endif
 }
 
@@ -131,13 +141,14 @@ void grLib_801C9874(HSD_Generator* arg0)
     hsd_8039D4DC(arg0);
 #else
     (void) arg0;
+    msl_particle_probe_stage_end(MSL_PROBE_END_KEPT_NOW, NULL);
 #endif
 }
 
 void grLib_801C98A0(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) jobj;
+    msl_particle_probe_stage_end(MSL_PROBE_END_JOINT_NOW, jobj);
 #else
     HSD_Generator *cur, *next;
 
@@ -174,7 +185,7 @@ inline HSD_JObj* jobj_next(HSD_JObj* node)
 void grLib_801C9908(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) jobj;
+    msl_particle_probe_stage_end(MSL_PROBE_END_JOINTS_NOW, jobj);
 #else
     HSD_Generator* cur;
     HSD_Generator* next;

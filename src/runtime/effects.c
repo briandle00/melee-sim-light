@@ -21,6 +21,8 @@
 #include <baselib/psstructs.h>
 #include <baselib/random.h>
 
+#include "runtime/ps_probe.h"
+
 #ifdef MSL_CORE_NATIVE
 #include "platform/native_dat.h"
 #endif
@@ -312,6 +314,17 @@ static void msl_effect_match_dptcl(int link_no, int bank, int gfx_id,
 {
     if (msl_viewer_track_on) {
         msl_viewer_track_gen(bank, gfx_id, jobj);
+        // (the probe's real one, from the state the game makes it with. A
+        // stage's key is drawn for below; another file's is a draw the
+        // simulator leaves out)
+        if (bank == MSL_CORE_EFFECT_STAGE_BANK) {
+            msl_particle_probe_stage(MSL_PROBE_STAGE_JOINT, gfx_id, bank, NULL,
+                                     jobj, msl_viewer_track_state(), 0);
+        } else {
+            msl_particle_probe_key(bank, gfx_id, jobj,
+                                   msl_viewer_track_state());
+            msl_viewer_track_skipped(bank, gfx_id);
+        }
     }
     if (bank != 0x1E || msl_bound_effect_state == NULL) {
         return;
@@ -407,12 +420,49 @@ static void msl_effect_release(MslCoreEffectQueueNode* node)
 
 const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank)
 {
+    // (the stage's own: the running stage's map_ptcl)
+    if (bank == MSL_CORE_EFFECT_STAGE_BANK) {
+        const MslCoreEffectStageBanks* stages;
+        int i;
+        if (msl_core_try_active_match() == NULL ||
+            msl_core_context_game_data == NULL)
+        {
+            return NULL;
+        }
+        stages = &msl_core_context_game_data->stage_particles;
+        for (i = 0; i < stages->count; ++i) {
+            if (stages->ids[i] == (s32) stage_info.internal_stage_id) {
+                return &stages->banks[i];
+            }
+        }
+        return NULL;
+    }
     if (msl_bound_effect_data == NULL || bank < 0 ||
         bank >= (int) (sizeof(msl_effect_banks) / sizeof(msl_effect_banks[0])))
     {
         return NULL;
     }
     return &msl_effect_banks[bank];
+}
+
+int msl_particle_probe_stage_id(void)
+{
+    return (int) stage_info.internal_stage_id;
+}
+
+int msl_effect_generator_draws(int bank, int generator_id)
+{
+    const MslCoreEffectGeneratorBank* data = msl_effect_probe_bank(bank);
+    const HSD_PSCmdList* command;
+
+    if (data == NULL || data->commands == NULL ||
+        generator_id < data->id_base || generator_id >= data->count)
+    {
+        return 0;
+    }
+    command = data->commands[generator_id];
+    return command != NULL && !(command->kind & 0x100) &&
+           command->random >= 0.0F;
 }
 
 static void msl_effect_consume_generator_rng(s32 generator_id)

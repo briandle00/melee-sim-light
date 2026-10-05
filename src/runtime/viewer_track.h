@@ -29,6 +29,12 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
                          const Vec3* pos, float a0, float a1);
 // The frame a hook fires in (the particle probe's lines).
 int msl_viewer_track_hook_frame(void);
+// The game's random state now: the simulator's, stepped once for each draw
+// the game has made this frame that the simulator leaves out.
+u32 msl_viewer_track_state(void);
+// A generator the game makes here and the simulator does not: counted when
+// its making draws (runtime/effects.h msl_effect_generator_draws).
+void msl_viewer_track_skipped(int bank, int generator_id);
 void msl_viewer_track_fxend(HSD_GObj* owner);
 // One piece of the spawn just written (runtime/effect_pieces.c): what the
 // game's dispatch made for it, as an "fxp" event after its "fx".

@@ -15,6 +15,7 @@
 #include "lb/types.h"
 #include "runtime/context.h"
 #include "runtime/effect_pieces.h"
+#include "runtime/effects.h"
 #include "runtime/ps_probe.h"
 #include "runtime/scalar.h"
 
@@ -162,9 +163,41 @@ int msl_viewer_track_hook_frame(void)
     return hook_frame();
 }
 
+// The draws the game has made this frame that the simulator leaves out: the
+// stage's own generator calls (grlib.c makes none here) and the particle
+// keys of joints outside the stage's file. A frame's last state depends
+// only on how many draws there were, so the simulator's is stepped by them.
+static int track_skipped;
+
 static uint32_t seed_now(void)
 {
-    return *seed_ptr;
+    uint32_t state = *seed_ptr;
+    int i;
+    for (i = 0; i < track_skipped; ++i) {
+        state = state * 214013 + 2531011;
+    }
+    return state;
+}
+
+u32 msl_viewer_track_state(void)
+{
+    return seed_now();
+}
+
+void msl_viewer_track_skipped(int bank, int generator_id)
+{
+    // (MSL_TRACK_NO_STEP: a developer's switch - the simulator's own state,
+    // as tracks had it before the stepping, to compare one with the other)
+    static int no_step = -1;
+    if (no_step < 0) {
+        const char* off = getenv("MSL_TRACK_NO_STEP");
+        no_step = off != NULL && off[0] != '\0';
+    }
+    if (!no_step && track_out != NULL &&
+        msl_effect_generator_draws(bank, generator_id))
+    {
+        track_skipped++;
+    }
 }
 
 // Owner of an effect: kind letter, id, and the JObj's index in it (-1 when
@@ -364,6 +397,7 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
     fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u]\n",
             hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
             (unsigned) seed_now());
+    msl_viewer_track_skipped(bank, gen_id);
 }
 
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)
@@ -827,7 +861,8 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     // from. The replay gives each frame a fresh seed, so this is not the
     // next frame's.
     fprintf(track_out, "[%d,\"rng\",%u]\n", frame, (unsigned) seed_now());
-    msl_particle_probe_frame(frame);
+    msl_particle_probe_frame(frame, seed_now(), track_skipped);
+    track_skipped = 0;
 }
 
 int msl_viewer_track_resync(MslCoreMatch* match, char kind, int lane,

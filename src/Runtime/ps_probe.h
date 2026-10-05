@@ -20,7 +20,30 @@ enum {
     MSL_PROBE_JOINT_SRT, // efLib_CreateGenerator_Attach_AddAppSRT
 };
 
+// how a stage's code makes a generator (grlib.c), and ends one
+enum {
+    MSL_PROBE_STAGE_PLACE, // grLib_801C96F8: at a place, under a transform
+    MSL_PROBE_STAGE_ONCE,  // grLib_801C97DC: placed once from a joint
+    MSL_PROBE_STAGE_JOINT, // grLib_801C9808, an animation's key: on a joint
+};
+enum {
+    MSL_PROBE_END_KEPT,       // grLib_801C9834: the one the stage kept
+    MSL_PROBE_END_KEPT_NOW,   // grLib_801C9874: and its particles at once
+    MSL_PROBE_END_JOINTS,     // grLib_801C9854: a joint tree's
+    MSL_PROBE_END_JOINT_NOW,  // grLib_801C98A0: a joint's, particles too
+    MSL_PROBE_END_JOINTS_NOW, // grLib_801C9908: a joint tree's, particles too
+};
+
 int msl_particle_probe_on(void);
+// A stage's generator made as the game makes it, from the random state
+// `state` (put back after). `counted`: its draw is one the simulator leaves
+// out (checked against the track's count each frame).
+void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
+                              HSD_JObj* jobj, u32 state, int counted);
+void msl_particle_probe_stage_end(int how, HSD_JObj* jobj);
+// A generator a particle key starts on one of the simulation's own joints,
+// outside the stage's file (efLib_Cb_DPtcl -> efLib_SpawnParticleEffect).
+void msl_particle_probe_key(int bank, s32 id, HSD_JObj* jobj, u32 state);
 void msl_particle_probe_begin(void);
 void msl_particle_probe_end(void);
 // A generator made as the game makes it, from the random state `seed_at`
@@ -44,9 +67,15 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
 // Its animation's first step (the generators its particle keys start),
 // from the random state `seed_at` (put back after).
 void msl_particle_probe_model_started(void* model, int frame, u32 seed_at);
+// A joint is being freed: the probe's generators on it stay where they are,
+// off it (the game's own hold a reference that keeps the joint; the probe
+// takes none).
+void msl_particle_probe_joint_gone(HSD_JObj* jobj);
 // An owner's effects all ended (efLib_DestroyAll): its joints' generators.
 void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame);
 // The frame's update (after its gameplay), and everything written.
-void msl_particle_probe_frame(int frame);
+// `state`: the random state the game's update starts from; `skipped`: how
+// many draws the track stepped the simulator's state by this frame.
+void msl_particle_probe_frame(int frame, u32 state, int skipped);
 
 #endif

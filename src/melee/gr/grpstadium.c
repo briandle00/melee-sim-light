@@ -1,3 +1,4 @@
+#include "runtime/ps_probe.h"
 #include "grpstadium.h"
 
 #include "baselib/forward.h"
@@ -512,6 +513,13 @@ void grStadium_801D1808(Ground_GObj* gobj)
     if (gp->u.stadium9.xC8 != NULL) {
         grLib_801C9834(gp->u.stadium9.xC8);
     }
+#ifdef MSL_CORE_HOSTED
+    // (no generator is kept here, so the call above is never made: the
+    // particle probe, which keeps its own, is told all the same)
+    else {
+        grLib_801C9834(NULL);
+    }
+#endif
     mpLib_80057BC0(5);
 }
 
@@ -662,6 +670,11 @@ void grStadium_801D1D84(Ground_GObj* gobj)
     if (gp->u.stadium9.xC8 != NULL) {
         grLib_801C9874(gp->u.stadium9.xC8);
     }
+#ifdef MSL_CORE_HOSTED
+    else {
+        grLib_801C9874(NULL);
+    }
+#endif
     if (gp->u.stadium9.xCC_gobj != NULL) {
         Ground_801C4A08(gp->u.stadium9.xCC_gobj);
     }
@@ -707,6 +720,8 @@ void grStadium_801D1E20(void)
             Vec3 spC = { 0, -100, -660 };
             spC.x += (a * 2 - 1) * (b + 100);
             mul_vec(&spC, Ground_801C0498());
+            msl_particle_probe_stage(MSL_PROBE_STAGE_PLACE, 0x7530, 0x1E, &spC,
+                                     NULL, msl_viewer_track_state(), 1);
             msl_viewer_track_sgen(0x1E, 0x7530, &spC, NULL);
         }
     }

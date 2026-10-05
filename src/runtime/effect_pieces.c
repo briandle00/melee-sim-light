@@ -228,7 +228,7 @@ static EF_Effect* model(u32 gfx_id, HSD_GObj* gobj, HSD_JObj* jobj, const char* 
         return NULL;
     }
     // (the random state its animation's first generators draw from)
-    p->rng_at = *seed_ptr;
+    p->rng_at = msl_viewer_track_state();
     if (gfx_id / 1000 == 0) {
         msl_effect_pieces_consume_model((int) (gfx_id % 1000));
     }
@@ -307,7 +307,7 @@ static HSD_Generator* generator_as(s32 gfx_id, HSD_JObj* jobj, const char* how, 
         return NULL;
     }
     // (the random state its creation draws from: hsd_8039F05C's first count)
-    p->rng_at = *seed_ptr;
+    p->rng_at = msl_viewer_track_state();
     p->probe_how = probe_how;
     p->probe_link = link_no;
     msl_effect_pieces_consume_generator(gfx_id);
@@ -609,7 +609,10 @@ static void run(s32 gfx_id, HSD_GObj* gobj, va_list args)
     efSync_Spawn_v(gfx_id, gobj, args);
     efLib_AnimCount = 0;
     *seed_ptr = saved;
-    emit(gobj, gfx_id, saved);
+    // (the game's state as the spawn was made: the simulator's, stepped for
+    // the draws it has left out this frame)
+    *seed_ptr = saved;
+    emit(gobj, gfx_id, msl_viewer_track_state());
     busy = 0;
 }
 

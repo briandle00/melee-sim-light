@@ -1778,9 +1778,14 @@ void JObjReleaseChild(HSD_JObj* jobj)
     }
 }
 
+// Viewer track only (runtime/ps_probe.h): the particle probe's generators
+// on this joint are taken off it. Does nothing with the probe off.
+void msl_particle_probe_joint_gone(HSD_JObj* jobj);
+
 void JObjRelease(HSD_Class* o)
 {
     HSD_JObj* jobj = (HSD_JObj*) o;
+    msl_particle_probe_joint_gone(jobj);
     HSD_JOBJ_METHOD(jobj)->release_child(jobj);
 
     if (HSD_IDGetDataFromTable(NULL, jobj->id, NULL) == jobj) {
