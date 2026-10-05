@@ -514,8 +514,7 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
     int frame = msl_viewer_track_hook_frame();
     void* made[PIECES];
 
-    // (the probe's, for now: the track's own seeds are as they were, in the
-    // order the simulator draws them)
+    // (each piece's seed in the track is its state in this order)
     // The game's order: each generator as the dispatch makes it, then - the
     // dispatch done - the models' animations' first steps, the last made
     // first (efLib_AnimQueue, flushed after the dispatch).
@@ -525,6 +524,9 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
         made[i] = NULL;
         if (p->kind == 'g') {
             u32 at = state;
+            if (!msl_viewer_track_plain()) {
+                p->rng_at = at;
+            }
             state = drawn(p, state);
             made[i] = msl_particle_probe_generator(p->id, p->joint, p->probe_how, p->probe_link, at);
             msl_particle_probe_placed(made[i], frame, p->id, p->probe_how, at, &p->gen.pos,
@@ -541,6 +543,9 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
         Piece* p = &pieces[i];
         if (p->kind == 'm') {
             u32 at = state;
+            if (!msl_viewer_track_plain()) {
+                p->rng_at = at;
+            }
             state = drawn(p, state);
             msl_particle_probe_model_started(made[i], frame, at);
         }

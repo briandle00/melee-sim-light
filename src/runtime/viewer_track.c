@@ -184,16 +184,19 @@ u32 msl_viewer_track_state(void)
     return seed_now();
 }
 
+int msl_viewer_track_plain(void)
+{
+    static int plain = -1;
+    if (plain < 0) {
+        const char* on = getenv("MSL_TRACK_NO_STEP");
+        plain = on != NULL && on[0] != '\0';
+    }
+    return plain;
+}
+
 void msl_viewer_track_skipped(int bank, int generator_id)
 {
-    // (MSL_TRACK_NO_STEP: a developer's switch - the simulator's own state,
-    // as tracks had it before the stepping, to compare one with the other)
-    static int no_step = -1;
-    if (no_step < 0) {
-        const char* off = getenv("MSL_TRACK_NO_STEP");
-        no_step = off != NULL && off[0] != '\0';
-    }
-    if (!no_step && track_out != NULL &&
+    if (!msl_viewer_track_plain() && track_out != NULL &&
         msl_effect_generator_draws(bank, generator_id))
     {
         track_skipped++;

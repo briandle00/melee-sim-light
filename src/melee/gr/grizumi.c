@@ -359,6 +359,20 @@ void grIzumi_801CBE64(Ground_GObj* gobj)
     gp->gv.izumi.xC4 = NULL;
     gp->gv.izumi.xC8 = NULL;
     gp->gv.izumi.xCC = NULL;
+    // (the two generators the block above makes are the game's all the
+    // same: one of them counts at random every frame. grlib.c's hosted
+    // branch writes them to the viewer track and makes none)
+    {
+        Vec3 x = { 0, 0, 0 };
+        grLib_801C96F8(0x7534, 0x1E, &x);
+    }
+    {
+        Vec3 y = { 0, 1, -27 };
+        y.x *= Ground_801C0498();
+        y.y *= Ground_801C0498();
+        y.z *= Ground_801C0498();
+        grLib_801C96F8(0x7536, 0x1E, &y);
+    }
 #endif
 #ifndef MSL_CORE_HOSTED
     gp->gv.izumi.xCC = grIzumi_801CBCE8(2);

@@ -652,8 +652,14 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         fprintf(probe_out, "[\"k\",%d,%d,%d]\n", frame, skipped, probe_drawn);
     }
     probe_drawn = 0;
-    // (the models first: their generators go along the joints as they are now)
+    // (the models first: their generators go along the joints as they are
+    // now, and what their animations' later keys draw comes before the
+    // particles' own draws - the update goes on from where they leave it)
+    saved_real = *seed_ptr;
+    *seed_ptr = state;
     pm_frame(frame);
+    state = *seed_ptr;
+    *seed_ptr = saved_real;
     // (the ones waiting to be placed from their joints, as the update's
     // first lines place them: hsd_8039EE24)
     while (hsd_804D78F4 != 0) {
@@ -1052,14 +1058,27 @@ static int pm_tree_used(const HSD_JObj* jobj)
 // callback), then the ended ones' joints let go
 static void pm_frame(int frame)
 {
-    u32 saved = *seed_ptr;
     int i;
+    int k;
+    int after = -1;
 
-    for (i = 0; i < PM_MODELS; ++i) {
-        HSD_GObj* gobj = pm_models[i].gobj;
-        if (gobj == NULL) {
-            continue;
+    // (in the order they were made: the lowest number not yet stepped)
+    for (k = 0; k < PM_MODELS; ++k) {
+        HSD_GObj* gobj;
+        int best = -1;
+        for (i = 0; i < PM_MODELS; ++i) {
+            if (pm_models[i].gobj != NULL && pm_models[i].number > after &&
+                (best < 0 || pm_models[i].number < pm_models[best].number))
+            {
+                best = i;
+            }
         }
+        if (best < 0) {
+            break;
+        }
+        i = best;
+        after = pm_models[i].number;
+        gobj = pm_models[i].gobj;
         if (!pm_models[i].dead) {
             pm_step(gobj, frame, 0);
         }
@@ -1072,7 +1091,6 @@ static void pm_frame(int frame)
             pm_models[i].gobj = NULL;
         }
     }
-    *seed_ptr = saved;
 }
 
 // efLib_DestroyAll's models: the owner's go, and the generators on their joints

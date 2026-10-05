@@ -32,6 +32,10 @@ int msl_viewer_track_hook_frame(void);
 // The game's random state now: the simulator's, stepped once for each draw
 // the game has made this frame that the simulator leaves out.
 u32 msl_viewer_track_state(void);
+// MSL_TRACK_NO_STEP (a developer's switch): the track as it was before the
+// game's own random states went into it - the simulator's state unstepped,
+// each piece's seed in the order the simulator draws.
+int msl_viewer_track_plain(void);
 // A generator the game makes here and the simulator does not: counted when
 // its making draws (runtime/effects.h msl_effect_generator_draws).
 void msl_viewer_track_skipped(int bank, int generator_id);
