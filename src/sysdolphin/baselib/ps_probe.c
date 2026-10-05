@@ -219,9 +219,51 @@ static void pp_free(void* data, void* obj)
 #define HSD_ObjAlloc(d) pp_alloc(d)
 #define HSD_ObjFree(d, o) pp_free(d, o)
 
+// The draw trace (MSL_PARTICLE_PROBE_DRAWS): every random draw the copy makes,
+// in order, by where it is made - the unit (1 particle.c, 2 generator.c) and
+// its line there - the phase it is made in, and the state it leaves. One
+// ["D", frame, phase, unit, line, state, ...] line a frame.
+//   phase 0: a generator made during gameplay (from its own state)
+//         1: a model's animation step (its keys' generators)
+//         2: the update's particle pass, 3: its generator pass
+//         4: a stage's making
+static f32 pp_draw(int unit, int line);
+#define HSD_Randf() pp_draw(1, __LINE__)
 #include "probe_ps/psappsrt.c.inc"
 #include "probe_ps/particle.c.inc"
+#undef HSD_Randf
+#define HSD_Randf() pp_draw(2, __LINE__)
 #include "probe_ps/generator.c.inc"
+#undef HSD_Randf
+
+#define PP_DRAWS_MAX 32768
+static struct {
+    u8 phase;
+    u8 unit;
+    u16 line;
+    u32 state;
+} pp_draws[PP_DRAWS_MAX];
+static int pp_draw_count;
+static int pp_draw_on;
+static int pp_draw_phase;
+static int pp_draw_lost;
+
+static f32 pp_draw(int unit, int line)
+{
+    f32 v = HSD_Randf();
+    if (pp_draw_on) {
+        if (pp_draw_count < PP_DRAWS_MAX) {
+            pp_draws[pp_draw_count].phase = (u8) pp_draw_phase;
+            pp_draws[pp_draw_count].unit = (u8) unit;
+            pp_draws[pp_draw_count].line = (u16) line;
+            pp_draws[pp_draw_count].state = *seed_ptr;
+            ++pp_draw_count;
+        } else {
+            ++pp_draw_lost;
+        }
+    }
+    return v;
+}
 
 #undef ref_INC
 #undef HSD_SListAllocAndAppend
@@ -334,6 +376,9 @@ void msl_particle_probe_begin(void)
     }
     pm_reset();
     probe_slim = getenv("MSL_PARTICLE_PROBE_SLIM") != NULL;
+    pp_draw_on = getenv("MSL_PARTICLE_PROBE_DRAWS") != NULL;
+    pp_draw_count = 0;
+    pp_draw_lost = 0;
     probe_stage_kept = NULL;
     probe_stage_told = 0;
     probe_drawn = 0;
@@ -660,6 +705,7 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
     // particles' own draws - the update goes on from where they leave it)
     saved_real = *seed_ptr;
     *seed_ptr = state;
+    pp_draw_phase = 1;
     pm_frame(frame);
     state = *seed_ptr;
     *seed_ptr = saved_real;
@@ -718,11 +764,28 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         fprintf(probe_out, "]\n");
     }
     // efLib_particles_proc_main, then _aux: all sixteen lists between them
+    pp_draw_phase = 2;
     hsd_8039CEAC(0x20000 | 0x40000);
+    pp_draw_phase = 3;
     hsd_8039EE24(0x20000 | 0x40000);
+    pp_draw_phase = 2;
     hsd_8039CEAC(0x10000);
+    pp_draw_phase = 3;
     hsd_8039EE24(0x10000);
+    pp_draw_phase = 0;
     *seed_ptr = saved_real;
+    if (pp_draw_on) {
+        int d;
+        fprintf(probe_out, "[\"D\",%d,%d", frame, pp_draw_lost);
+        for (d = 0; d < pp_draw_count; ++d) {
+            fprintf(probe_out, ",%d,%d,%d,%u", (int) pp_draws[d].phase,
+                    (int) pp_draws[d].unit, (int) pp_draws[d].line,
+                    (unsigned) pp_draws[d].state);
+        }
+        fprintf(probe_out, "]\n");
+        pp_draw_count = 0;
+        pp_draw_lost = 0;
+    }
     for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
         // (which command it is of: the one whose script it runs)
         int idx = -1;
@@ -1082,6 +1145,7 @@ void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
     }
     saved = *seed_ptr;
     *seed_ptr = seed_at;
+    pp_draw_phase = 5;
     pm_step(gobj, frame, 1);
     if (counted) {
         // (how many draws its first step made)
@@ -1094,6 +1158,7 @@ void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
         probe_drawn += n;
     }
     *seed_ptr = saved;
+    pp_draw_phase = 0;
 }
 
 static int pm_tree_used(const HSD_JObj* jobj)
@@ -1220,6 +1285,7 @@ void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
     }
     saved = *seed_ptr;
     *seed_ptr = state;
+    pp_draw_phase = 4;
     switch (how) {
     case MSL_PROBE_STAGE_PLACE:
         // grLib_801C96F8
@@ -1260,6 +1326,7 @@ void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
         probe_drawn++;
     }
     *seed_ptr = saved;
+    pp_draw_phase = 0;
     if (gen == NULL) {
         fprintf(probe_out, "[\"miss\",%d,%d]\n", (int) id, 6 + how);
         return;
@@ -1277,6 +1344,7 @@ void msl_particle_probe_key(int bank, s32 id, HSD_JObj* jobj, u32 state)
     }
     saved = *seed_ptr;
     *seed_ptr = state;
+    pp_draw_phase = 4;
     pm_collect = 1;
     pm_pending_count = 0;
     efLib_SpawnParticleEffect(bank, id, jobj, 1);
@@ -1285,6 +1353,7 @@ void msl_particle_probe_key(int bank, s32 id, HSD_JObj* jobj, u32 state)
         probe_drawn++;
     }
     *seed_ptr = saved;
+    pp_draw_phase = 0;
     for (i = 0; i < pm_pending_count; ++i) {
         if (probe_live(pm_pending[i])) {
             probe_line(pm_pending[i], msl_viewer_track_hook_frame(), id, 9, state);
