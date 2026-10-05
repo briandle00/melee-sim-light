@@ -327,8 +327,53 @@ void msl_viewer_track_fxend(HSD_GObj* owner)
     msl_particle_probe_owner_ended(owner, hook_frame());
 }
 
+// Where a joint is among the stage's: its stage object's place in the
+// stage's list (Ground_801C2BA4) and its preorder index in that object's
+// tree (the root 0, a child before the next). -1, -1 for none.
+static int stage_joint_walk(HSD_JObj* at, HSD_JObj* want, int* count)
+{
+    for (; at != NULL; at = at->next) {
+        if (at == want) {
+            return 1;
+        }
+        ++*count;
+        if (!(at->flags & JOBJ_INSTANCE) && stage_joint_walk(at->child, want, count)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void stage_joint(HSD_JObj* jobj, int* map, int* joint)
+{
+    int i;
+    *map = -1;
+    *joint = -1;
+    for (i = 0; jobj != NULL && i < 64; ++i) {
+        HSD_GObj* gobj = stage_info.x180[i];
+        HSD_JObj* root = gobj != NULL ? gobj->hsd_obj : NULL;
+        int count = 0;
+        if (root == NULL) {
+            continue;
+        }
+        if (root == jobj) {
+            *map = i;
+            *joint = 0;
+            return;
+        }
+        count = 1;
+        if (stage_joint_walk(root->child, jobj, &count)) {
+            *map = i;
+            *joint = count;
+            return;
+        }
+    }
+}
+
 void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
 {
+    int map;
+    int joint;
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
@@ -341,8 +386,15 @@ void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
         y = jobj->mtx[1][3];
         z = jobj->mtx[2][3];
     }
-    fprintf(track_out, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u]\n",
-            hook_frame(), bank, gen_id, x, y, z, (unsigned) seed_now());
+    if (msl_viewer_track_plain()) {
+        fprintf(track_out, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u]\n",
+                hook_frame(), bank, gen_id, x, y, z, (unsigned) seed_now());
+        return;
+    }
+    stage_joint(jobj, &map, &joint);
+    fprintf(track_out, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
+            hook_frame(), bank, gen_id, x, y, z, (unsigned) seed_now(), map,
+            joint);
 }
 
 void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
@@ -404,9 +456,19 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
         at.y = jobj->mtx[1][3];
         at.z = jobj->mtx[2][3];
     }
-    fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u]\n",
-            hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
-            (unsigned) seed_now());
+    if (msl_viewer_track_plain()) {
+        fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u]\n",
+                hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
+                (unsigned) seed_now());
+    } else {
+        // (and the joint it is placed from, when it is: -1, -1 at a place)
+        int map;
+        int joint;
+        stage_joint(pos == NULL ? jobj : NULL, &map, &joint);
+        fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
+                hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
+                (unsigned) seed_now(), map, joint);
+    }
     msl_viewer_track_skipped(bank, gen_id);
 }
 
