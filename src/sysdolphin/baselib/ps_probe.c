@@ -992,9 +992,27 @@ static void pm_written(int frame)
     pm_pending_count = 0;
 }
 
+// A joint of the game's that a probe model is about to read (the one it is
+// attached to): set up now, from the game's own heap, so that nothing the
+// model's code does with it under the probe's heap finds it unset - what a
+// joint's setup makes on first use would else be the probe's, inside an
+// object the game frees.
+static void pm_game_joint_ready(HSD_JObj* jobj)
+{
+    int was = msl_probe_heap;
+
+    if (jobj == NULL || pm_owns(jobj) || pp_is_leader(jobj)) {
+        return;
+    }
+    msl_probe_heap = 0;
+    HSD_JObjSetupMatrix(jobj);
+    msl_probe_heap = was;
+}
+
 // one animation step of a model, its particle keys the probe's
 static void pm_step(HSD_GObj* gobj, int frame, int first)
 {
+    pm_game_joint_ready(GET_EFFECT(gobj)->attach_jobj);
     pm_collect = 1;
     pm_pending_count = 0;
     msl_probe_heap = 1;
@@ -1058,6 +1076,8 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
         return NULL;
     }
     pp_alloc_init(&pm_alloc_data, sizeof(EF_Effect), 4);
+    pm_game_joint_ready(joint);
+    pm_game_joint_ready(attach);
     pm_dat_entries[file].data = (void*) table;
     pm_anim_count = 0;
     msl_probe_heap = 1;
