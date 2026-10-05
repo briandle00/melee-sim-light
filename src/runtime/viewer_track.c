@@ -370,10 +370,46 @@ static void stage_joint(HSD_JObj* jobj, int* map, int* joint)
     }
 }
 
+// Whose joint it is, a fighter's or an item's (the top of its tree is the
+// owner's model): the owner as describe_owner names it, '-' for neither.
+static void joint_owner(HSD_JObj* jobj, char* kind, int* id)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    HSD_JObj* top = jobj;
+    HSD_GObj* gobj;
+    int joint;
+    int n;
+
+    *kind = '-';
+    *id = -1;
+    if (jobj == NULL || match == NULL || match->gobj.entities == NULL) {
+        return;
+    }
+    for (n = 0; top->parent != NULL && n < 256; ++n) {
+        top = top->parent;
+    }
+    for (gobj = (HSD_GObj*) match->gobj.entities->fighters; gobj != NULL; gobj = gobj->next) {
+        if (gobj->hsd_obj == top) {
+            describe_owner(gobj, NULL, kind, id, &joint);
+            return;
+        }
+    }
+    for (gobj = (HSD_GObj*) match->gobj.entities->items; gobj != NULL; gobj = gobj->next) {
+        if (gobj->hsd_obj == top) {
+            describe_owner(gobj, NULL, kind, id, &joint);
+            return;
+        }
+    }
+}
+
+// [frame,"gen",bank,id,x,y,z,seed,stage object,joint] and, for a joint that is
+// not the stage's, the owner whose joint it is: ,"f"|"i",owner
 void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
 {
     int map;
     int joint;
+    char owner_kind;
+    int owner_id;
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
@@ -392,6 +428,16 @@ void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
         return;
     }
     stage_joint(jobj, &map, &joint);
+    if (map < 0) {
+        joint_owner(jobj, &owner_kind, &owner_id);
+        if (owner_kind != '-') {
+            fprintf(track_out,
+                    "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d,\"%c\",%d]\n",
+                    hook_frame(), bank, gen_id, x, y, z,
+                    (unsigned) seed_now(), map, joint, owner_kind, owner_id);
+            return;
+        }
+    }
     fprintf(track_out, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
             hook_frame(), bank, gen_id, x, y, z, (unsigned) seed_now(), map,
             joint);
