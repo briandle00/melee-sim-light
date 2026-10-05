@@ -61,6 +61,12 @@
 // refs/melee/src/sysdolphin/baselib/{particle.c,generator.c,psappsrt.c},
 // refs/melee/src/melee/ef/eflib.c
 
+// Built only with -DMSL_PARTICLE_PROBE_BUILD (a developer's build:
+// CC="gcc -DMSL_PARTICLE_PROBE_BUILD" tools/build/build_windows.sh). Without
+// it this file is the probe's calls doing nothing (at its end): a build that
+// ships has none of the probe in it, and no variable can turn it on.
+#ifdef MSL_PARTICLE_PROBE_BUILD
+
 #include "probe_ps/names.h"
 
 #include <stdio.h>
@@ -1100,6 +1106,22 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
     if (probe_out == NULL || gfx_id < 0) {
         return NULL;
     }
+    {
+        // (a diagnostic: the models named in MSL_PARTICLE_PROBE_SKIP_MODELS,
+        // "12,13", are not made - to see whether a fault is theirs)
+        const char* skip = getenv("MSL_PARTICLE_PROBE_SKIP_MODELS");
+        while (skip != NULL && *skip != '\0') {
+            char* end = NULL;
+            long id = strtol(skip, &end, 10);
+            if (end == skip) {
+                break;
+            }
+            if (id == (long) gfx_id) {
+                return NULL;
+            }
+            skip = *end == ',' ? end + 1 : end;
+        }
+    }
     if (table == NULL || index >= msl_effect_model_count(file)) {
         probe_not_loaded(file, 1);
         return NULL;
@@ -1557,3 +1579,65 @@ void msl_particle_probe_model_pair(void* model, void* next)
     }
     GET_EFFECT(gobj)->next = GET_EFFECT(other);
 }
+
+#else // MSL_PARTICLE_PROBE_BUILD
+
+#include <platform.h>
+#include <stddef.h>
+#include <baselib/forward.h>
+#include <dolphin/mtx.h>
+
+#include "runtime/ps_probe.h"
+
+int msl_particle_probe_on(void) { return 0; }
+void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
+                              HSD_JObj* jobj, u32 state, int counted)
+{
+    (void) how; (void) id; (void) bank; (void) pos; (void) jobj; (void) state; (void) counted;
+}
+void msl_particle_probe_stage_end(int how, HSD_JObj* jobj) { (void) how; (void) jobj; }
+void msl_particle_probe_key(int bank, s32 id, HSD_JObj* jobj, u32 state)
+{
+    (void) bank; (void) id; (void) jobj; (void) state;
+}
+void msl_particle_probe_begin(void) {}
+void msl_particle_probe_end(void) {}
+void* msl_particle_probe_generator(s32 gfx_id, HSD_JObj* jobj, int how,
+                                   int link_no, u32 seed_at)
+{
+    (void) gfx_id; (void) jobj; (void) how; (void) link_no; (void) seed_at;
+    return NULL;
+}
+void msl_particle_probe_placed(void* made, int frame, s32 gfx_id, int how,
+                               u32 seed_at, const Vec3* pos, u32 kind_set,
+                               const Vec3* translate, const Vec3* rotate,
+                               const Vec3* scale)
+{
+    (void) made; (void) frame; (void) gfx_id; (void) how; (void) seed_at; (void) pos;
+    (void) kind_set; (void) translate; (void) rotate; (void) scale;
+}
+void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
+                               HSD_JObj* joint, const Vec3* translate,
+                               const Vec3* rotate, const Vec3* scale,
+                               const char* callback, int lifetime,
+                               const Vec3* params, HSD_JObj* attach,
+                               int scale_flags)
+{
+    (void) gfx_id; (void) how; (void) parent; (void) joint; (void) translate; (void) rotate;
+    (void) scale; (void) callback; (void) lifetime; (void) params; (void) attach; (void) scale_flags;
+    return NULL;
+}
+void msl_particle_probe_model_pair(void* model, void* next) { (void) model; (void) next; }
+void msl_particle_probe_model_side(void* model, const HSD_JObj* from) { (void) model; (void) from; }
+void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
+                                      int counted)
+{
+    (void) model; (void) frame; (void) seed_at; (void) counted;
+}
+void msl_particle_probe_joint_gone(HSD_JObj* jobj) { (void) jobj; }
+void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame) { (void) owner; (void) frame; }
+void msl_particle_probe_owner_pause(HSD_GObj* owner, int on) { (void) owner; (void) on; }
+void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags) { (void) owner; (void) expire_flags; }
+void msl_particle_probe_frame(int frame, u32 state, int skipped) { (void) frame; (void) state; (void) skipped; }
+
+#endif // MSL_PARTICLE_PROBE_BUILD
