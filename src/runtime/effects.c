@@ -41,14 +41,49 @@ static void msl_effect_consume_bank_command(
 // one's first 0x28 (the simulator draws for none of them). How many entries
 // each file's table has - read from the files by the viewer's own reader -
 // and, per model, how many draws its animation's first step makes.
-enum { MSL_EFFECT_MODELS_PER_FILE = 16 };
-static const u8 msl_effect_model_counts[MSL_CORE_EFFECT_BANK_CAPACITY] = {
+enum { MSL_EFFECT_MODELS_PER_FILE = 16, MSL_EFFECT_VIEW_BANKS = 50 };
+// Gameplay's own table (msl_effect_game_data_init) is a list written by
+// hand, a file added as each fighter's draws were needed, and one slot short
+// of the game's. For the viewer track and the particle probe every file of
+// the game's own list (efAsync_DatEntries: slot, file, table) that gameplay
+// left out is loaded here instead, so none can be missed again; gameplay's
+// table stays as it is, and so do its draws. (The menu's file, slot 31, is
+// not a match's.)
+// refs/melee/src/melee/ef/efasync.c::efAsync_DatEntries
+static MslCoreEffectGeneratorBank msl_effect_view_banks[MSL_EFFECT_VIEW_BANKS];
+static const struct {
+    int slot;
+    const char* file;
+    const char* table;
+} msl_effect_game_files[] = {
+    { 0, "/EfCoData.dat", "effCommonDataTable" }, { 1, "/EfMrData.dat", "effMarioDataTable" },
+    { 2, "/EfSsData.dat", "effSamusDataTable" }, { 3, "/EfFxData.dat", "effFoxDataTable" },
+    { 4, "/EfCaData.dat", "effCaptainDataTable" }, { 5, "/EfKbData.dat", "effKirbyDataTable" },
+    { 6, "/EfLkData.dat", "effLinkDataTable" }, { 7, "/EfPkData.dat", "effPikachuDataTable" },
+    { 8, "/EfDkData.dat", "effDonkeyDataTable" }, { 9, "/EfYsData.dat", "effYoshiDataTable" },
+    { 10, "/EfNsData.dat", "effNessDataTable" }, { 11, "/EfPrData.dat", "effPurinDataTable" },
+    { 12, "/EfKpData.dat", "effKoopaDataTable" }, { 13, "/EfMtData.dat", "effMewtwoDataTable" },
+    { 14, "/EfIcData.dat", "effIceclimberDataTable" }, { 15, "/EfPeData.dat", "effPeachDataTable" },
+    { 16, "/EfMsData.dat", "effMarsDataTable" }, { 17, "/EfZdData.dat", "effZeldaDataTable" },
+    { 18, "/EfLgData.dat", "effLuigiDataTable" }, { 19, "/EfGnData.dat", "effGanonDataTable" },
+    { 20, "/EfKbMs.dat", "effKirbyMarsDataTable" }, { 21, "/EfKbZd.dat", "effKirbyZeldaDataTable" },
+    { 32, "/EfKbMr.dat", "effKirbyMarioDataTable" }, { 33, "/EfKbFx.dat", "effKirbyFoxDataTable" },
+    { 34, "/EfKbSs.dat", "effKirbySamusDataTable" }, { 36, "/EfKbPk.dat", "effKirbyPikachuDataTable" },
+    { 37, "/EfKbLg.dat", "effKirbyLuigiDataTable" }, { 38, "/EfKbCa.dat", "effKirbyCaptainDataTable" },
+    { 39, "/EfKbDk.dat", "effKirbyDonkeyDataTable" }, { 41, "/EfKbKp.dat", "effKirbyKoopaDataTable" },
+    { 46, "/EfKbIc.dat", "effKirbyIceDataTable" }, { 47, "/EfKbGn.dat", "effKirbyGanonDataTable" },
+    { 48, "/EfKbFe.dat", "effKirbyEmblemDataTable" }, { 49, "/EfFeData.dat", "effEmblemDataTable" },
+};
+static const u8 msl_effect_model_counts[MSL_EFFECT_VIEW_BANKS] = {
+    // (every file of the game's list, from an audit of the files:
+    // 36, 41 and 46 have one entry, with no model in it)
     [0] = 47, [1] = 2, [2] = 3, [3] = 6, [4] = 6, [5] = 9, [6] = 4, [7] = 5, [8] = 7,
     [9] = 1, [10] = 3, [11] = 1, [12] = 3, [13] = 4, [14] = 1, [15] = 1,
     [16] = 2, [17] = 7, [18] = 2, [19] = 6, [20] = 2, [21] = 2, [32] = 1,
-    [33] = 1, [34] = 1, [37] = 1, [38] = 2, [39] = 2, [47] = 2, [48] = 2,
+    [33] = 1, [34] = 1, [36] = 1, [37] = 1, [38] = 2, [39] = 2, [41] = 1,
+    [46] = 1, [47] = 2, [48] = 2, [49] = 2,
 };
-static u8 msl_effect_model_draws[MSL_CORE_EFFECT_BANK_CAPACITY]
+static u8 msl_effect_model_draws[MSL_EFFECT_VIEW_BANKS]
                                 [MSL_EFFECT_MODELS_PER_FILE];
 static u8* msl_effect_recording_draws;
 // (the common file's whole table: the simulator's own is its first 0x28)
@@ -60,17 +95,26 @@ const EF_EffectDesc* msl_effect_model_table(int bank)
     if (bank == 0) {
         return msl_effect_common_models;
     }
-    if (msl_effect_tables == NULL || bank < 0 ||
-        bank >= MSL_CORE_EFFECT_BANK_CAPACITY)
-    {
+    if (bank < 0 || bank >= MSL_EFFECT_VIEW_BANKS) {
         return NULL;
     }
-    return msl_effect_tables->banks[bank].models;
+    if (bank < MSL_CORE_EFFECT_BANK_CAPACITY && msl_effect_tables != NULL &&
+        msl_effect_tables->banks[bank].models != NULL)
+    {
+        return msl_effect_tables->banks[bank].models;
+    }
+    return msl_effect_view_banks[bank].models;
+}
+
+int msl_effect_view_only(int bank)
+{
+    return bank > 0 && bank < MSL_EFFECT_VIEW_BANKS &&
+           msl_effect_view_banks[bank].archive != NULL;
 }
 
 int msl_effect_model_count(int bank)
 {
-    if (bank < 0 || bank >= MSL_CORE_EFFECT_BANK_CAPACITY) {
+    if (bank < 0 || bank >= MSL_EFFECT_VIEW_BANKS) {
         return 0;
     }
     return msl_effect_model_counts[bank];
@@ -85,7 +129,7 @@ int msl_effect_model_first_draws(int model_id)
         index -= MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY;
     }
     if (model_id < 0 || index < 0 || bank < 0 ||
-        bank >= MSL_CORE_EFFECT_BANK_CAPACITY ||
+        bank >= MSL_EFFECT_VIEW_BANKS ||
         index >= MSL_EFFECT_MODELS_PER_FILE)
     {
         return 0;
@@ -240,6 +284,30 @@ static void msl_effect_load_bank(MslCoreEffectData* data, int bank,
 #endif
 }
 
+#ifdef MSL_CORE_NATIVE
+// Viewer track only: one of the files gameplay does not load.
+static void msl_effect_load_view_bank(int bank, const char* filename,
+                                      const char* symbol)
+{
+    MslCoreEffectGeneratorBank* view = &msl_effect_view_banks[bank];
+    memset(view, 0, sizeof(*view));
+    view->archive = lbArchive_LoadArchive(filename);
+    if (view->archive == NULL) {
+        return;
+    }
+    if (msl_native_effect_bank(view->archive, symbol, &view->count,
+                               &view->commands) != 0)
+    {
+        view->count = 0;
+        view->commands = NULL;
+    }
+    if (msl_effect_model_counts[bank] != 0) {
+        view->models = msl_native_effect_models(view->archive, symbol,
+                                                msl_effect_model_counts[bank]);
+    }
+}
+#endif
+
 void msl_effect_projection_bind(const MslCoreEffectData* data,
                                 MslCoreEffectState* state)
 {
@@ -314,6 +382,19 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
     msl_effect_load_bank(data, 46, "/EfKbIc.dat", "effKirbyIceDataTable");
     msl_effect_load_bank(data, 47, "/EfKbGn.dat", "effKirbyGanonDataTable");
     msl_effect_load_bank(data, 48, "/EfKbFe.dat", "effKirbyEmblemDataTable");
+#ifdef MSL_CORE_NATIVE
+    memset(msl_effect_view_banks, 0, sizeof(msl_effect_view_banks));
+    if (getenv("MSL_VIEWER_TRACK") != NULL) {
+        size_t k;
+        for (k = 0; k < sizeof(msl_effect_game_files) / sizeof(msl_effect_game_files[0]); ++k) {
+            int slot = msl_effect_game_files[k].slot;
+            if (slot >= MSL_CORE_EFFECT_BANK_CAPACITY || data->banks[slot].archive == NULL) {
+                msl_effect_load_view_bank(slot, msl_effect_game_files[k].file,
+                                          msl_effect_game_files[k].table);
+            }
+        }
+    }
+#endif
     // efLib_Create queues each common model's frame-zero animation, and both
     // efAsync_Dispatch and efSync_Spawn drain that queue before returning.
     // Record its data-defined DPtcl generator events once while allocation is
@@ -331,7 +412,7 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
     }
     // (viewer track only: the other files' models' first steps, counted)
     msl_effect_tables = data;
-    for (int bank = 0; bank < MSL_CORE_EFFECT_BANK_CAPACITY; ++bank) {
+    for (int bank = 0; bank < MSL_EFFECT_VIEW_BANKS; ++bank) {
         const EF_EffectDesc* table = msl_effect_model_table(bank);
         int first = bank == 0 ? MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY : 0;
         for (int model = first; table != NULL &&
@@ -536,6 +617,9 @@ const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank)
             }
         }
         return NULL;
+    }
+    if (msl_effect_view_only(bank)) {
+        return &msl_effect_view_banks[bank];
     }
     if (msl_bound_effect_data == NULL || bank < 0 ||
         bank >= (int) (sizeof(msl_effect_banks) / sizeof(msl_effect_banks[0])))

@@ -60,6 +60,9 @@ void msl_viewer_track_stadscreen(int mode, int player);
 void msl_viewer_track_bird(int kind, int count, const Vec3* pos);
 // A generator the stage code spawns itself (grLib_801C96F8 at `pos`, or
 // grLib_801C97DC on `jobj`).
+void msl_viewer_track_sgen_as(int bank, int gen_id, const Vec3* pos,
+                              HSD_JObj* jobj, const char* mark);
+void msl_viewer_track_send(const char* how, HSD_JObj* jobj, int tree);
 void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
                            HSD_JObj* jobj);
 // A fighter's switchable texture (eyes, mouth): ftAnim_800704F0 sets slot

@@ -500,6 +500,13 @@ static u32 drawn(const Piece* p, u32 state)
     *seed_ptr = state;
     if (p->kind == 'g') {
         msl_effect_pieces_consume_generator(p->id);
+        // (a generator of a file gameplay does not load: the simulator draws
+        // nothing for it; the game does when its command counts at random)
+        if (!msl_viewer_track_plain() && msl_effect_view_only(p->id / 1000) &&
+            msl_effect_generator_draws(p->id / 1000, p->id))
+        {
+            (void) HSD_Randf();
+        }
     } else if (p->id >= 0 && p->id < 0x28) {
         msl_effect_pieces_consume_model((int) (p->id % 1000));
     } else {
@@ -536,6 +543,11 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
                 p->rng_at = at;
             }
             state = drawn(p, state);
+            if (msl_effect_view_only(p->id / 1000) &&
+                msl_effect_generator_draws(p->id / 1000, p->id))
+            {
+                msl_viewer_track_skipped_n(1);
+            }
             made[i] = msl_particle_probe_generator(p->id, p->joint, p->probe_how, p->probe_link, at);
             msl_particle_probe_placed(made[i], frame, p->id, p->probe_how, at, &p->gen.pos,
                                       p->gen.kind & 0x40000, &p->srt.translate, (const Vec3*) &p->srt.rot,

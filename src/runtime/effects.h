@@ -76,6 +76,9 @@ int msl_effect_generator_draws(int bank, int generator_id);
 int msl_effect_model_first_draws(int model_id);
 // How many models an effect file's table has (0: none the track knows).
 int msl_effect_model_count(int bank);
+// Viewer track only: whether an effect file is one gameplay does not load
+// (kept for the track and the probe alone).
+int msl_effect_view_only(int bank);
 // A file's whole model table (the common file's too, past the 0x28 the
 // simulator keeps), or NULL.
 const EF_EffectDesc* msl_effect_model_table(int bank);

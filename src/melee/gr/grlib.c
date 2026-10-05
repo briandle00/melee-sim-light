@@ -57,7 +57,13 @@ HSD_Generator* grLib_801C96F8(s32 arg0, s32 arg1, Vec3* arg2)
     if (msl_viewer_track_on) {
         msl_particle_probe_stage(MSL_PROBE_STAGE_PLACE, arg0, arg1, arg2, NULL,
                                  msl_viewer_track_state(), 1);
-        msl_viewer_track_sgen(arg1, arg0, arg2, NULL);
+        // (the ones the stage's code keeps to end later: Final Destination's
+        // 0x7531, the Stadium's 0x7546 and 0x7544 - as the probe keeps them)
+        msl_viewer_track_sgen_as(arg1, arg0, arg2, NULL,
+                                 arg0 == 0x7531 || arg0 == 0x7546 ||
+                                         arg0 == 0x7544
+                                     ? "kept"
+                                     : NULL);
     }
     return NULL;
 #else
@@ -107,7 +113,11 @@ HSD_Generator* grLib_801C9808(s32 arg0, s32 arg1, HSD_JObj* arg2)
     if (msl_viewer_track_on) {
         msl_particle_probe_stage(MSL_PROBE_STAGE_JOINT, arg0, arg1, NULL, arg2,
                                  msl_viewer_track_state(), 1);
-        msl_viewer_track_skipped(arg1, arg0);
+        if (msl_viewer_track_plain()) {
+            msl_viewer_track_skipped(arg1, arg0);
+        } else {
+            msl_viewer_track_sgen_as(arg1, arg0, NULL, arg2, "on");
+        }
     }
     return NULL;
 #else
@@ -122,6 +132,9 @@ void grLib_801C9834(HSD_Generator* arg0)
 #else
     (void) arg0;
     msl_particle_probe_stage_end(MSL_PROBE_END_KEPT, NULL);
+    if (msl_viewer_track_on) {
+        msl_viewer_track_send("kept", NULL, 0);
+    }
 #endif
 }
 
@@ -131,6 +144,9 @@ void grLib_801C9854(HSD_JObj* jobj)
     hsd_8039D5DC(jobj);
 #else
     msl_particle_probe_stage_end(MSL_PROBE_END_JOINTS, jobj);
+    if (msl_viewer_track_on) {
+        msl_viewer_track_send("joints", jobj, 1);
+    }
 #endif
 }
 
@@ -142,6 +158,9 @@ void grLib_801C9874(HSD_Generator* arg0)
 #else
     (void) arg0;
     msl_particle_probe_stage_end(MSL_PROBE_END_KEPT_NOW, NULL);
+    if (msl_viewer_track_on) {
+        msl_viewer_track_send("kept-now", NULL, 0);
+    }
 #endif
 }
 
@@ -149,6 +168,9 @@ void grLib_801C98A0(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
     msl_particle_probe_stage_end(MSL_PROBE_END_JOINT_NOW, jobj);
+    if (msl_viewer_track_on) {
+        msl_viewer_track_send("joint-now", jobj, 0);
+    }
 #else
     HSD_Generator *cur, *next;
 
@@ -186,6 +208,9 @@ void grLib_801C9908(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
     msl_particle_probe_stage_end(MSL_PROBE_END_JOINTS_NOW, jobj);
+    if (msl_viewer_track_on) {
+        msl_viewer_track_send("joints-now", jobj, 1);
+    }
 #else
     HSD_Generator* cur;
     HSD_Generator* next;

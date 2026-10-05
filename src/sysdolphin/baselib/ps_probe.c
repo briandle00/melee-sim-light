@@ -289,6 +289,7 @@ static int probe_frame_no;
 enum { PROBE_BANKS = 65, PROBE_GENS = 4096 };
 static HSD_PSCmdList** probe_commands[PROBE_BANKS];
 static const void* probe_bank_source[PROBE_BANKS];
+static int probe_unloaded[PROBE_BANKS][2];
 // (no textures here: every texture group reads as absent)
 static HSD_PSTexGroup* probe_no_textures[256];
 
@@ -385,13 +386,36 @@ void msl_particle_probe_begin(void)
     probe_gen_count = 0;
     probe_next_uid = 0;
     probe_frame_no = 0;
+    memset(probe_unloaded, 0, sizeof(probe_unloaded));
 }
 
 void msl_particle_probe_end(void)
 {
     if (probe_out != NULL) {
+        int bank;
+        for (bank = 0; bank < PROBE_BANKS; ++bank) {
+            if (probe_unloaded[bank][0] != 0 || probe_unloaded[bank][1] != 0) {
+                fprintf(probe_out, "[\"unloaded\",%d,%d,%d]\n", bank,
+                        probe_unloaded[bank][0], probe_unloaded[bank][1]);
+            }
+        }
         fclose(probe_out);
         probe_out = NULL;
+    }
+}
+
+// What the probe was asked for and has not got, by effect file: a generator
+// of a file with no commands here, a model of a file with no model table
+// here (or past its end). Written as the probe ends, ["unloaded", file,
+// generators, models] - a count that is not 0 means part of the game's
+// effects had no reference, and whatever the checks say for them is not a
+// check.
+static int probe_unloaded[PROBE_BANKS][2];
+
+static void probe_not_loaded(int bank, int model)
+{
+    if (bank >= 0 && bank < PROBE_BANKS) {
+        probe_unloaded[bank][model ? 1 : 0]++;
     }
 }
 
@@ -522,7 +546,11 @@ void* msl_particle_probe_generator(s32 gfx_id, HSD_JObj* jobj, int how,
     u32 saved;
     int bank = gfx_id / 1000;
 
-    if (probe_out == NULL || !probe_bank(bank)) {
+    if (probe_out == NULL) {
+        return NULL;
+    }
+    if (!probe_bank(bank)) {
+        probe_not_loaded(bank, 0);
         return NULL;
     }
     saved = *seed_ptr;
@@ -1069,10 +1097,14 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
 
     // (a model the simulator has translated: the common file's first 0x28,
     // a fighter's file's as many as its table has)
-    if (probe_out == NULL || gfx_id < 0 || table == NULL ||
-        index >= msl_effect_model_count(file) ||
-        table[index].model_desc.joint == NULL)
-    {
+    if (probe_out == NULL || gfx_id < 0) {
+        return NULL;
+    }
+    if (table == NULL || index >= msl_effect_model_count(file)) {
+        probe_not_loaded(file, 1);
+        return NULL;
+    }
+    if (table[index].model_desc.joint == NULL) {
         return NULL;
     }
     pp_alloc_init(&pm_alloc_data, sizeof(EF_Effect), 4);

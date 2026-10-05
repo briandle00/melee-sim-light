@@ -487,8 +487,54 @@ static int running_map_id(void)
     return -1;
 }
 
+// How many joints an end of a joint's tree walks (grLib_801C9854,
+// grLib_801C9908): the joint and what is under it, an instance's children
+// left out - the same joints, in the same order, stage_joint counts.
+static int stage_tree_count(HSD_JObj* jobj)
+{
+    int n = 1;
+    HSD_JObj* child;
+    if (jobj == NULL) {
+        return 0;
+    }
+    if (!(jobj->flags & JOBJ_INSTANCE)) {
+        for (child = jobj->child; child != NULL; child = child->next) {
+            n += stage_tree_count(child);
+        }
+    }
+    return n;
+}
+
+// [frame,"send",how,stage object,joint,joints]: the stage's own code ends
+// generators. how "kept": the placed one its code kept (an "sgen" marked
+// "kept"), "kept-now": and its particles at once (grLib_801C9834,
+// grLib_801C9874; stage object and joint -1, joints 0). "joints": every
+// generator on the joint or under it (grLib_801C9854); "joint-now": on the
+// joint alone, particles at once (grLib_801C98A0); "joints-now": the tree,
+// particles at once (grLib_801C9908). joints: how many the walk covers, from
+// `joint` on in the stage object's preorder.
+void msl_viewer_track_send(const char* how, HSD_JObj* jobj, int tree)
+{
+    int map = -1;
+    int joint = -1;
+    if (track_out == NULL || msl_viewer_track_plain()) {
+        return;
+    }
+    stage_joint(jobj, &map, &joint);
+    fprintf(track_out, "[%d,\"send\",\"%s\",%d,%d,%d]\n", hook_frame(), how,
+            map, joint, jobj == NULL ? 0 : tree ? stage_tree_count(jobj) : 1);
+}
+
 void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
                            HSD_JObj* jobj)
+{
+    msl_viewer_track_sgen_as(bank, gen_id, pos, jobj, NULL);
+}
+
+// mark: "on" - made on the joint and going with it (grLib_801C9808), "kept" -
+// placed, and kept by the stage's code to end later; none for the rest.
+void msl_viewer_track_sgen_as(int bank, int gen_id, const Vec3* pos,
+                              HSD_JObj* jobj, const char* mark)
 {
     Vec3 at = { 0.0F, 0.0F, 0.0F };
 
@@ -511,9 +557,17 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
         int map;
         int joint;
         stage_joint(pos == NULL ? jobj : NULL, &map, &joint);
-        fprintf(track_out, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
-                hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
-                (unsigned) seed_now(), map, joint);
+        if (mark != NULL) {
+            fprintf(track_out,
+                    "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d,\"%s\"]\n",
+                    hook_frame(), running_map_id(), bank, gen_id, at.x, at.y,
+                    at.z, (unsigned) seed_now(), map, joint, mark);
+        } else {
+            fprintf(track_out,
+                    "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
+                    hook_frame(), running_map_id(), bank, gen_id, at.x, at.y,
+                    at.z, (unsigned) seed_now(), map, joint);
+        }
     }
     msl_viewer_track_skipped(bank, gen_id);
 }
