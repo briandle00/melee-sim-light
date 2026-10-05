@@ -66,6 +66,8 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
                                int scale_flags);
 // The model the dispatch set as this one's next (effect->next).
 void msl_particle_probe_model_pair(void* model, void* next);
+// The joint its callback reads its side from: copied, never kept.
+void msl_particle_probe_model_side(void* model, const HSD_JObj* from);
 // Its animation's first step (the generators its particle keys start),
 // from the random state `seed_at` (put back after).
 // `counted`: its draws are ones the simulator leaves out (checked against

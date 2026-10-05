@@ -739,6 +739,14 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         fprintf(probe_out, "[\"a\",%d,%d,%d,%.9g,%d,%d,%u,%u]\n", frame,
                 probe_uid(gen), idx, gen->count, (int) gen->genLife,
                 (int) gen->numChild, (unsigned) gen->type, (unsigned) gen->kind);
+        // (slim, a sampled frame: its place after the update too, one line for
+        // each "a" line - the place check pairs these with the player's list)
+        if (probe_slim && frame % 60 == 0) {
+            fprintf(probe_out, "[\"w\",%d,%d,%d,%.9g,%.9g,%.9g", frame,
+                    probe_uid(gen), idx, gen->pos.x, gen->pos.y, gen->pos.z);
+            probe_srt(gen->appsrt);
+            fprintf(probe_out, "]\n");
+        }
     }
     for (list = 0; list < 16 && !probe_slim; ++list) {
         const HSD_Particle* pp;
@@ -1033,7 +1041,28 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
     if (scale_flags != 0) {
         effect->scale_flags = (u8) scale_flags;
     }
+    // (nothing of the game's by default: a callback that reads it finds none)
+    effect->user_data = NULL;
     return effect->gobj;
+}
+
+// The joint a model's callback reads its side from (efLib_Cb_SetRotYAndTransition:
+// the sign of its scale): a copy of the probe's own, as it is now, so the
+// probe never reads a joint of the game's after the game may have freed it.
+void msl_particle_probe_model_side(void* model, const HSD_JObj* from)
+{
+    HSD_GObj* gobj = model;
+    HSD_JObj* own;
+
+    if (gobj == NULL || from == NULL) {
+        return;
+    }
+    own = calloc(1, sizeof(HSD_JObj));
+    if (own == NULL) {
+        return;
+    }
+    own->scale = from->scale;
+    GET_EFFECT(gobj)->user_data = own;
 }
 
 void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
@@ -1123,6 +1152,7 @@ static void pm_frame(int frame)
             msl_probe_heap = 1;
             HSD_JObjRemoveAll(gobj->hsd_obj);
             msl_probe_heap = 0;
+            free(GET_EFFECT(gobj)->user_data);
             free(gobj->user_data);
             free(gobj);
             pm_models[i].gobj = NULL;

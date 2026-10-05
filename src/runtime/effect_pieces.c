@@ -545,6 +545,9 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
                                                (const Vec3*) &p->jobj.rotate, &p->jobj.scale,
                                                callback_name(p->effect.update), p->effect.lifetime,
                                                &p->effect.params, p->effect.attach_jobj, p->effect.scale_flags);
+            if (p->effect.update == (EF_UpdateFn) efLib_Cb_SetRotYAndTransition) {
+                msl_particle_probe_model_side(made[i], (const HSD_JObj*) p->effect.user_data);
+            }
         }
     }
     // (a model the dispatch pairs with another of the spawn's)
