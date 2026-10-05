@@ -68,6 +68,14 @@ const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank);
 // Whether making this generator draws a random number in the game
 // (hsd_8039F05C: one whose command counts at random).
 int msl_effect_generator_draws(int bank, int generator_id);
+// Viewer track only. An effect model (file * 1000 + its place in the file's
+// table) outside the ones the simulator draws for itself (the common file's
+// first 0x28): how many random numbers the game draws as its animation
+// takes its first step - one for each generator its particle keys start
+// there whose command counts at random. Recorded once at startup.
+int msl_effect_model_first_draws(int model_id);
+// How many models an effect file's table has (0: none the track knows).
+int msl_effect_model_count(int bank);
 // The running stage's internal id (the particle probe's "stage" line).
 int msl_particle_probe_stage_id(void);
 // The particle probe's: a joint animation's particle keys go to `callback`

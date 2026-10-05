@@ -194,6 +194,13 @@ int msl_viewer_track_plain(void)
     return plain;
 }
 
+void msl_viewer_track_skipped_n(int n)
+{
+    if (!msl_viewer_track_plain() && track_out != NULL && n > 0) {
+        track_skipped += n;
+    }
+}
+
 void msl_viewer_track_skipped(int bank, int generator_id)
 {
     if (!msl_viewer_track_plain() && track_out != NULL &&

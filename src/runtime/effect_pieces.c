@@ -502,6 +502,14 @@ static u32 drawn(const Piece* p, u32 state)
         msl_effect_pieces_consume_generator(p->id);
     } else if (p->id / 1000 == 0) {
         msl_effect_pieces_consume_model((int) (p->id % 1000));
+    } else {
+        // (a fighter's file's model: the simulator draws nothing for its
+        // first step; the game does, once per generator that counts at
+        // random)
+        int n = msl_effect_model_first_draws(p->id);
+        while (n-- > 0) {
+            (void) HSD_Randf();
+        }
     }
     out = *seed_ptr;
     *seed_ptr = keep;
@@ -539,6 +547,15 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
                                                &p->effect.params, p->effect.attach_jobj, p->effect.scale_flags);
         }
     }
+    // (a model the dispatch pairs with another of the spawn's)
+    for (i = 0; i < piece_count; ++i) {
+        int j;
+        for (j = 0; pieces[i].kind == 'm' && pieces[i].effect.next != NULL && j < piece_count; ++j) {
+            if (pieces[i].effect.next == &pieces[j].effect) {
+                msl_particle_probe_model_pair(made[i], made[j]);
+            }
+        }
+    }
     for (i = piece_count - 1; i >= 0; --i) {
         Piece* p = &pieces[i];
         if (p->kind == 'm') {
@@ -547,7 +564,10 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
                 p->rng_at = at;
             }
             state = drawn(p, state);
-            msl_particle_probe_model_started(made[i], frame, at);
+            msl_particle_probe_model_started(made[i], frame, at, p->id / 1000 != 0);
+            if (p->id / 1000 != 0) {
+                msl_viewer_track_skipped_n(msl_effect_model_first_draws(p->id));
+            }
         }
     }
 

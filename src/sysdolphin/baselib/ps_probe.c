@@ -290,6 +290,8 @@ static LONG WINAPI probe_crashed(EXCEPTION_POINTERS* info)
 
 static void probe_made(HSD_Generator* gen);
 static int probe_drawn;
+// MSL_PARTICLE_PROBE_SLIM: no "p" or "u" lines (the generator lists only)
+static int probe_slim;
 static u32 saved_real;
 static HSD_Generator* probe_stage_kept;
 static int probe_stage_told;
@@ -331,6 +333,7 @@ void msl_particle_probe_begin(void)
         probe_bank_source[i] = NULL;
     }
     pm_reset();
+    probe_slim = getenv("MSL_PARTICLE_PROBE_SLIM") != NULL;
     probe_stage_kept = NULL;
     probe_stage_told = 0;
     probe_drawn = 0;
@@ -682,6 +685,9 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         if (!(gen->kind & 0x800)) {
             hsd_8039D214(gen);
         }
+        if (probe_slim) {
+            continue;
+        }
         fprintf(probe_out, "[\"u\",%d,%d,%u,%u,%.9g,%.9g,%.9g", frame,
                 probe_uid(gen), (unsigned) gen->type, (unsigned) gen->kind,
                 gen->pos.x, gen->pos.y, gen->pos.z);
@@ -733,7 +739,7 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
                 probe_uid(gen), idx, gen->count, (int) gen->genLife,
                 (int) gen->numChild, (unsigned) gen->type, (unsigned) gen->kind);
     }
-    for (list = 0; list < 16; ++list) {
+    for (list = 0; list < 16 && !probe_slim; ++list) {
         const HSD_Particle* pp;
         int index = 0;
         for (pp = hsd_804D0908[list]; pp != NULL; pp = pp->next, ++index) {
@@ -924,6 +930,13 @@ static void pm_step(HSD_GObj* gobj, int frame, int first)
     if (first) {
         HSD_JObjAnimAll(gobj->hsd_obj);
     } else {
+        // (a callback that turns its pair too: not without the pair)
+        EF_Effect* effect = GET_EFFECT(gobj);
+        if (effect->update == (EF_UpdateFn) efLib_Cb_ftKp_SpecialHi &&
+            (effect->next == NULL || effect->next->gobj == NULL))
+        {
+            effect->update = NULL;
+        }
         efLib_Update(gobj);
     }
     msl_effect_probe_dptcl(NULL);
@@ -956,20 +969,25 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
                                const Vec3* params, HSD_JObj* attach,
                                int scale_flags)
 {
-    const MslCoreEffectGeneratorBank* common = msl_effect_probe_bank(0);
+    int file = gfx_id / 1000;
+    int index = gfx_id % 1000;
+    const MslCoreEffectGeneratorBank* common =
+        gfx_id >= 0 && file != 0x1E ? msl_effect_probe_bank(file) : NULL;
     EF_Effect* effect;
     HSD_JObj* jobj;
     size_t i;
 
-    // (the common file's models: the only table the simulator translates)
-    if (probe_out == NULL || gfx_id < 0 || gfx_id >= 1000 || common == NULL ||
+    // (a model the simulator has translated: the common file's first 0x28,
+    // a fighter's file's as many as its table has)
+    if (probe_out == NULL || gfx_id < 0 || common == NULL ||
         common->models == NULL ||
-        common->models[gfx_id].model_desc.joint == NULL)
+        index >= (file == 0 ? 0x28 : msl_effect_model_count(file)) ||
+        common->models[index].model_desc.joint == NULL)
     {
         return NULL;
     }
     pp_alloc_init(&pm_alloc_data, sizeof(EF_Effect), 4);
-    pm_dat_entries[0].data = (void*) common->models;
+    pm_dat_entries[file].data = (void*) common->models;
     pm_anim_count = 0;
     msl_probe_heap = 1;
     if (strcmp(how, "create") == 0) {
@@ -1018,7 +1036,8 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
     return effect->gobj;
 }
 
-void msl_particle_probe_model_started(void* model, int frame, u32 seed_at)
+void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
+                                      int counted)
 {
     HSD_GObj* gobj = model;
     u32 saved;
@@ -1035,6 +1054,16 @@ void msl_particle_probe_model_started(void* model, int frame, u32 seed_at)
     saved = *seed_ptr;
     *seed_ptr = seed_at;
     pm_step(gobj, frame, 1);
+    if (counted) {
+        // (how many draws its first step made)
+        u32 at = seed_at;
+        int n = 0;
+        while (at != *seed_ptr && n < 64) {
+            at = at * 214013 + 2531011;
+            ++n;
+        }
+        probe_drawn += n;
+    }
     *seed_ptr = saved;
 }
 
@@ -1083,6 +1112,14 @@ static void pm_frame(int frame)
             pm_step(gobj, frame, 0);
         }
         if (pm_models[i].dead && !pm_tree_used(gobj->hsd_obj)) {
+            int o;
+            for (o = 0; o < PM_MODELS; ++o) {
+                if (pm_models[o].gobj != NULL && pm_models[o].gobj != gobj &&
+                    GET_EFFECT(pm_models[o].gobj)->next == GET_EFFECT(gobj))
+                {
+                    GET_EFFECT(pm_models[o].gobj)->next = NULL;
+                }
+            }
             msl_probe_heap = 1;
             HSD_JObjRemoveAll(gobj->hsd_obj);
             msl_probe_heap = 0;
@@ -1316,4 +1353,14 @@ void msl_particle_probe_joint_gone(HSD_JObj* jobj)
         }
     }
     (void) waiting;
+}
+
+void msl_particle_probe_model_pair(void* model, void* next)
+{
+    HSD_GObj* gobj = model;
+    HSD_GObj* other = next;
+    if (probe_out == NULL || gobj == NULL || other == NULL) {
+        return;
+    }
+    GET_EFFECT(gobj)->next = GET_EFFECT(other);
 }

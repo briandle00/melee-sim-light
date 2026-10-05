@@ -37,6 +37,41 @@ static _Thread_local MslCoreEffectState* msl_bound_effect_state;
 static void msl_effect_consume_bank_command(
     const MslCoreEffectGeneratorBank* data, int index);
 
+// Viewer track only: the models of the effect files other than the common
+// one's first 0x28 (the simulator draws for none of them). How many entries
+// each file's table has - read from the files by the viewer's own reader -
+// and, per model, how many draws its animation's first step makes.
+enum { MSL_EFFECT_MODELS_PER_FILE = 16 };
+static const u8 msl_effect_model_counts[MSL_CORE_EFFECT_BANK_CAPACITY] = {
+    [1] = 2, [2] = 3, [3] = 6, [4] = 6, [5] = 9, [6] = 4, [7] = 5, [8] = 7,
+    [9] = 1, [10] = 3, [11] = 1, [12] = 3, [13] = 4, [14] = 1, [15] = 1,
+    [16] = 2, [17] = 7, [18] = 2, [19] = 6, [20] = 2, [21] = 2, [32] = 1,
+    [33] = 1, [34] = 1, [37] = 1, [38] = 2, [39] = 2, [47] = 2, [48] = 2,
+};
+static u8 msl_effect_model_draws[MSL_CORE_EFFECT_BANK_CAPACITY]
+                                [MSL_EFFECT_MODELS_PER_FILE];
+static u8* msl_effect_recording_draws;
+
+int msl_effect_model_count(int bank)
+{
+    if (bank < 0 || bank >= MSL_CORE_EFFECT_BANK_CAPACITY) {
+        return 0;
+    }
+    return msl_effect_model_counts[bank];
+}
+
+int msl_effect_model_first_draws(int model_id)
+{
+    int bank = model_id / 1000;
+    int index = model_id % 1000;
+    if (model_id < 0 || bank <= 0 || bank >= MSL_CORE_EFFECT_BANK_CAPACITY ||
+        index >= MSL_EFFECT_MODELS_PER_FILE)
+    {
+        return 0;
+    }
+    return msl_effect_model_draws[bank][index];
+}
+
 static void msl_effect_record_model_generator(int link_no, int bank,
                                               int gfx_id, HSD_JObj* jobj)
 {
@@ -46,6 +81,12 @@ static void msl_effect_record_model_generator(int link_no, int bank,
 
     (void) link_no;
     (void) jobj;
+    if (msl_effect_recording_draws != NULL) {
+        if (msl_effect_generator_draws(bank, gfx_id)) {
+            ++*msl_effect_recording_draws;
+        }
+        return;
+    }
     if (data == NULL || data->recording_common_model < 0 ||
         data->recording_common_model >= MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY)
     {
@@ -99,6 +140,12 @@ static void msl_effect_load_bank(MslCoreEffectData* data, int bank,
         fprintf(stderr, "%s has invalid %s command data\n", filename,
                 symbol);
         abort();
+    }
+    if (bank != 0 && msl_effect_model_counts[bank] != 0) {
+        // (viewer track only: a fighter's file's models, for the draws
+        // their animations' first steps make and for the particle probe)
+        effect_bank->models = msl_native_effect_models(
+            effect_bank->archive, symbol, msl_effect_model_counts[bank]);
     }
     if (bank == 0) {
         effect_bank->models =
@@ -256,6 +303,31 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
          model_id < MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY; ++model_id)
     {
         msl_effect_record_model_start(data, model_id);
+    }
+    // (viewer track only: the other files' models' first steps, counted)
+    for (int bank = 1; bank < MSL_CORE_EFFECT_BANK_CAPACITY; ++bank) {
+        for (int model = 0; data->banks[bank].models != NULL &&
+                            model < msl_effect_model_counts[bank] &&
+                            model < MSL_EFFECT_MODELS_PER_FILE;
+             ++model)
+        {
+            EF_EffectDesc* desc = &data->banks[bank].models[model];
+            HSD_JObj* jobj;
+            msl_effect_model_draws[bank][model] = 0;
+            if (desc->model_desc.joint == NULL ||
+                (jobj = HSD_JObjLoadJoint(desc->model_desc.joint)) == NULL)
+            {
+                continue;
+            }
+            HSD_JObjAddAnimAll(jobj, desc->model_desc.animjoint,
+                               desc->model_desc.matanim_joint,
+                               desc->model_desc.shapeanim_joint);
+            HSD_JObjReqAnimAll(jobj, 0.0F);
+            msl_effect_recording_draws = &msl_effect_model_draws[bank][model];
+            HSD_JObjAnimAll(jobj);
+            msl_effect_recording_draws = NULL;
+            HSD_JObjRemoveAll(jobj);
+        }
     }
     HSD_JObjSetDPtclCallback(NULL);
 }

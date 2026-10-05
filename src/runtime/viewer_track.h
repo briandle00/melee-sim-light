@@ -39,6 +39,8 @@ int msl_viewer_track_plain(void);
 // A generator the game makes here and the simulator does not: counted when
 // its making draws (runtime/effects.h msl_effect_generator_draws).
 void msl_viewer_track_skipped(int bank, int generator_id);
+// `n` such draws at once (an effect model's animation's first step).
+void msl_viewer_track_skipped_n(int n);
 void msl_viewer_track_fxend(HSD_GObj* owner);
 // One piece of the spawn just written (runtime/effect_pieces.c): what the
 // game's dispatch made for it, as an "fxp" event after its "fx".

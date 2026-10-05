@@ -64,9 +64,14 @@ void* msl_particle_probe_model(s32 gfx_id, const char* how, HSD_GObj* parent,
                                const char* callback, int lifetime,
                                const Vec3* params, HSD_JObj* attach,
                                int scale_flags);
+// The model the dispatch set as this one's next (effect->next).
+void msl_particle_probe_model_pair(void* model, void* next);
 // Its animation's first step (the generators its particle keys start),
 // from the random state `seed_at` (put back after).
-void msl_particle_probe_model_started(void* model, int frame, u32 seed_at);
+// `counted`: its draws are ones the simulator leaves out (checked against
+// the track's count each frame).
+void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
+                                      int counted);
 // A joint is being freed: the probe's generators on it stay where they are,
 // off it (the game's own hold a reference that keeps the joint; the probe
 // takes none).
