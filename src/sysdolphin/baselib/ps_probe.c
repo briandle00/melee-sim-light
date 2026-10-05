@@ -290,7 +290,7 @@ static LONG WINAPI probe_crashed(EXCEPTION_POINTERS* info)
 
 static void probe_made(HSD_Generator* gen);
 static int probe_drawn;
-// MSL_PARTICLE_PROBE_SLIM: no "p" or "u" lines (the generator lists only)
+// MSL_PARTICLE_PROBE_SLIM: no "p" lines, and "u" lines on every 60th frame only
 static int probe_slim;
 static u32 saved_real;
 static HSD_Generator* probe_stage_kept;
@@ -685,7 +685,8 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         if (!(gen->kind & 0x800)) {
             hsd_8039D214(gen);
         }
-        if (probe_slim) {
+        // (slim: the places on every 60th frame only, the place check's samples)
+        if (probe_slim && frame % 60 != 0) {
             continue;
         }
         fprintf(probe_out, "[\"u\",%d,%d,%u,%u,%.9g,%.9g,%.9g", frame,
