@@ -182,13 +182,19 @@ void efLib_DestroyAll(HSD_GObj* gobj)
         msl_viewer_track_fxend(gobj);
     }
 }
+void msl_particle_probe_owner_pause(HSD_GObj* owner, int on);
+void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags);
 void efLib_PauseAll(HSD_GObj* gobj)
 {
-    (void) gobj;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_pause(gobj, 1);
+    }
 }
 void efLib_ResumeAll(HSD_GObj* gobj)
 {
-    (void) gobj;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_pause(gobj, 0);
+    }
 }
 // Hosted GameData loads every effect bank eagerly at init
 // (runtime/effects.c::msl_effect_data_init), so the retail sync/async bank
@@ -206,8 +212,9 @@ void efAsync_LoadAsync(int index)
 }
 void efLib_SetFlags(HSD_GObj* gobj, s32 expire_flags)
 {
-    (void) gobj;
-    (void) expire_flags;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_flags(gobj, (int) expire_flags);
+    }
 }
 void efLib_SetParamAlpha(HSD_GObj* gobj, u8 alpha)
 {

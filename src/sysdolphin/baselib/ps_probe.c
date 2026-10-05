@@ -1292,6 +1292,48 @@ static void pm_owner_ended(HSD_GObj* owner, int frame)
     }
 }
 
+// efLib_PauseAll, efLib_ResumeAll and efLib_SetFlags for the probe's models:
+// the owner's are paused (efLib_Update steps one more time, then stands
+// still), resumed, or flagged to expire (the callbacks that read the flag).
+// refs/melee/src/melee/ef/eflib.c
+void msl_particle_probe_owner_pause(HSD_GObj* owner, int on)
+{
+    int i;
+    if (probe_out == NULL || owner == NULL) {
+        return;
+    }
+    for (i = 0; i < PM_MODELS; ++i) {
+        HSD_GObj* gobj = pm_models[i].gobj;
+        if (gobj != NULL && !pm_models[i].dead &&
+            GET_EFFECT(gobj)->parent_gobj == owner)
+        {
+            EF_Effect* effect = GET_EFFECT(gobj);
+            if (on) {
+                effect->state_flags = (effect->state_flags & EF_STATE_ASYNC) |
+                                      EF_STATE_ENTERING_PAUSE;
+            } else {
+                effect->state_flags &= EF_STATE_ASYNC;
+            }
+        }
+    }
+}
+
+void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags)
+{
+    int i;
+    if (probe_out == NULL || owner == NULL) {
+        return;
+    }
+    for (i = 0; i < PM_MODELS; ++i) {
+        HSD_GObj* gobj = pm_models[i].gobj;
+        if (gobj != NULL && !pm_models[i].dead &&
+            GET_EFFECT(gobj)->parent_gobj == owner)
+        {
+            GET_EFFECT(gobj)->expire_flags |= expire_flags;
+        }
+    }
+}
+
 static void pm_reset(void)
 {
     memset(pm_models, 0, sizeof(pm_models));

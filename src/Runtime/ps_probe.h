@@ -80,6 +80,10 @@ void msl_particle_probe_model_started(void* model, int frame, u32 seed_at,
 void msl_particle_probe_joint_gone(HSD_JObj* jobj);
 // An owner's effects all ended (efLib_DestroyAll): its joints' generators.
 void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame);
+// the game's effect pause / resume (hitlag) and expiry flag for an owner's
+// models: nothing in gameplay, the probe's models take them
+void msl_particle_probe_owner_pause(HSD_GObj* owner, int on);
+void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags);
 // The frame's update (after its gameplay), and everything written.
 // `state`: the random state the game's update starts from; `skipped`: how
 // many draws the track stepped the simulator's state by this frame.
