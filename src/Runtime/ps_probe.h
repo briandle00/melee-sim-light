@@ -88,5 +88,8 @@ void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags);
 // `state`: the random state the game's update starts from; `skipped`: how
 // many draws the track stepped the simulator's state by this frame.
 void msl_particle_probe_frame(int frame, u32 state, int skipped);
+// The frame's generators and particles written, after what the game makes
+// once the update has run (the HUD's generators).
+void msl_particle_probe_frame_written(int frame);
 
 #endif

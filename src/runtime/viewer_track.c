@@ -13,6 +13,7 @@
 #include "it/itCharItems.h"
 #include "it/types.h"
 #include "lb/types.h"
+#include "pl/player.h"
 #include "runtime/context.h"
 #include "runtime/effect_pieces.h"
 #include "runtime/effects.h"
@@ -62,11 +63,14 @@ static struct {
     char value[TRACK_VALUE_LEN];
 } track_state[TRACK_KEYS];
 
+static void track_hud_reset(void);
+
 void msl_viewer_track_begin(FILE* out)
 {
     track_out = out;
     msl_viewer_track_on = out != NULL;
     memset(track_state, 0, sizeof(track_state));
+    track_hud_reset();
     if (world_out != NULL) {
         fclose(world_out);
         world_out = NULL;
@@ -1006,6 +1010,101 @@ static void track_items(int frame, const MslCoreMatch* match)
     }
 }
 
+// The HUD's stock icons: a lost stock's burst. The simulator has no HUD, so
+// its part of the game's frame is kept here for the track: each player's
+// icons' counts as ifStock_802F8298 steps them (an icon the player still has
+// stands at 0; one just lost is found at 0, bursts - efSync_Spawn 0x474, the
+// common file's generator 0xF7 on particle list 1 at the icon's place - and
+// counts up to 10). The HUD's proc runs at priority 17, after the particles'
+// update (15): the generator is made after the frame's update and takes its
+// first step in the next frame's, where it stands before the KO blast's own
+// in the list. Seen in the game's memory (a frame-locked Dolphin read).
+// The places are the HUD file's own (IfAll: ScInfDmg's joints 2 to 5, a slot
+// a port; Stc_scemdls' joints 1 to 5 as their animation's frame 0 leaves
+// them, the icons). Not here: a stolen stock's
+// two (0x475, 0x476: teams), and the donor's icon then standing still.
+// [frame,"hgen",bank,id,x,y,z,seed,port,icon]
+// refs/melee/src/melee/if/ifstock.c::{ifStock_802F8298,ifStock_802F98E8}
+static struct {
+    unsigned char seen;
+    unsigned char anim[5];
+} track_hud[6];
+
+static void track_hud_reset(void)
+{
+    memset(track_hud, 0, sizeof(track_hud));
+}
+
+static void track_hud_step(int frame, const MslCoreMatch* match)
+{
+    static const float slot_x[4] = { -21.0F, -7.0F, 7.0F, 21.0F };
+    static const float icon_x[5] = { -4.999755859375F, -2.5999755859375F,
+                                     -0.199951171875F, 2.199951171875F,
+                                     4.599853515625F };
+    int i;
+
+    for (i = 0; i < match->config.num_players; ++i) {
+        int port;
+        int stocks;
+        int k;
+        if (match->fighters[i] == NULL) {
+            continue;
+        }
+        port = GET_FIGHTER(match->fighters[i])->player_id;
+        if (port < 0 || port >= 4) {
+            continue;
+        }
+        stocks = Player_GetStocks(port);
+        if (stocks > 99) {
+            stocks = 99;
+        }
+        if (stocks < 0) {
+            stocks = 1;
+        }
+        if (!track_hud[port].seen) {
+            // (as the icons are made: ifStock_802F98E8)
+            track_hud[port].seen = 1;
+            for (k = 0; k < 5; ++k) {
+                track_hud[port].anim[k] = stocks <= 5 && k >= stocks ? 10 : 0;
+            }
+        }
+        if (stocks > 5) {
+            track_hud[port].anim[0] = 0;
+            for (k = 1; k < 5; ++k) {
+                track_hud[port].anim[k] = 10;
+            }
+            continue;
+        }
+        for (k = 0; k < 5; ++k) {
+            unsigned char* anim = &track_hud[port].anim[k];
+            if (k < stocks) {
+                *anim = 0;
+                continue;
+            }
+            if (*anim == 0) {
+                Vec3 pos;
+                Vec3 none = { 0.0F, 0.0F, 0.0F };
+                Vec3 one = { 1.0F, 1.0F, 1.0F };
+                u32 state = seed_now();
+                void* made;
+                pos.x = icon_x[k] + slot_x[port];
+                pos.y = 7.5F + -21.0F;
+                pos.z = 0.0F;
+                // (0xF7 counts nothing at random as it is made: the state is
+                // written for the form's sake)
+                fprintf(track_out,
+                        "[%d,\"hgen\",0,%d,%.9g,%.9g,%.9g,%u,%d,%d]\n", frame,
+                        0xF7, pos.x, pos.y, pos.z, (unsigned) state, port, k);
+                made = msl_particle_probe_generator(0xF7, NULL, MSL_PROBE_PLACE, 1, state);
+                msl_particle_probe_placed(made, frame, 0xF7, MSL_PROBE_PLACE, state, &pos, 0, &none, &none, &one);
+            }
+            if (*anim < 10) {
+                ++*anim;
+            }
+        }
+    }
+}
+
 void msl_viewer_track_frame(MslCoreMatch* match)
 {
     int frame;
@@ -1035,6 +1134,10 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     fprintf(track_out, "[%d,\"rng\",%u]\n", frame, (unsigned) seed_now());
     msl_particle_probe_frame(frame, seed_now(), track_skipped);
     track_skipped = 0;
+    if (!msl_viewer_track_plain()) {
+        track_hud_step(frame, match);
+    }
+    msl_particle_probe_frame_written(frame);
 }
 
 int msl_viewer_track_resync(MslCoreMatch* match, char kind, int lane,

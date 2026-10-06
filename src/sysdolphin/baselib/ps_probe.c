@@ -820,6 +820,20 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
         pp_draw_count = 0;
         pp_draw_lost = 0;
     }
+}
+
+// The frame's lines: every generator and particle as the frame leaves them.
+// Apart from the update because the game makes generators after it: the
+// HUD's (ifstock.c, a proc of priority 17 against the particles' 15), which
+// are in the list, not yet stepped, when the frame is drawn.
+void msl_particle_probe_frame_written(int frame)
+{
+    HSD_Generator* gen;
+    int list;
+
+    if (probe_out == NULL) {
+        return;
+    }
     for (gen = hsd_804D78FC; gen != NULL; gen = gen->next) {
         // (which command it is of: the one whose script it runs)
         int idx = -1;
@@ -1639,5 +1653,6 @@ void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame) { (void) owner; 
 void msl_particle_probe_owner_pause(HSD_GObj* owner, int on) { (void) owner; (void) on; }
 void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags) { (void) owner; (void) expire_flags; }
 void msl_particle_probe_frame(int frame, u32 state, int skipped) { (void) frame; (void) state; (void) skipped; }
+void msl_particle_probe_frame_written(int frame) { (void) frame; }
 
 #endif // MSL_PARTICLE_PROBE_BUILD
