@@ -220,7 +220,8 @@ def gamestate_stored_dtype() -> np.dtype:
     return np.dtype(
         [
             ("charge", "u1"),
-            ("_pad0", "u1", (3,)),
+            ("copied_char", "u1"),
+            ("_pad0", "u1", (2,)),
             ("gauge", "<f4", (2,)),
         ],
         align=False,

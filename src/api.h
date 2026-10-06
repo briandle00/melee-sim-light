@@ -212,12 +212,21 @@ typedef struct MslObservationStage {
   uint8_t _pad0[3];
 } MslObservationStage;
 
+enum {
+  // MslObservationStored.copied_char when there is no copied ability.
+  MSL_COPIED_NONE = 255,
+};
+
 // What a fighter keeps between moves, in the game's own units. Slippi records
 // none of it. API.md lists each character's meaning and range; a character
-// without one, and an absent player, reads 0.
+// without one, and an absent player, reads 0 and MSL_COPIED_NONE.
 typedef struct MslObservationStored {
   uint8_t charge; // A stored move's count: swings, steps, cycles, needles, shots.
-  uint8_t _pad0[3];
+  // Kirby's copied ability: the MSL_CHARACTER_* whose neutral special he has,
+  // in the id space of MslObservationPlayer.char_id. It says whose move
+  // charge and gauge belong to. MSL_COPIED_NONE without one and for others.
+  uint8_t copied_char;
+  uint8_t _pad0[2];
   float gauge[2]; // Stored amounts that are not a count.
 } MslObservationStored;
 

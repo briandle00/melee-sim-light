@@ -97,7 +97,8 @@ zeroed.
 
 `stored[k]` is what the player in `slots[k]` keeps between moves, in the game's
 own units. Slippi does not record it. A character with nothing to keep, an
-unused slot and an absent player read zero.
+unused slot and an absent player read zero, with `copied_char` at
+`MSL_COPIED_NONE`.
 
 `stored[k].charge` is a stored move's count:
 
@@ -114,8 +115,18 @@ The count rises while the move charges, stays through other actions and
 through hits taken outside the move, and returns to `0` when the move uses it
 (Sheik's needles leave one at a time). A hit during the charge clears it,
 except a full Shadow Ball. A KO clears it by the respawn, except Oil Panic's
-count, which the game keeps. Kirby's goes with the hat. The copied ability
-itself is not in the observation.
+count, which the game keeps. Kirby's goes with the hat.
+
+`stored[k].copied_char` is Kirby's copied ability: the `MSL_CHARACTER_*` whose
+neutral special he has, in the id space of `char_id`, so it compares directly
+with another slot's `char_id`. It is `MSL_COPIED_NONE` (`255`) for Kirby
+without one and for every other character. It says whose move Kirby's `charge`
+and `gauge` belong to: Donkey Kong's, Samus's, Mewtwo's or Sheik's count,
+Bowser's gauges, and nothing stored for the rest. The game sets it on the
+frame the swallow gives him the hat (swallowing another Kirby gives that
+Kirby's ability; swallowing Nana gives the Ice Climbers'), and clears it when a
+taunt throws the hat away, when a hit knocks it off (the game rolls for that on
+hits) and on the frame of a KO.
 
 `stored[k].gauge` holds stored amounts that are not a count:
 
@@ -182,6 +193,7 @@ Top-level fields:
 | field | type | values / range |
 | --- | --- | --- |
 | `charge` | `uint8_t` | a stored move's count, per character above |
+| `copied_char` | `uint8_t` | Kirby's copied ability as `MSL_CHARACTER_*`, or `MSL_COPIED_NONE` (`255`) |
 | `gauge` | `float[2]` | stored amounts that are not a count, per character above |
 
 `MslItem` slots are fixed-capacity. Inactive slots have `exists == 0`.
