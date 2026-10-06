@@ -234,12 +234,34 @@ static uint8_t stored_charge(const Fighter* fp)
 // by ftGw_SpecialLw_AbsorbThink_DecideAction. The spill deals a multiple of
 // it, and ftGw_Init_OnDeath clears it while leaving the count.
 // refs/melee/src/melee/ft/chara/ftGameWatch/ftGw_SpecialLw.c::ftGw_SpecialLwShoot_ReleaseOil
+// Fire Breath: gauge[0] is the fuel and gauge[1] the flame size. Each breath
+// frame takes 1 from both down to a floor, and every frame outside the move
+// gives a little back up to the full value (ftKp_SpecialLw_80134D78). Each
+// flame is spawned with both: its speed is the fuel over the full fuel and
+// its scale the size over the full size (itKoopaFlame_Spawn). Kirby's copy
+// keeps its own pair while he wears Bowser's hat.
+// refs/melee/src/melee/ft/chara/ftKoopa/ftKp_SpecialN.c::ftKp_SpecialN_IASA
+// refs/melee/src/melee/ft/chara/ftKirby/ftkirbyspecialkoopa.c::ftKb_SpecialNKp_800FA7D4
 static void stored_gauge(const Fighter* fp, float gauge[2])
 {
     gauge[0] = 0.0F;
     gauge[1] = 0.0F;
-    if (fp->kind == FTKIND_GAMEWATCH) {
+    switch (fp->kind) {
+    case FTKIND_GAMEWATCH:
         gauge[0] = (float) fp->fv.gw.x223C_panicDamage;
+        break;
+    case FTKIND_KOOPA:
+        gauge[0] = fp->fv.kp.x222C;
+        gauge[1] = fp->fv.kp.x2230;
+        break;
+    case FTKIND_KIRBY:
+        if (fp->fv.kb.hat.kind == FTKIND_KOOPA) {
+            gauge[0] = fp->fv.kb.x84;
+            gauge[1] = fp->fv.kb.x88;
+        }
+        break;
+    default:
+        break;
     }
 }
 

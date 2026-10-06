@@ -18,6 +18,8 @@
 #include "ftKirby/forward.h"
 #include "ftKirby/ftkirby.h"
 #include "ftKirby/types.h"
+#include "ftKoopa/forward.h"
+#include "ftKoopa/types.h"
 #include "ftMewtwo/forward.h"
 #include "ftMewtwo/types.h"
 #include "ftSamus/forward.h"
@@ -119,9 +121,14 @@ static int msl_test_setup(unsigned character, unsigned opponent)
                : msl_core_match_reset(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)) == 0);
     msl_test_gauge_free = 0;
     msl_test_want[0] = msl_test_want[1] = msl_test_reborn[0] = msl_test_reborn[1] = 0;
+    // Bowser enters with his Fire Breath full; everyone else with nothing.
+    msl_test_gauge_free = character == FTKIND_KOOPA;
     for (unsigned i = 0; i < 150; ++i) {
         MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0 && msl_test_charge == 0);
     }
+    msl_test_gauge_free = 0;
+    msl_test_want[0] = msl_test_reborn[0] = msl_test_gauge[0];
+    msl_test_want[1] = msl_test_reborn[1] = msl_test_gauge[1];
     return 0;
 }
 
@@ -583,6 +590,149 @@ static int msl_test_absent_after_last_stock(void)
     return 0;
 }
 
+// Fire Breath's two gauges, for Bowser or for Kirby wearing his hat: full at
+// rest, each down by exactly 1 on every frame of breath to its floor, held
+// there while the breath goes on, and back up by its own rate on every frame
+// once the move is over, to full. full, floor and rate are the loaded
+// attributes. Returns the frames the recovery took.
+static int msl_test_breathe(const float full[2], const float floor[2], const float rate[2],
+                            unsigned breath)
+{
+    float prev[2];
+    int moving = 0, frames = 0;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_gauge[0] == full[0] && msl_test_gauge[1] == full[1]);
+    msl_test_gauge_free = 1;
+    for (unsigned i = 0; i < breath; ++i) {
+        int changed = 0;
+        prev[0] = msl_test_gauge[0];
+        prev[1] = msl_test_gauge[1];
+        MSL_TEST_CHECK(msl_test_frame(&msl_test_b) == 0 && msl_test_charge == 0);
+        for (int g = 0; g < 2; ++g) {
+            float down = prev[g] - 1.0F < floor[g] ? floor[g] : prev[g] - 1.0F;
+            MSL_TEST_CHECK(msl_test_gauge[g] == down || (!moving && msl_test_gauge[g] == prev[g]));
+            changed |= msl_test_gauge[g] != prev[g];
+        }
+        // Both start on the same frame and neither pauses before its floor.
+        MSL_TEST_CHECK(!changed || (msl_test_gauge[0] != full[0] && msl_test_gauge[1] != full[1]));
+        moving |= changed;
+    }
+    MSL_TEST_CHECK(moving);
+    moving = 0;
+    for (unsigned i = 0; msl_test_gauge[0] != full[0] || msl_test_gauge[1] != full[1]; ++i) {
+        int changed = 0;
+        MSL_TEST_CHECK(i < 3000);
+        prev[0] = msl_test_gauge[0];
+        prev[1] = msl_test_gauge[1];
+        // A short hop on the way: the recovery does not wait for it.
+        MSL_TEST_CHECK(msl_test_frame(moving > 20 && moving < 23 ? &msl_test_jump
+                                                               : &msl_test_neutral) == 0);
+        MSL_TEST_CHECK(msl_test_charge == 0);
+        for (int g = 0; g < 2; ++g) {
+            float up = prev[g] + rate[g] > full[g] ? full[g] : prev[g] + rate[g];
+            float down = prev[g] - 1.0F < floor[g] ? floor[g] : prev[g] - 1.0F;
+            // The breath goes on draining until it stops and the move's
+            // ending holds the value; after the move, only up.
+            MSL_TEST_CHECK(msl_test_gauge[g] == up ||
+                           (!moving && (msl_test_gauge[g] == down || msl_test_gauge[g] == prev[g])));
+            changed |= msl_test_gauge[g] > prev[g];
+        }
+        moving += moving || changed;
+        frames += moving != 0;
+    }
+    msl_test_gauge_free = 0;
+    msl_test_want[0] = msl_test_reborn[0] = full[0];
+    msl_test_want[1] = msl_test_reborn[1] = full[1];
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+    return frames;
+}
+
+static int msl_test_fire_breath(void)
+{
+    Fighter* fp;
+    ftKoopaAttributes* da;
+    int frames;
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_KOOPA, MSL_TEST_FOX) == 0);
+    fp = msl_test_fighter(0);
+    da = fp->dat_attrs;
+    {
+        const float full[2] = { da->x10, da->x18 };
+        const float floor[2] = { da->x14, da->x1C };
+        const float rate[2] = { da->x8, da->xC };
+        MSL_TEST_CHECK(full[0] > floor[0] + 20 && full[1] > floor[1] + 20 && rate[0] > 0 &&
+                       rate[1] > 0);
+        MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+        // A short breath, then a long one that reaches both floors and stays.
+        MSL_TEST_CHECK(msl_test_breathe(full, floor, rate, 40) > 0);
+        MSL_TEST_CHECK(msl_test_gauge[0] == full[0] && fp->motion_id == ftCo_MS_Wait);
+        frames = msl_test_breathe(full, floor, rate, 400);
+        MSL_TEST_CHECK(frames > 0);
+        fprintf(stderr, "fire breath: fuel %g..%g +%g a frame, size %g..%g +%g a frame, "
+                        "%d frames back to full\n",
+                floor[0], full[0], rate[0], floor[1], full[1], rate[1], frames);
+
+        // Drained to the floors, then a KO: the respawn makes both full at
+        // once (ftKp_Init_OnDeath).
+        msl_test_gauge_free = 1;
+        for (unsigned i = 0; i < 400; ++i) {
+            MSL_TEST_CHECK(msl_test_frame(&msl_test_b) == 0);
+        }
+        MSL_TEST_CHECK(msl_test_gauge[0] == floor[0] && msl_test_gauge[1] == floor[1]);
+        fp->cur_pos = (Vec3) { -300, 40, 0 };
+        fp->prev_pos = fp->cur_pos;
+        ftCommon_8007D5D4(fp);
+        ftCo_Fall_Enter(msl_test_match.fighters[0]);
+        for (unsigned i = 0; fp->motion_id != ftCo_MS_Rebirth; ++i) {
+            float before = msl_test_gauge[0];
+            MSL_TEST_CHECK(i < 120);
+            MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0);
+            if (fp->motion_id == ftCo_MS_Rebirth) {
+                MSL_TEST_CHECK(before < full[0] - 1);
+            } else {
+                MSL_TEST_CHECK(fp->motion_id == ftCo_MS_DeadLeft && msl_test_gauge[0] < full[0]);
+            }
+        }
+        MSL_TEST_CHECK(msl_test_gauge[0] == full[0] && msl_test_gauge[1] == full[1]);
+        msl_test_gauge_free = 0;
+        MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 900, 0) == 0);
+    }
+    return 0;
+}
+
+// Kirby wearing Bowser's hat keeps his own pair, with his own attributes; it
+// goes with the hat.
+static int msl_test_kirby_fire_breath(void)
+{
+    Fighter* fp;
+    ftKb_DatAttrs* da;
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_KIRBY, MSL_TEST_FOX) == 0);
+    fp = msl_test_fighter(0);
+    da = fp->dat_attrs;
+    {
+        const float full[2] = { da->specialn_kp_max_fuel, da->specialn_kp_flame_scale };
+        const float floor[2] = { da->specialn_kp_spew_flame_velocity,
+                                 da->specialn_kp_lowest_charge_graphic_size };
+        const float rate[2] = { da->specialn_kp_fuel_recharge_rate,
+                                da->specialn_kp_flame_size_recharge_rate };
+        int frames;
+        MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+        msl_test_want[0] = full[0];
+        msl_test_want[1] = full[1];
+        ftKb_SpecialN_800F1BAC(msl_test_match.fighters[0], FTKIND_KOOPA, false);
+        frames = msl_test_breathe(full, floor, rate, 400);
+        MSL_TEST_CHECK(frames > 0);
+        fprintf(stderr, "kirby's fire breath: fuel %g..%g +%g a frame, size %g..%g +%g a frame, "
+                        "%d frames back to full\n",
+                floor[0], full[0], rate[0], floor[1], full[1], rate[1], frames);
+        // The taunt throws the hat away, and the gauges with it.
+        msl_test_want[0] = msl_test_want[1] = 0;
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_taunt, 1, 0) == 0);
+        MSL_TEST_CHECK(fp->fv.kb.hat.kind == FTKIND_KIRBY);
+        MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    }
+    return 0;
+}
+
 // Kirby inhales and swallows Donkey Kong, then winds up the copied punch: the
 // observed value is the copy's own count, and goes with the hat when a taunt
 // throws it away.
@@ -680,6 +830,7 @@ int main(int argc, char** argv)
              msl_test_charge_shot() || msl_test_needles() ||
              msl_test_shadow_ball() || msl_test_oil_panic_damage() ||
              msl_test_absent_after_last_stock() ||
+             msl_test_fire_breath() || msl_test_kirby_fire_breath() ||
              msl_test_kirby_swallows_donkey_kong() || msl_test_kirby_copy(FTKIND_SAMUS) ||
              msl_test_kirby_copy(FTKIND_MEWTWO) || msl_test_kirby_copy(FTKIND_SEAK);
     msl_core_match_destroy(&msl_test_match);

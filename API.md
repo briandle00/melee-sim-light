@@ -122,10 +122,20 @@ itself is not in the observation.
 | character | `gauge[0]` | `gauge[1]` |
 | --- | --- | --- |
 | Mr. Game & Watch | the damage the caught shots would have dealt, summed: a whole number, `0` with an empty bucket, with no upper limit in the game (three of Falco's lasers are `9`, three of Mario's fireballs `18`) | `0` |
+| Bowser | Fire Breath's fuel, `40..360`, `360` at rest | Fire Breath's flame size, `60..380`, `380` at rest |
+| Kirby wearing Bowser's hat | his copy's fuel, `40..360` | his copy's flame size, `60..380` |
 
 Oil Panic's spill deals `floor(gauge[0] * 1.5) + 5` before staling. The spill
 clears the damage with the count. A KO clears the damage at the respawn and
 keeps the count, so a full bucket after a KO spills for `5`.
+
+Each frame of Fire Breath takes `1` from the fuel and from the flame size, down
+to their floors, and each frame outside the move gives `0.7` back to both, up
+to the full values: 320 frames of breath empty them and 458 frames refill them.
+A flame is spawned with speed `fuel / 360` and scale `size / 380`, so the fuel
+is how far the breath reaches and the size how big its flames are. A respawn
+makes both full. Kirby's pair goes with the hat. Unlike a count, these are not
+`0` at rest.
 
 Top-level fields:
 
