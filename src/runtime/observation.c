@@ -265,9 +265,22 @@ static void stored_gauge(const Fighter* fp, float gauge[2])
     }
 }
 
+// Kirby's copied ability as the fighter kind whose neutral special he has,
+// the id space of char_id. The game keeps FTKIND_KIRBY for no hat
+// (ftKb_SpecialN_800F5D04); that and every other fighter read
+// MSL_COPIED_NONE.
+// refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::ftKb_SpecialN_800F1BAC
+static uint8_t copied_char(const Fighter* fp)
+{
+    if (fp->kind != FTKIND_KIRBY || fp->fv.kb.hat.kind == FTKIND_KIRBY) {
+        return MSL_COPIED_NONE;
+    }
+    return (uint8_t) fp->fv.kb.hat.kind;
+}
+
 // Writes what the player in slots[slot] keeps between moves. Slippi records
 // none of it, so there is no compare lane: both observation builders read
-// the fighter here. An absent player keeps the zeroed record.
+// the fighter here. An absent player keeps the empty record.
 static void write_stored(const MslCoreMatch* match, int player, int slot,
                          MslCoreObservation* output)
 {
@@ -279,6 +292,7 @@ static void write_stored(const MslCoreMatch* match, int player, int slot,
         return;
     }
     out[offsetof(MslCoreObservationStored, charge)] = stored_charge(fp);
+    out[offsetof(MslCoreObservationStored, copied_char)] = copied_char(fp);
     stored_gauge(fp, gauge);
     put_f32(out, offsetof(MslCoreObservationStored, gauge), gauge[0]);
     put_f32(out, offsetof(MslCoreObservationStored, gauge) + sizeof(float),
@@ -508,6 +522,7 @@ int msl_core_match_write_observation(const MslCoreMatch* match,
     memset(output, 0, sizeof(*output));
     for (player = 0; player < MSL_CORE_MAX_PLAYERS; ++player) {
         output->slots[player].source_player = UINT8_MAX;
+        output->stored[player].copied_char = MSL_COPIED_NONE;
     }
     put_u32(out, offsetof(MslCoreObservation, frame_id),
             (uint32_t) match->frame_id);
@@ -567,6 +582,7 @@ int msl_core_match_write_observation_from_compare(
     memset(output, 0, sizeof(*output));
     for (player = 0; player < MSL_CORE_MAX_PLAYERS; ++player) {
         output->slots[player].source_player = UINT8_MAX;
+        output->stored[player].copied_char = MSL_COPIED_NONE;
     }
     memcpy(out + offsetof(MslCoreObservation, frame_id),
            source + offsetof(MslCoreCompare, frame_id), sizeof(uint32_t));

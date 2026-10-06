@@ -53,7 +53,12 @@ static const MslCoreInput msl_test_taunt = { { { PAD_BUTTON_UP } } };
 static int msl_test_charge;
 // Its two gauges, and what a player who keeps nothing reads.
 static float msl_test_gauge[2];
-static const MslCoreObservationStored msl_test_nothing;
+static const MslCoreObservationStored msl_test_nothing = { .copied_char = MSL_COPIED_NONE };
+// Kirby's copied ability as observed for port 0, and what it must read on
+// every frame unless the scenario is following it itself.
+static int msl_test_copied;
+static int msl_test_want_copied = MSL_COPIED_NONE;
+static int msl_test_copied_free;
 // What the gauges must read on every frame while port 0 is present, unless
 // the scenario is following them itself; and what a respawn leaves them at.
 static float msl_test_want[2];
@@ -85,6 +90,7 @@ static int msl_test_frame(const MslCoreInput* input)
     MSL_TEST_CHECK(msl_core_match_write_observation_from_compare(&msl_test_match, 0, &compared) == 0);
     MSL_TEST_CHECK(msl_core_match_write_observation(&msl_test_match, 1, &other) == 0);
     msl_test_charge = direct.stored[0].charge;
+    msl_test_copied = direct.stored[0].copied_char;
     msl_test_gauge[0] = direct.stored[0].gauge[0];
     msl_test_gauge[1] = direct.stored[0].gauge[1];
     msl_test_present = direct.slots[0].present;
@@ -95,6 +101,8 @@ static int msl_test_frame(const MslCoreInput* input)
         MSL_TEST_CHECK(msl_test_gauge[0] == msl_test_want[0] &&
                        msl_test_gauge[1] == msl_test_want[1]);
     }
+    MSL_TEST_CHECK(msl_test_copied_free || !msl_test_present ||
+                   msl_test_copied == msl_test_want_copied);
     // Singles: each viewpoint has itself in slot 0 and the opponent in slot 1.
     MSL_TEST_CHECK(other.slots[1].source_player == 0 &&
                    memcmp(&other.stored[1], &direct.stored[0], sizeof(direct.stored[0])) == 0);
@@ -119,7 +127,8 @@ static int msl_test_setup(unsigned character, unsigned opponent)
     MSL_TEST_CHECK((msl_test_match.memory.arena == NULL
                ? msl_core_match_init(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)
                : msl_core_match_reset(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)) == 0);
-    msl_test_gauge_free = 0;
+    msl_test_gauge_free = msl_test_copied_free = 0;
+    msl_test_want_copied = MSL_COPIED_NONE;
     msl_test_want[0] = msl_test_want[1] = msl_test_reborn[0] = msl_test_reborn[1] = 0;
     // Bowser enters with his Fire Breath full; everyone else with nothing.
     msl_test_gauge_free = character == FTKIND_KOOPA;
@@ -718,6 +727,7 @@ static int msl_test_kirby_fire_breath(void)
         MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
         msl_test_want[0] = full[0];
         msl_test_want[1] = full[1];
+        msl_test_want_copied = FTKIND_KOOPA;
         ftKb_SpecialN_800F1BAC(msl_test_match.fighters[0], FTKIND_KOOPA, false);
         frames = msl_test_breathe(full, floor, rate, 400);
         MSL_TEST_CHECK(frames > 0);
@@ -726,10 +736,66 @@ static int msl_test_kirby_fire_breath(void)
                 floor[0], full[0], rate[0], floor[1], full[1], rate[1], frames);
         // The taunt throws the hat away, and the gauges with it.
         msl_test_want[0] = msl_test_want[1] = 0;
+        msl_test_want_copied = MSL_COPIED_NONE;
         MSL_TEST_CHECK(msl_test_hold(&msl_test_taunt, 1, 0) == 0);
         MSL_TEST_CHECK(fp->fv.kb.hat.kind == FTKIND_KIRBY);
         MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
     }
+    return 0;
+}
+
+// Kirby, standing next to the opponent, inhales and swallows him. The copied
+// ability is none on every frame until the hat arrives and the opponent's
+// character, as the observation gives it in his own slot, from that frame.
+static int msl_test_swallow(void)
+{
+    Fighter* fp = msl_test_fighter(0);
+    Fighter* opponent = msl_test_fighter(1);
+    MslCoreObservation observation;
+    int arrived = -1;
+    fp->cur_pos = (Vec3) { 0, 0, 0 };
+    fp->prev_pos = fp->cur_pos;
+    fp->facing_dir = 1;
+    opponent->cur_pos = (Vec3) { 10, 0, 0 };
+    opponent->prev_pos = opponent->cur_pos;
+    opponent->facing_dir = -1;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_b, 1, 0) == 0);
+    msl_test_copied_free = 1;
+    for (unsigned i = 0; i < 300 && (arrived < 0 || fp->motion_id != ftCo_MS_Wait); ++i) {
+        // B again, on a press edge inside the wait state, swallows.
+        MSL_TEST_CHECK(msl_test_hold(fp->motion_id == ftKb_MS_EatWait && (i % 4) < 2
+                                         ? &msl_test_b : &msl_test_neutral, 1, 0) == 0);
+        MSL_TEST_CHECK(msl_core_match_write_observation(&msl_test_match, 0, &observation) == 0);
+        if (arrived < 0 && msl_test_copied != MSL_COPIED_NONE) {
+            arrived = msl_test_match.frame_id;
+        }
+        MSL_TEST_CHECK(msl_test_copied ==
+                       (arrived < 0 ? MSL_COPIED_NONE : observation.slots[1].char_id));
+        MSL_TEST_CHECK((arrived >= 0) == (fp->fv.kb.hat.kind != FTKIND_KIRBY));
+    }
+    MSL_TEST_CHECK(arrived >= 0 && fp->motion_id == ftCo_MS_Wait);
+    msl_test_copied_free = 0;
+    msl_test_want_copied = msl_test_copied;
+    opponent->cur_pos = (Vec3) { 60, 0, 0 };
+    opponent->prev_pos = opponent->cur_pos;
+    fprintf(stderr, "kirby: copied fighter %d on frame %d\n", msl_test_copied, arrived);
+    return 0;
+}
+
+// A copy with nothing to store: Fox's. The ability is observed, the count and
+// the gauges stay 0 through firing the copied Blaster, and a KO takes the hat
+// on its frame.
+static int msl_test_kirby_swallows_fox(void)
+{
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_KIRBY, MSL_TEST_FOX) == 0);
+    MSL_TEST_CHECK(msl_test_swallow() == 0 && msl_test_copied == MSL_TEST_FOX);
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_b, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_fighter(0)->motion_id != ftCo_MS_Wait);
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    msl_test_want_copied = MSL_COPIED_NONE;
+    MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
     return 0;
 }
 
@@ -739,29 +805,11 @@ static int msl_test_kirby_fire_breath(void)
 static int msl_test_kirby_swallows_donkey_kong(void)
 {
     Fighter* fp;
-    Fighter* opponent;
     int full;
     MSL_TEST_CHECK(msl_test_setup(FTKIND_KIRBY, FTKIND_DONKEY) == 0);
     fp = msl_test_fighter(0);
-    opponent = msl_test_fighter(1);
-    fp->cur_pos = (Vec3) { 0, 0, 0 };
-    fp->prev_pos = fp->cur_pos;
-    fp->facing_dir = 1;
-    opponent->cur_pos = (Vec3) { 10, 0, 0 };
-    opponent->prev_pos = opponent->cur_pos;
-    opponent->facing_dir = -1;
     full = ((ftKb_DatAttrs*) fp->dat_attrs)->specialn_dk_swings_to_full_charge;
-    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
-    MSL_TEST_CHECK(msl_test_hold(&msl_test_b, 1, 0) == 0);
-    for (unsigned i = 0; fp->fv.kb.hat.kind != FTKIND_DONKEY; ++i) {
-        // B again, on a press edge inside the wait state, swallows.
-        MSL_TEST_CHECK(i < 200);
-        MSL_TEST_CHECK(msl_test_hold(fp->motion_id == ftKb_MS_EatWait && (i % 4) < 2
-                                         ? &msl_test_b : &msl_test_neutral, 1, 0) == 0);
-    }
-    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
-    opponent->cur_pos = (Vec3) { 60, 0, 0 };
-    opponent->prev_pos = opponent->cur_pos;
+    MSL_TEST_CHECK(msl_test_swallow() == 0 && msl_test_copied == FTKIND_DONKEY);
 
     MSL_TEST_CHECK(msl_test_hold(&msl_test_b, 1, 0) == 0);
     MSL_TEST_CHECK(fp->motion_id == ftKb_MS_DkSpecialNStart);
@@ -775,6 +823,7 @@ static int msl_test_kirby_swallows_donkey_kong(void)
 
     // The taunt throws the hat away on its first frame.
     MSL_TEST_CHECK(fp->fv.kb.hat.kind == FTKIND_DONKEY && fp->fv.kb.xBC == full);
+    msl_test_want_copied = MSL_COPIED_NONE;
     MSL_TEST_CHECK(msl_test_hold(&msl_test_taunt, 1, 0) == 0);
     MSL_TEST_CHECK(fp->fv.kb.hat.kind == FTKIND_KIRBY && fp->motion_id != ftCo_MS_Wait);
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
@@ -797,6 +846,7 @@ static int msl_test_kirby_copy(FighterKind kind)
     da = fp->dat_attrs;
     full = kind == FTKIND_SAMUS ? (int) da->specialn_ss_charge_time :
            kind == FTKIND_MEWTWO ? (int) da->specialn_mt_charge_time : 6;
+    msl_test_want_copied = kind;
     ftKb_SpecialN_800F1BAC(msl_test_match.fighters[0], kind, false);
     MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
     MSL_TEST_CHECK(msl_test_frame(&msl_test_b) == 0);
@@ -811,8 +861,9 @@ static int msl_test_kirby_copy(FighterKind kind)
     MSL_TEST_CHECK(msl_test_hold(charge, 30, full) == 0);
     MSL_TEST_CHECK(msl_test_hold(shield, 1, full) == 0);
     MSL_TEST_CHECK(msl_test_other_actions(full) == 0);
-    // Kirby's death callback takes the copy's count on the frame of the KO;
-    // the hat is gone by the respawn.
+    // Kirby's death callback takes the hat, and the copy's count with it, on
+    // the frame of the KO.
+    msl_test_want_copied = MSL_COPIED_NONE;
     MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
     MSL_TEST_CHECK(fp->fv.kb.hat.kind == FTKIND_KIRBY);
     fprintf(stderr, "kirby: copy of fighter %d full at %d\n", (int) kind, full);
@@ -831,7 +882,7 @@ int main(int argc, char** argv)
              msl_test_shadow_ball() || msl_test_oil_panic_damage() ||
              msl_test_absent_after_last_stock() ||
              msl_test_fire_breath() || msl_test_kirby_fire_breath() ||
-             msl_test_kirby_swallows_donkey_kong() || msl_test_kirby_copy(FTKIND_SAMUS) ||
+             msl_test_kirby_swallows_fox() || msl_test_kirby_swallows_donkey_kong() || msl_test_kirby_copy(FTKIND_SAMUS) ||
              msl_test_kirby_copy(FTKIND_MEWTWO) || msl_test_kirby_copy(FTKIND_SEAK);
     msl_core_match_destroy(&msl_test_match);
     msl_core_game_data_deinit(&msl_test_game_data);

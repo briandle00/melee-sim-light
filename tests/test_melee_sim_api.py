@@ -56,6 +56,11 @@ def test_followers_pair_with_their_leaders_in_teams(monkeypatch, viewpoint: int)
                 assert not follower.tobytes().strip(b"\0")
 
 
+def _nothing_stored(stored) -> bool:
+    return (not stored["charge"].any() and not stored["gauge"].any()
+            and np.all(stored["copied_char"] == 255))
+
+
 @pytest.mark.parametrize("viewpoint", range(4))
 def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint: int) -> None:
     monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
@@ -69,7 +74,7 @@ def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint:
                           for c, t in ((dk, 0), (fox, 0), (sheik, 1), (samus, 1))),
             is_teams=True, viewpoint_player=viewpoint)])
         env.reset_all()
-        assert not env.current_frame["stored"].tobytes().strip(b"\0")
+        assert _nothing_stored(env.current_frame["stored"])
         for tick in range(700):
             if env.t == env.length:
                 env.reset_cursor()
@@ -84,13 +89,14 @@ def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint:
             order = row["slots"]["source_player"]
             assert sorted(order) == [0, 1, 2, 3] and order[0] == viewpoint
             charges = dict(zip(row["slots"]["char_id"], row["stored"]["charge"]))
+            assert np.all(row["stored"]["copied_char"] == 255)
             assert all(charges[c] <= full[c] for c in full), (tick, charges)
         assert charges == full
         # A reset clears them; the restored match publishes them again.
         published = env.current_frame.copy()
         snapshot = env.save(0)
         env.reset_matches([0])
-        assert not env.current_frame["stored"].tobytes().strip(b"\0")
+        assert _nothing_stored(env.current_frame["stored"])
         env.restore(0, snapshot)
         env.observe()
         np.testing.assert_array_equal(env.current_frame["stored"], published["stored"])
@@ -123,7 +129,7 @@ def test_oil_panic_stores_the_caught_damage_beside_the_count(monkeypatch, viewpo
         else:
             pytest.fail("the bucket never filled")
         other = row["stored"][list(row["slots"]["source_player"]).index(1)]
-        assert not other.tobytes().strip(b"\0")
+        assert _nothing_stored(other)
 
 
 @pytest.mark.parametrize("viewpoint", range(2))
@@ -153,7 +159,51 @@ def test_fire_breath_drains_and_recovers(monkeypatch, viewpoint: int) -> None:
         assert 160 < lowest[0] < 220 and lowest[1] == lowest[0] + 20
         assert (fuel, size) == (360, 380)
         fox = row["stored"][list(row["slots"]["source_player"]).index(1)]
-        assert not fox.tobytes().strip(b"\0")
+        assert _nothing_stored(fox)
+
+
+@pytest.mark.parametrize("viewpoint", range(2))
+def test_kirby_copied_ability_names_the_stored_move(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    with msl.EnvBatch(batch_size=1, length=64) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=(msl.PlayerConfig(msl.Character.KIRBY),
+                     msl.PlayerConfig(msl.Character.SAMUS)),
+            viewpoint_player=viewpoint)])
+        env.reset_all()
+        copied_at = None
+        for tick in range(1500):
+            if env.t == env.length:
+                env.reset_cursor()
+            row = env.current_frame[0]
+            slots = list(row["slots"]["source_player"])
+            kirby, samus = row["slots"][slots.index(0)], row["slots"][slots.index(1)]
+            stored = row["stored"][slots.index(0)]
+            action = env.controller_action_view[env.t]["players"]
+            action["main_stick_x"][0, 0] = 0.5
+            action["buttons"]["B"][0, 0] = 0
+            if copied_at is None:
+                assert (stored["copied_char"], stored["charge"]) == (255, 0)
+                if tick >= 150 and abs(samus["pos_x"] - kirby["pos_x"]) > 16:
+                    # Walk up to Samus.
+                    action["main_stick_x"][0, 0] = 1.0 if samus["pos_x"] > kirby["pos_x"] else 0.0
+                elif tick >= 150:
+                    # Inhale, then B again to swallow.
+                    action["buttons"]["B"][0, 0] = tick % 4 < 2
+            else:
+                # The copied Charge Shot charges by itself to Samus's full count.
+                action["buttons"]["B"][0, 0] = tick == copied_at + 120
+            env.step()
+            stored = env.current_frame[0]["stored"][slots.index(0)]
+            if copied_at is None and stored["copied_char"] != 255:
+                copied_at = tick
+            if copied_at is not None:
+                assert stored["copied_char"] == samus["char_id"] == msl.Character.SAMUS
+                if stored["charge"] == 7:
+                    break
+        else:
+            pytest.fail("Kirby never held a full copied Charge Shot")
+        assert _nothing_stored(env.current_frame[0]["stored"][slots.index(1)])
 
 
 def test_peach_pull_throw_reserves_runtime_items(monkeypatch) -> None:
@@ -186,6 +236,7 @@ def test_python_wire_layout_matches_public_c_api() -> None:
     assert dtypes.match_config_dtype().itemsize == 52
     assert dtypes.gamestate_dtype().itemsize == 1256
     assert dtypes.gamestate_stored_dtype().itemsize == 12
+    assert dtypes.gamestate_stored_dtype().fields["copied_char"][1] == 1
     assert dtypes.gamestate_stage_dtype().itemsize == 24
     assert dtypes.gamestate_stage_dtype().fields["whispy"][1] == 20
     assert dtypes.terminal_dtype().itemsize == 16
