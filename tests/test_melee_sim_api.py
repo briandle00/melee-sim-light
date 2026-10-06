@@ -126,6 +126,36 @@ def test_oil_panic_stores_the_caught_damage_beside_the_count(monkeypatch, viewpo
         assert not other.tobytes().strip(b"\0")
 
 
+@pytest.mark.parametrize("viewpoint", range(2))
+def test_fire_breath_drains_and_recovers(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    with msl.EnvBatch(batch_size=1, length=64) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=(msl.PlayerConfig(msl.Character.BOWSER),
+                     msl.PlayerConfig(msl.Character.FOX)),
+            viewpoint_player=viewpoint)])
+        env.reset_all()
+        lowest = (360.0, 380.0)
+        for tick in range(1200):
+            if env.t == env.length:
+                env.reset_cursor()
+            # 200 frames of breath, then nothing.
+            env.controller_action_view[env.t]["players"]["buttons"]["B"][0, 0] = 150 <= tick < 350
+            env.step()
+            row = env.current_frame[0]
+            bowser = row["stored"][list(row["slots"]["source_player"]).index(0)]
+            fuel, size = (float(value) for value in bowser["gauge"])
+            assert bowser["charge"] == 0 and 40 <= fuel <= 360 and 60 <= size <= 380, tick
+            if tick < 150:
+                assert (fuel, size) == (360, 380)
+            lowest = min(lowest, (fuel, size))
+        # Something under 200 frames of it drained, 1 a frame from each.
+        assert 160 < lowest[0] < 220 and lowest[1] == lowest[0] + 20
+        assert (fuel, size) == (360, 380)
+        fox = row["stored"][list(row["slots"]["source_player"]).index(1)]
+        assert not fox.tobytes().strip(b"\0")
+
+
 def test_peach_pull_throw_reserves_runtime_items(monkeypatch) -> None:
     monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
     with msl.EnvBatch(batch_size=64, length=128, num_players=4) as env:
