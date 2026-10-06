@@ -182,17 +182,12 @@ static void write_fighter(const MslCoreMatch* match, const Fighter* fp,
 // The charge a fighter keeps between moves, as the game counts it. These are
 // the fighters ftData_UnkMotionStates4 gives a full-charge overlay, read from
 // the variable each of those callbacks tests; Kirby's is the one his copied
-// ability owns. Slippi records none of them, so there is no compare lane:
-// both observation builders read the fighter.
+// ability owns.
 // refs/melee/src/melee/ft/ftdata.c::ftData_UnkMotionStates4
-static uint8_t stored_charge(const MslCoreMatch* match, int player)
+static uint8_t stored_charge(const Fighter* fp)
 {
-    const Fighter* fp = GET_FIGHTER(match->fighters[player]);
     int charge = 0;
 
-    if (fp->x221F_b3) {
-        return 0;
-    }
     switch (fp->kind) {
     case FTKIND_DONKEY:
         charge = fp->fv.dk.x222C;
@@ -234,6 +229,40 @@ static uint8_t stored_charge(const MslCoreMatch* match, int player)
     return charge < 0 ? 0 : charge > UINT8_MAX ? UINT8_MAX : (uint8_t) charge;
 }
 
+// Stored amounts that are not a count, as the game holds them.
+// Oil Panic: gauge[0] is the damage the caught shots would have dealt, summed
+// by ftGw_SpecialLw_AbsorbThink_DecideAction. The spill deals a multiple of
+// it, and ftGw_Init_OnDeath clears it while leaving the count.
+// refs/melee/src/melee/ft/chara/ftGameWatch/ftGw_SpecialLw.c::ftGw_SpecialLwShoot_ReleaseOil
+static void stored_gauge(const Fighter* fp, float gauge[2])
+{
+    gauge[0] = 0.0F;
+    gauge[1] = 0.0F;
+    if (fp->kind == FTKIND_GAMEWATCH) {
+        gauge[0] = (float) fp->fv.gw.x223C_panicDamage;
+    }
+}
+
+// Writes what the player in slots[slot] keeps between moves. Slippi records
+// none of it, so there is no compare lane: both observation builders read
+// the fighter here. An absent player keeps the zeroed record.
+static void write_stored(const MslCoreMatch* match, int player, int slot,
+                         MslCoreObservation* output)
+{
+    const Fighter* fp = GET_FIGHTER(match->fighters[player]);
+    uint8_t* out = (uint8_t*) &output->stored[slot];
+    float gauge[2];
+
+    if (fp->x221F_b3) {
+        return;
+    }
+    out[offsetof(MslCoreObservationStored, charge)] = stored_charge(fp);
+    stored_gauge(fp, gauge);
+    put_f32(out, offsetof(MslCoreObservationStored, gauge), gauge[0]);
+    put_f32(out, offsetof(MslCoreObservationStored, gauge) + sizeof(float),
+            gauge[1]);
+}
+
 // Writes the player into slots[slot] and its follower (Nana) into
 // followers[slot]. The follower follows the compare lanes' life-cycle: she is
 // absent while asleep before Rebirth.
@@ -246,7 +275,7 @@ static void write_slot(const MslCoreMatch* match, int player, uint8_t relation,
     write_fighter(match, GET_FIGHTER(match->fighters[player]),
                   match->output_pos_x[player], match->output_pos_y[player],
                   player, relation, &output->slots[slot]);
-    output->stored_charge[slot] = stored_charge(match, player);
+    write_stored(match, player, slot, output);
     if (match->follower_fighters[player] == NULL) {
         return;
     }
@@ -531,7 +560,7 @@ int msl_core_match_write_observation_from_compare(
 
     viewpoint_team = source[offsetof(MslCoreCompare, team_id) +
                             viewpoint_player];
-    output->stored_charge[slot] = stored_charge(match, viewpoint_player);
+    write_stored(match, viewpoint_player, slot, output);
     write_follower_from_compare(compare, viewpoint_player, 0,
                                 &output->followers[slot]);
     write_player_from_compare(compare, viewpoint_player, 0,
@@ -542,7 +571,7 @@ int msl_core_match_write_observation_from_compare(
                 source[offsetof(MslCoreCompare, team_id) + player] ==
                     viewpoint_team)
             {
-                output->stored_charge[slot] = stored_charge(match, player);
+                write_stored(match, player, slot, output);
                 write_follower_from_compare(compare, player, 1,
                                             &output->followers[slot]);
                 write_player_from_compare(compare, player, 1,
@@ -556,7 +585,7 @@ int msl_core_match_write_observation_from_compare(
              source[offsetof(MslCoreCompare, team_id) + player] !=
                  viewpoint_team))
         {
-            output->stored_charge[slot] = stored_charge(match, player);
+            write_stored(match, player, slot, output);
             write_follower_from_compare(compare, player, 2,
                                         &output->followers[slot]);
             write_player_from_compare(compare, player, 2,
