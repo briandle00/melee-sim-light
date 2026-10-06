@@ -212,6 +212,15 @@ typedef struct MslObservationStage {
   uint8_t _pad0[3];
 } MslObservationStage;
 
+// What a fighter keeps between moves, in the game's own units. Slippi records
+// none of it. API.md lists each character's meaning and range; a character
+// without one, and an absent player, reads 0.
+typedef struct MslObservationStored {
+  uint8_t charge; // A stored move's count: swings, steps, cycles, needles, shots.
+  uint8_t _pad0[3];
+  float gauge[2]; // Stored amounts that are not a count.
+} MslObservationStored;
+
 typedef struct MslObservation {
   int32_t frame_id;
   uint32_t frame_pre_random_seed;
@@ -227,11 +236,8 @@ typedef struct MslObservation {
   // slots[k], present only while Slippi would record a follower row for her
   // (awake, including her death animation; not while asleep before Rebirth).
   MslObservationPlayer followers[MSL_MAX_PLAYERS];
-  // The charge a fighter keeps between moves, as the game counts it:
-  // stored_charge[k] belongs to the player in slots[k]. API.md lists each
-  // character's unit and range; 0 for every other character and while the
-  // player is absent. Slippi does not record it.
-  uint8_t stored_charge[MSL_MAX_PLAYERS];
+  // stored[k] belongs to the player in slots[k].
+  MslObservationStored stored[MSL_MAX_PLAYERS];
 } MslObservation;
 
 typedef struct MslTerminal {

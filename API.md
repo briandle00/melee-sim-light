@@ -95,9 +95,11 @@ fighter is awake, including her death animation, but not while she is eliminated
 until the leader's Rebirth. Otherwise, and for every other character, it is
 zeroed.
 
-`stored_charge[k]` is the charge the player in `slots[k]` keeps between moves,
-as the game counts it. Slippi does not record it. It is `0` for every other
-character, for unused slots and while the player is absent.
+`stored[k]` is what the player in `slots[k]` keeps between moves, in the game's
+own units. Slippi does not record it. A character with nothing to keep, an
+unused slot and an absent player read zero.
+
+`stored[k].charge` is a stored move's count:
 
 | character | move | counts | range |
 | --- | --- | --- | --- |
@@ -115,6 +117,16 @@ except a full Shadow Ball. A KO clears it by the respawn, except Oil Panic's
 count, which the game keeps. Kirby's goes with the hat. The copied ability
 itself is not in the observation.
 
+`stored[k].gauge` holds stored amounts that are not a count:
+
+| character | `gauge[0]` | `gauge[1]` |
+| --- | --- | --- |
+| Mr. Game & Watch | the damage the caught shots would have dealt, summed: a whole number, `0` with an empty bucket, with no upper limit in the game (three of Falco's lasers are `9`, three of Mario's fireballs `18`) | `0` |
+
+Oil Panic's spill deals `floor(gauge[0] * 1.5) + 5` before staling. The spill
+clears the damage with the count. A KO clears the damage at the respawn and
+keeps the count, so a full bucket after a KO spills for `5`.
+
 Top-level fields:
 
 | field | type | values / range | shape |
@@ -129,7 +141,7 @@ Top-level fields:
 | `slots` | `MslObservationPlayer` | viewpoint-relative players | `[4]` |
 | `items` | `MslItem` | active/inactive item slots | `[15]` |
 | `followers` | `MslObservationPlayer` | follower of each slot's player | `[4]` |
-| `stored_charge` | `uint8_t` | charge kept between moves by each slot's player | `[4]` |
+| `stored` | `MslObservationStored` | what each slot's player keeps between moves | `[4]` |
 
 `MslObservationPlayer`:
 
@@ -154,6 +166,13 @@ Top-level fields:
 | `jumps_left` | `uint8_t` | remaining air jumps |
 | `hurtbox_state` | `uint8_t` | GALE01 hurtbox state id |
 | `invulnerable` | `uint8_t` | `0` or `1` |
+
+`MslObservationStored`:
+
+| field | type | values / range |
+| --- | --- | --- |
+| `charge` | `uint8_t` | a stored move's count, per character above |
+| `gauge` | `float[2]` | stored amounts that are not a count, per character above |
 
 `MslItem` slots are fixed-capacity. Inactive slots have `exists == 0`.
 

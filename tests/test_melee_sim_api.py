@@ -69,7 +69,7 @@ def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint:
                           for c, t in ((dk, 0), (fox, 0), (sheik, 1), (samus, 1))),
             is_teams=True, viewpoint_player=viewpoint)])
         env.reset_all()
-        assert not env.current_frame["stored_charge"].any()
+        assert not env.current_frame["stored"].tobytes().strip(b"\0")
         for tick in range(700):
             if env.t == env.length:
                 env.reset_cursor()
@@ -83,18 +83,47 @@ def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint:
             row = env.current_frame[0]
             order = row["slots"]["source_player"]
             assert sorted(order) == [0, 1, 2, 3] and order[0] == viewpoint
-            charges = dict(zip(row["slots"]["char_id"], row["stored_charge"]))
+            charges = dict(zip(row["slots"]["char_id"], row["stored"]["charge"]))
             assert all(charges[c] <= full[c] for c in full), (tick, charges)
         assert charges == full
         # A reset clears them; the restored match publishes them again.
         published = env.current_frame.copy()
         snapshot = env.save(0)
         env.reset_matches([0])
-        assert not env.current_frame["stored_charge"].any()
+        assert not env.current_frame["stored"].tobytes().strip(b"\0")
         env.restore(0, snapshot)
         env.observe()
-        np.testing.assert_array_equal(env.current_frame["stored_charge"],
-                                      published["stored_charge"])
+        np.testing.assert_array_equal(env.current_frame["stored"], published["stored"])
+
+
+@pytest.mark.parametrize("viewpoint", range(2))
+def test_oil_panic_stores_the_caught_damage_beside_the_count(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    with msl.EnvBatch(batch_size=1, length=64) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=(msl.PlayerConfig(msl.Character.GAMEWATCH),
+                     msl.PlayerConfig(msl.Character.FALCO)),
+            viewpoint_player=viewpoint)])
+        env.reset_all()
+        for tick in range(900):
+            if env.t == env.length:
+                env.reset_cursor()
+            action = env.controller_action_view[env.t]["players"]
+            # The bucket held out; Falco fires a laser into it now and then.
+            action["main_stick_y"][0, 0] = 0.0 if tick >= 150 else 0.5
+            action["buttons"]["B"][0, 0] = tick >= 150
+            action["buttons"]["B"][0, 1] = tick >= 200 and tick % 60 < 2
+            env.step()
+            row = env.current_frame[0]
+            bucket = row["stored"][list(row["slots"]["source_player"]).index(0)]
+            # Each of Falco's lasers would have dealt 3.
+            assert tuple(bucket["gauge"]) == (3 * bucket["charge"], 0), tick
+            if bucket["charge"] == 3:
+                break
+        else:
+            pytest.fail("the bucket never filled")
+        other = row["stored"][list(row["slots"]["source_player"]).index(1)]
+        assert not other.tobytes().strip(b"\0")
 
 
 def test_peach_pull_throw_reserves_runtime_items(monkeypatch) -> None:
@@ -125,7 +154,8 @@ def test_python_wire_layout_matches_public_c_api() -> None:
     assert dtypes.controller_input_dtype().itemsize == 112
     assert dtypes.input_dtype().itemsize == 32
     assert dtypes.match_config_dtype().itemsize == 52
-    assert dtypes.gamestate_dtype().itemsize == 1212
+    assert dtypes.gamestate_dtype().itemsize == 1256
+    assert dtypes.gamestate_stored_dtype().itemsize == 12
     assert dtypes.gamestate_stage_dtype().itemsize == 24
     assert dtypes.gamestate_stage_dtype().fields["whispy"][1] == 20
     assert dtypes.terminal_dtype().itemsize == 16

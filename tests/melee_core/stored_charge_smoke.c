@@ -14,6 +14,7 @@
 #include "ftDonkey/forward.h"
 #include "ftDonkey/types.h"
 #include "ftGameWatch/forward.h"
+#include "ftGameWatch/types.h"
 #include "ftKirby/forward.h"
 #include "ftKirby/ftkirby.h"
 #include "ftKirby/types.h"
@@ -24,12 +25,13 @@
 #include "ftSeak/forward.h"
 #include "it/types.h"
 #include "it/items/itfoxlaser.h"
+#include "it/items/itmariofireball.h"
 #include <dolphin/pad.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-enum { MSL_TEST_FOX = 1, MSL_TEST_FALCO = 22 };
+enum { MSL_TEST_MARIO = 0, MSL_TEST_FOX = 1, MSL_TEST_FALCO = 22 };
 
 static MslCoreGameData msl_test_game_data;
 static MslCoreMatch msl_test_match;
@@ -47,6 +49,14 @@ static const MslCoreInput msl_test_down_b = { { { PAD_BUTTON_B, 0, -80 } } };
 static const MslCoreInput msl_test_taunt = { { { PAD_BUTTON_UP } } };
 // The value observed for port 0 after the last frame.
 static int msl_test_charge;
+// Its two gauges, and what a player who keeps nothing reads.
+static float msl_test_gauge[2];
+static const MslCoreObservationStored msl_test_nothing;
+// What the gauges must read on every frame while port 0 is present, unless
+// the scenario is following them itself; and what a respawn leaves them at.
+static float msl_test_want[2];
+static float msl_test_reborn[2];
+static int msl_test_gauge_free;
 // Whether port 0 was present in that observation, and the stocks of the next setup.
 static int msl_test_present;
 static unsigned msl_test_stocks = 4;
@@ -72,14 +82,24 @@ static int msl_test_frame(const MslCoreInput* input)
     MSL_TEST_CHECK(msl_core_match_write_observation(&msl_test_match, 0, &direct) == 0);
     MSL_TEST_CHECK(msl_core_match_write_observation_from_compare(&msl_test_match, 0, &compared) == 0);
     MSL_TEST_CHECK(msl_core_match_write_observation(&msl_test_match, 1, &other) == 0);
-    msl_test_charge = direct.stored_charge[0];
+    msl_test_charge = direct.stored[0].charge;
+    msl_test_gauge[0] = direct.stored[0].gauge[0];
+    msl_test_gauge[1] = direct.stored[0].gauge[1];
     msl_test_present = direct.slots[0].present;
     MSL_TEST_CHECK(memcmp(&direct, &compared, sizeof(direct)) == 0);
+    if (!msl_test_present) {
+        MSL_TEST_CHECK(memcmp(&direct.stored[0], &msl_test_nothing, sizeof(msl_test_nothing)) == 0);
+    } else if (!msl_test_gauge_free) {
+        MSL_TEST_CHECK(msl_test_gauge[0] == msl_test_want[0] &&
+                       msl_test_gauge[1] == msl_test_want[1]);
+    }
     // Singles: each viewpoint has itself in slot 0 and the opponent in slot 1.
     MSL_TEST_CHECK(other.slots[1].source_player == 0 &&
-                   other.stored_charge[1] == direct.stored_charge[0]);
-    MSL_TEST_CHECK(direct.stored_charge[1] == 0 && other.stored_charge[0] == 0);
-    MSL_TEST_CHECK(direct.stored_charge[2] == 0 && direct.stored_charge[3] == 0);
+                   memcmp(&other.stored[1], &direct.stored[0], sizeof(direct.stored[0])) == 0);
+    MSL_TEST_CHECK(memcmp(&other.stored[0], &direct.stored[1], sizeof(direct.stored[0])) == 0);
+    MSL_TEST_CHECK(memcmp(&direct.stored[1], &msl_test_nothing, sizeof(msl_test_nothing)) == 0 &&
+                   memcmp(&direct.stored[2], &msl_test_nothing, sizeof(msl_test_nothing)) == 0 &&
+                   memcmp(&direct.stored[3], &msl_test_nothing, sizeof(msl_test_nothing)) == 0);
     return 0;
 }
 
@@ -97,6 +117,8 @@ static int msl_test_setup(unsigned character, unsigned opponent)
     MSL_TEST_CHECK((msl_test_match.memory.arena == NULL
                ? msl_core_match_init(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)
                : msl_core_match_reset(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)) == 0);
+    msl_test_gauge_free = 0;
+    msl_test_want[0] = msl_test_want[1] = msl_test_reborn[0] = msl_test_reborn[1] = 0;
     for (unsigned i = 0; i < 150; ++i) {
         MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0 && msl_test_charge == 0);
     }
@@ -152,7 +174,8 @@ static int msl_test_other_actions(int charge)
 
 // Past the left blast zone: the stock goes at once, the value stays `dead`
 // through the death animation and is `reborn` from the first frame of
-// Rebirth, where the game runs the fighter's OnDeath.
+// Rebirth, where the game runs the fighter's OnDeath. The gauges stay as they
+// were through the death animation and read msl_test_reborn from Rebirth.
 static int msl_test_ko(int dead, int reborn)
 {
     Fighter* fp = msl_test_fighter(0);
@@ -164,11 +187,18 @@ static int msl_test_ko(int dead, int reborn)
     MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, dead) == 0);
     MSL_TEST_CHECK(fp->motion_id == ftCo_MS_DeadLeft &&
                    msl_test_match.source.player.slots[fp->player_id].stocks == stocks - 1);
+    msl_test_gauge_free = 1;
     for (unsigned i = 0; fp->motion_id != ftCo_MS_Rebirth; ++i) {
+        const float* gauge = fp->motion_id == ftCo_MS_DeadLeft ? msl_test_want : msl_test_reborn;
         MSL_TEST_CHECK(i < 120);
         MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0);
+        gauge = fp->motion_id == ftCo_MS_DeadLeft ? msl_test_want : msl_test_reborn;
         MSL_TEST_CHECK(msl_test_charge == (fp->motion_id == ftCo_MS_DeadLeft ? dead : reborn));
+        MSL_TEST_CHECK(msl_test_gauge[0] == gauge[0] && msl_test_gauge[1] == gauge[1]);
     }
+    msl_test_gauge_free = 0;
+    msl_test_want[0] = msl_test_reborn[0];
+    msl_test_want[1] = msl_test_reborn[1];
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_RebirthWait, 300, reborn) == 0);
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 600, reborn) == 0);
     return 0;
@@ -245,10 +275,10 @@ static int msl_test_laser(const MslCoreInput* input, int charge)
     return -1;
 }
 
-static int msl_test_setup_in_range(unsigned character)
+static int msl_test_setup_in_range(unsigned character, unsigned opponent)
 {
     Fighter* fp;
-    MSL_TEST_CHECK(msl_test_setup(character, MSL_TEST_FALCO) == 0);
+    MSL_TEST_CHECK(msl_test_setup(character, opponent) == 0);
     fp = msl_test_fighter(0);
     fp->cur_pos = (Vec3) { -20, 0, 0 };
     fp->prev_pos = fp->cur_pos;
@@ -262,7 +292,7 @@ static int msl_test_setup_in_range(unsigned character)
 static int msl_test_hit_during_wind_up(void)
 {
     Fighter* fp;
-    MSL_TEST_CHECK(msl_test_setup_in_range(FTKIND_DONKEY) == 0);
+    MSL_TEST_CHECK(msl_test_setup_in_range(FTKIND_DONKEY, MSL_TEST_FALCO) == 0);
     fp = msl_test_fighter(0);
     MSL_TEST_CHECK(msl_test_hold(&msl_test_b, 1, 0) == 0);
     MSL_TEST_CHECK(msl_test_rise(&msl_test_neutral, 1, 200) == 0);
@@ -285,7 +315,7 @@ static int msl_test_hit_during_wind_up(void)
 static int msl_test_hit_during_charge(FighterKind kind)
 {
     const MslCoreInput* charge = kind == FTKIND_SEAK ? &msl_test_b : &msl_test_neutral;
-    MSL_TEST_CHECK(msl_test_setup_in_range(kind) == 0);
+    MSL_TEST_CHECK(msl_test_setup_in_range(kind, MSL_TEST_FALCO) == 0);
     MSL_TEST_CHECK(msl_test_frame(&msl_test_b) == 0);
     MSL_TEST_CHECK(msl_test_rise(charge, 2, 300) == 0);
     MSL_TEST_CHECK(msl_test_laser(charge, 2) == 0);
@@ -440,34 +470,89 @@ static int msl_test_shadow_ball(void)
     return 0;
 }
 
-// Oil Panic counts caught shots, full at 3. The count is kept through a KO
-// (ftGw_Init_OnDeath clears the stored damage, not the count), and the spill
-// takes it.
-static int msl_test_oil_panic(void)
+// One of the opponent's shots from the right (Falco's laser, Mario's
+// fireball), caught in the bucket: the count goes up by one and gauge[0] by
+// what that shot would have dealt, on the same frame. Returns that damage.
+static int msl_test_catch(int count)
 {
-    Fighter* fp;
-    MSL_TEST_CHECK(msl_test_setup(FTKIND_GAMEWATCH, MSL_TEST_FALCO) == 0);
-    fp = msl_test_fighter(0);
-    fp->cur_pos = (Vec3) { -20, 0, 0 };
-    fp->prev_pos = fp->cur_pos;
-    fp->facing_dir = 1;
-    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
-    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 20, 0) == 0);
-    MSL_TEST_CHECK(fp->motion_id == ftGw_MS_SpecialLw);
-    for (int shot = 1; shot <= 3; ++shot) {
-        Vec3 pos = { 30, 8, 0 };
+    Vec3 pos = { 30, 8, 0 };
+    float before = msl_test_want[0];
+    if (msl_test_fighter(1)->kind == FTKIND_MARIO) {
+        pos.x = 0;
+        it_8029B6F8(msl_test_match.fighters[1], &pos, It_Kind_Mario_Fire, -1);
+    } else {
         it_8029C6A4(3.14159265358979323846F, 4, msl_test_match.fighters[1], &pos,
                     It_Kind_Falco_Laser);
-        MSL_TEST_CHECK(msl_test_rise(&msl_test_down_b, shot, 60) == 0);
-        MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 50, shot) == 0);
     }
+    msl_test_gauge_free = 1;
+    for (unsigned i = 0; msl_test_charge != count; ++i) {
+        MSL_TEST_CHECK(i < 60);
+        MSL_TEST_CHECK(msl_test_frame(&msl_test_down_b) == 0);
+        MSL_TEST_CHECK(msl_test_gauge[1] == 0);
+        MSL_TEST_CHECK(msl_test_charge == count ? msl_test_gauge[0] > before
+                                                : msl_test_charge == count - 1 &&
+                                                      msl_test_gauge[0] == before);
+    }
+    msl_test_gauge_free = 0;
+    msl_test_want[0] = msl_test_gauge[0];
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 50, count) == 0);
+    return (int) (msl_test_want[0] - before);
+}
+
+// Oil Panic counts caught shots, full at 3, and keeps beside the count the
+// damage those shots would have dealt: gauge[0]. Both are kept through other
+// actions; the spill takes both and deals what ftGw_SpecialLwShoot_ReleaseOil
+// makes of the damage. A KO keeps the count and clears the damage
+// (ftGw_Init_OnDeath), so the next spill deals the attribute's flat amount
+// alone. Returns the damage of one of the opponent's shots.
+static int msl_test_oil_panic(unsigned opponent)
+{
+    Fighter* fp;
+    ftGameWatchAttributes* da;
+    int shot, spill;
+    MSL_TEST_CHECK(msl_test_setup_in_range(FTKIND_GAMEWATCH, opponent) == 0);
+    fp = msl_test_fighter(0);
+    da = fp->dat_attrs;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 20, 0) == 0);
+    MSL_TEST_CHECK(fp->motion_id == ftGw_MS_SpecialLw);
+    shot = msl_test_catch(1);
+    MSL_TEST_CHECK(shot > 0 && msl_test_catch(2) == shot && msl_test_catch(3) == shot);
+    MSL_TEST_CHECK(msl_test_want[0] == 3 * shot && fp->fv.gw.x223C_panicDamage == 3 * shot);
     MSL_TEST_CHECK(msl_test_other_actions(3) == 0);
+
+    spill = (int) ((int) (msl_test_want[0] * da->x78_GAMEWATCH_PANIC_DAMAGE_MUL) +
+                   da->x74_GAMEWATCH_PANIC_DAMAGE_ADD);
+    msl_test_want[0] = 0;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 1, 0) == 0);
+    MSL_TEST_CHECK(fp->motion_id == ftGw_MS_SpecialLwShoot && (int) fp->cmd_vars[1] == spill);
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    fprintf(stderr, "oil panic: three shots of %d, spill %d = %d x %g + %g\n", shot, spill,
+            3 * shot, da->x78_GAMEWATCH_PANIC_DAMAGE_MUL, da->x74_GAMEWATCH_PANIC_DAMAGE_ADD);
+
+    // Filled again, then a KO: 3 and the damage through the death animation,
+    // 3 and no damage from the respawn.
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 20, 0) == 0);
+    MSL_TEST_CHECK(msl_test_catch(1) == shot && msl_test_catch(2) == shot &&
+                   msl_test_catch(3) == shot);
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 120, 3) == 0);
     MSL_TEST_CHECK(msl_test_ko(3, 3) == 0);
-    MSL_TEST_CHECK(fp->fv.gw.x223C_panicDamage == 0);
+    MSL_TEST_CHECK(msl_test_charge == 3 && msl_test_gauge[0] == 0);
+    MSL_TEST_CHECK(msl_test_other_actions(3) == 0);
 
     MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 1, 0) == 0);
-    MSL_TEST_CHECK(fp->motion_id == ftGw_MS_SpecialLwShoot);
+    MSL_TEST_CHECK(fp->motion_id == ftGw_MS_SpecialLwShoot &&
+                   (int) fp->cmd_vars[1] == (int) da->x74_GAMEWATCH_PANIC_DAMAGE_ADD);
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    return shot;
+}
+
+// The same count of 3 holds different damage after Falco's lasers and after
+// Mario's fireballs.
+static int msl_test_oil_panic_damage(void)
+{
+    int lasers = msl_test_oil_panic(MSL_TEST_FALCO);
+    int fireballs = lasers > 0 ? msl_test_oil_panic(MSL_TEST_MARIO) : -1;
+    MSL_TEST_CHECK(lasers > 0 && fireballs > 0 && lasers != fireballs);
     return 0;
 }
 
@@ -476,16 +561,13 @@ static int msl_test_oil_panic(void)
 static int msl_test_absent_after_last_stock(void)
 {
     Fighter* fp;
-    Vec3 pos = { 30, 8, 0 };
     int absent = 0;
     msl_test_stocks = 1;
-    MSL_TEST_CHECK(msl_test_setup_in_range(FTKIND_GAMEWATCH) == 0);
+    MSL_TEST_CHECK(msl_test_setup_in_range(FTKIND_GAMEWATCH, MSL_TEST_FALCO) == 0);
     msl_test_stocks = 4;
     fp = msl_test_fighter(0);
     MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 20, 0) == 0);
-    it_8029C6A4(3.14159265358979323846F, 4, msl_test_match.fighters[1], &pos,
-                It_Kind_Falco_Laser);
-    MSL_TEST_CHECK(msl_test_rise(&msl_test_down_b, 1, 60) == 0);
+    MSL_TEST_CHECK(msl_test_catch(1) > 0);
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 120, 1) == 0);
     fp->cur_pos = (Vec3) { -300, 40, 0 };
     fp->prev_pos = fp->cur_pos;
@@ -496,7 +578,8 @@ static int msl_test_absent_after_last_stock(void)
         MSL_TEST_CHECK(msl_test_charge == (msl_test_present ? 1 : 0));
         absent += !msl_test_present;
     }
-    MSL_TEST_CHECK(absent > 100 && !msl_test_present && fp->fv.gw.x2238_panicCharge == 1);
+    MSL_TEST_CHECK(absent > 100 && !msl_test_present && fp->fv.gw.x2238_panicCharge == 1 &&
+                   fp->fv.gw.x223C_panicDamage > 0);
     return 0;
 }
 
@@ -595,7 +678,7 @@ int main(int argc, char** argv)
              msl_test_hit_during_charge(FTKIND_SEAK) ||
              msl_test_hit_during_charge(FTKIND_MEWTWO) ||
              msl_test_charge_shot() || msl_test_needles() ||
-             msl_test_shadow_ball() || msl_test_oil_panic() ||
+             msl_test_shadow_ball() || msl_test_oil_panic_damage() ||
              msl_test_absent_after_last_stock() ||
              msl_test_kirby_swallows_donkey_kong() || msl_test_kirby_copy(FTKIND_SAMUS) ||
              msl_test_kirby_copy(FTKIND_MEWTWO) || msl_test_kirby_copy(FTKIND_SEAK);

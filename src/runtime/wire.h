@@ -239,6 +239,7 @@ typedef MslObservationPlayer MslCoreObservationPlayer;
 typedef MslObservationRandall MslCoreObservationRandall;
 typedef MslObservationFodPlatforms MslCoreObservationFodPlatforms;
 typedef MslObservationStage MslCoreObservationStage;
+typedef MslObservationStored MslCoreObservationStored;
 typedef MslObservation MslCoreObservation;
 typedef MslTerminal MslCoreTerminal;
 
@@ -362,7 +363,9 @@ _Static_assert(sizeof(MslCoreObservationPlayer) == 56,
                "MslCoreObservationPlayer wire size");
 _Static_assert(sizeof(MslCoreObservationStage) == 24,
                "MslCoreObservationStage wire size");
-_Static_assert(sizeof(MslCoreObservation) == 1212,
+_Static_assert(sizeof(MslCoreObservationStored) == 12,
+               "MslCoreObservationStored wire size");
+_Static_assert(sizeof(MslCoreObservation) == 1256,
                "MslCoreObservation wire size");
 _Static_assert(sizeof(MslCoreTerminal) == 16,
                "MslCoreTerminal wire size");
