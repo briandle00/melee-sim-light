@@ -1,9 +1,12 @@
-// The stored charges the observation publishes, with extracted data, the real
-// scheduler and controller inputs: Giant Punch, Charge Shot, Needle Storm,
-// Shadow Ball, Oil Panic, and Kirby's copies of the first four. Every frame
-// checks the observed value against what the move has done so far, that both
-// observation builders agree byte for byte, that the value sits in its
-// player's slot from either viewpoint, and that Fox has none.
+// What the observation publishes of the state a fighter keeps between moves,
+// with extracted data, the real scheduler and controller inputs: the stored
+// charges (Giant Punch, Charge Shot, Needle Storm, Shadow Ball, Oil Panic and
+// Kirby's copies), Oil Panic's damage, Fire Breath, Kirby's copied ability,
+// Judge's last two numbers, the lifts, float and grapple a fighter has spent,
+// and the wall jumps it has made. Every frame checks the observed values
+// against what the moves have done so far, that both observation builders
+// agree byte for byte, that the record sits in its player's slot from either
+// viewpoint, and that the opponent has none.
 #include "runtime/scalar.h"
 #include "runtime/observation.h"
 #include "ft/fighter.h"
@@ -25,6 +28,10 @@
 #include "ftSamus/forward.h"
 #include "ftSamus/types.h"
 #include "ftSeak/forward.h"
+#include "ftLuigi/forward.h"
+#include "ftMario/forward.h"
+#include "ftPeach/forward.h"
+#include "ftPeach/types.h"
 #include "it/types.h"
 #include "it/items/itfoxlaser.h"
 #include "it/items/itmariofireball.h"
@@ -51,11 +58,18 @@ static const MslCoreInput msl_test_down_b = { { { PAD_BUTTON_B, 0, -80 } } };
 static const MslCoreInput msl_test_taunt = { { { PAD_BUTTON_UP } } };
 static const MslCoreInput msl_test_up_b = { { { PAD_BUTTON_B, 0, 80 } } };
 static const MslCoreInput msl_test_side_b = { { { PAD_BUTTON_B, 80, 0 } } };
+static const MslCoreInput msl_test_z = { { { PAD_TRIGGER_Z } } };
+static const MslCoreInput msl_test_jump_a = { { { PAD_BUTTON_X | PAD_BUTTON_A } } };
+static const MslCoreInput msl_test_jump_down = { { { PAD_BUTTON_X, 0, -80 } } };
+static const MslCoreInput msl_test_left = { { { 0, -80, 0 } } };
+static const MslCoreInput msl_test_right = { { { 0, 80, 0 } } };
 // The value observed for port 0 after the last frame.
 static int msl_test_charge;
 // Its two gauges, and what a player who keeps nothing reads.
 static float msl_test_gauge[2];
-static const MslCoreObservationStored msl_test_nothing = { .copied_char = MSL_COPIED_NONE };
+static const MslCoreObservationStored msl_test_nothing = {
+    .copied_char = MSL_COPIED_NONE, .judge = { MSL_JUDGE_NONE, MSL_JUDGE_NONE }
+};
 // Kirby's copied ability as observed for port 0, and what it must read on
 // every frame unless the scenario is following it itself.
 static int msl_test_copied;
@@ -66,9 +80,30 @@ static int msl_test_copied_free;
 static float msl_test_want[2];
 static float msl_test_reborn[2];
 static int msl_test_gauge_free;
-// Whether port 0 was present in that observation, and the stocks of the next setup.
+// Whether port 0 was present in that observation, and the stocks and stage
+// of the next setup.
 static int msl_test_present;
 static unsigned msl_test_stocks = 4;
+static unsigned msl_test_stage = 32;
+// The spent bits observed for port 0 (the follower's bit apart); what they
+// must read on every frame unless the scenario is following them itself; and
+// what a respawn leaves.
+static int msl_test_spent;
+static int msl_test_want_spent;
+static int msl_test_reborn_spent;
+// What the new stock reads once it stands on the ground, when that differs
+// from what the respawn leaves.
+static int msl_test_landed_spent = -1;
+static int msl_test_spent_free;
+// The frames on which the follower's bit was set.
+static int msl_test_follower_seen;
+// The wall jumps observed, 0 on every frame unless the scenario follows them.
+static int msl_test_walls;
+static int msl_test_walls_free;
+// Judge's last two numbers as observed, and what they must read.
+static int msl_test_judge[2];
+static int msl_test_want_judge[2] = { MSL_JUDGE_NONE, MSL_JUDGE_NONE };
+static int msl_test_judge_free;
 
 #define MSL_TEST_CHECK(condition) do { \
     if (!(condition)) { \
@@ -96,7 +131,25 @@ static int msl_test_frame(const MslCoreInput* input)
     msl_test_gauge[0] = direct.stored[0].gauge[0];
     msl_test_gauge[1] = direct.stored[0].gauge[1];
     msl_test_present = direct.slots[0].present;
+    msl_test_spent = direct.stored[0].spent & ~MSL_SPENT_FOLLOWER_NEUTRAL_LIFT;
+    msl_test_walls = direct.stored[0].wall_jumps;
+    msl_test_judge[0] = direct.stored[0].judge[0];
+    msl_test_judge[1] = direct.stored[0].judge[1];
     MSL_TEST_CHECK(memcmp(&direct, &compared, sizeof(direct)) == 0);
+    MSL_TEST_CHECK(direct.stored[0]._pad0[0] == 0 && direct.stored[0]._pad0[1] == 0 &&
+                   (direct.stored[0].spent & ~0x3F) == 0);
+    if (msl_test_present) {
+        // The follower's bit is her own variable while she is awake.
+        const Fighter* nana = msl_test_match.follower_fighters[0] == NULL
+                                  ? NULL : msl_test_match.follower_fighters[0]->user_data;
+        int hers = nana != NULL && !nana->x221F_b3 && nana->fv.nn.x224C;
+        MSL_TEST_CHECK(!(direct.stored[0].spent & MSL_SPENT_FOLLOWER_NEUTRAL_LIFT) == !hers);
+        msl_test_follower_seen += hers;
+        MSL_TEST_CHECK(msl_test_spent_free || msl_test_spent == msl_test_want_spent);
+        MSL_TEST_CHECK(msl_test_walls_free || msl_test_walls == 0);
+        MSL_TEST_CHECK(msl_test_judge_free || (msl_test_judge[0] == msl_test_want_judge[0] &&
+                                               msl_test_judge[1] == msl_test_want_judge[1]));
+    }
     if (!msl_test_present) {
         MSL_TEST_CHECK(memcmp(&direct.stored[0], &msl_test_nothing, sizeof(msl_test_nothing)) == 0);
     } else if (!msl_test_gauge_free) {
@@ -118,7 +171,7 @@ static int msl_test_frame(const MslCoreInput* input)
 static int msl_test_setup(unsigned character, unsigned opponent)
 {
     MslCoreMatchConfig config = { 0 };
-    config.stage_id = 32;
+    config.stage_id = msl_test_stage;
     config.frame_id = -123;
     config.initial_random_seed = config.frame_pre_random_seed = 1;
     config.match_damage_ratio = 1;
@@ -130,6 +183,12 @@ static int msl_test_setup(unsigned character, unsigned opponent)
                ? msl_core_match_init(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)
                : msl_core_match_reset(&msl_test_match, &msl_test_game_data, &config, &msl_test_neutral)) == 0);
     msl_test_gauge_free = msl_test_copied_free = 0;
+    msl_test_spent_free = msl_test_walls_free = msl_test_judge_free = 0;
+    msl_test_want_spent = msl_test_reborn_spent = msl_test_follower_seen = 0;
+    msl_test_landed_spent = -1;
+    // Mr. Game & Watch enters with the game's starting pair, 1 and 0.
+    msl_test_want_judge[0] = character == FTKIND_GAMEWATCH ? 1 : MSL_JUDGE_NONE;
+    msl_test_want_judge[1] = character == FTKIND_GAMEWATCH ? 0 : MSL_JUDGE_NONE;
     msl_test_want_copied = MSL_COPIED_NONE;
     msl_test_want[0] = msl_test_want[1] = msl_test_reborn[0] = msl_test_reborn[1] = 0;
     // Bowser enters with his Fire Breath full; everyone else with nothing.
@@ -205,20 +264,43 @@ static int msl_test_ko(int dead, int reborn)
     MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, dead) == 0);
     MSL_TEST_CHECK(fp->motion_id == ftCo_MS_DeadLeft &&
                    msl_test_match.source.player.slots[fp->player_id].stocks == stocks - 1);
-    msl_test_gauge_free = 1;
+    msl_test_gauge_free = msl_test_spent_free = msl_test_judge_free = 1;
     for (unsigned i = 0; fp->motion_id != ftCo_MS_Rebirth; ++i) {
         const float* gauge = fp->motion_id == ftCo_MS_DeadLeft ? msl_test_want : msl_test_reborn;
+        int first;
         MSL_TEST_CHECK(i < 120);
         MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0);
         gauge = fp->motion_id == ftCo_MS_DeadLeft ? msl_test_want : msl_test_reborn;
         MSL_TEST_CHECK(msl_test_charge == (fp->motion_id == ftCo_MS_DeadLeft ? dead : reborn));
         MSL_TEST_CHECK(msl_test_gauge[0] == gauge[0] && msl_test_gauge[1] == gauge[1]);
+        // What was spent stays through the death animation; the respawn
+        // gives back what the fighter's OnDeath clears. Judge's pair starts
+        // again at 1 and 0.
+        MSL_TEST_CHECK(msl_test_spent == (fp->motion_id == ftCo_MS_DeadLeft
+                                              ? msl_test_want_spent : msl_test_reborn_spent));
+        first = fp->kind == FTKIND_GAMEWATCH && fp->motion_id != ftCo_MS_DeadLeft;
+        MSL_TEST_CHECK(msl_test_judge[0] == (first ? 1 : msl_test_want_judge[0]) &&
+                       msl_test_judge[1] == (first ? 0 : msl_test_want_judge[1]));
     }
-    msl_test_gauge_free = 0;
+    msl_test_gauge_free = msl_test_spent_free = msl_test_judge_free = 0;
+    msl_test_want_spent = msl_test_reborn_spent;
+    if (fp->kind == FTKIND_GAMEWATCH) {
+        msl_test_want_judge[0] = 1;
+        msl_test_want_judge[1] = 0;
+    }
     msl_test_want[0] = msl_test_reborn[0];
     msl_test_want[1] = msl_test_reborn[1];
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_RebirthWait, 300, reborn) == 0);
-    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 600, reborn) == 0);
+    for (unsigned i = 0; fp->motion_id != ftCo_MS_Wait; ++i) {
+        MSL_TEST_CHECK(i < 600);
+        msl_test_spent_free = msl_test_landed_spent >= 0;
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, reborn) == 0);
+        msl_test_spent_free = 0;
+        if (msl_test_landed_spent >= 0 && fp->ground_or_air == GA_Ground) {
+            msl_test_want_spent = msl_test_landed_spent;
+        }
+        MSL_TEST_CHECK(msl_test_spent == msl_test_want_spent);
+    }
     return 0;
 }
 
@@ -927,6 +1009,607 @@ static int msl_test_kirby_copy(FighterKind kind)
     return 0;
 }
 
+// Port 0 (and a follower) put in the air above the middle of the stage,
+// falling. A fighter already in the air is only moved: nothing lands.
+static void msl_test_air(float y)
+{
+    for (int who = 0; who < 2; ++who) {
+        HSD_GObj* gobj = who ? msl_test_match.follower_fighters[0] : msl_test_match.fighters[0];
+        Fighter* fp;
+        if (gobj == NULL) {
+            continue;
+        }
+        fp = gobj->user_data;
+        fp->cur_pos = (Vec3) { who ? -12 : 0, y, 0 };
+        fp->prev_pos = fp->cur_pos;
+        if (fp->ground_or_air == GA_Ground) {
+            fp->self_vel.x = fp->self_vel.y = 0;
+            ftCommon_8007D5D4(fp);
+            ftCo_Fall_Enter(gobj);
+        }
+    }
+}
+
+// One frame in the air: the fighter is moved back up before it gets near the
+// floor, so that a move ends in the air.
+static int msl_test_air_frame(const MslCoreInput* input)
+{
+    Fighter* fp = msl_test_fighter(0);
+    if (fp->cur_pos.y < 40) {
+        msl_test_air(fp->cur_pos.y + 80);
+    }
+    MSL_TEST_CHECK(msl_test_frame(input) == 0);
+    MSL_TEST_CHECK(fp->ground_or_air == GA_Air);
+    return 0;
+}
+
+// Neutral in the air until the fighter is in `motion`, the bits unchanged.
+static int msl_test_air_until(int motion)
+{
+    Fighter* fp = msl_test_fighter(0);
+    for (unsigned i = 0; (int) fp->motion_id != motion; ++i) {
+        MSL_TEST_CHECK(i < 300);
+        MSL_TEST_CHECK(msl_test_air_frame(&msl_test_neutral) == 0);
+    }
+    return 0;
+}
+
+// One aerial use of a special: `press` for a frame, then `tap` on every other
+// frame, to the end of the move's motion state. On every frame the spent bits
+// are `was` or `was` with `bit`, never back; `bit` is set by the end. *top is
+// the highest upward speed of the fighter's own during the move, and *rose the
+// frames on which that speed went up.
+static int msl_test_aerial_special(const MslCoreInput* press, const MslCoreInput* tap, int bit,
+                                   int was, float* top, int* rose)
+{
+    Fighter* fp = msl_test_fighter(0);
+    int spent = was, move;
+    *top = -1000;
+    *rose = 0;
+    MSL_TEST_CHECK(fp->ground_or_air == GA_Air && fp->self_vel.y <= 0);
+    msl_test_spent_free = 1;
+    MSL_TEST_CHECK(msl_test_air_frame(press) == 0);
+    move = fp->motion_id;
+    MSL_TEST_CHECK(move >= ftCo_MS_Count);
+    for (unsigned i = 0; (int) fp->motion_id == move; ++i) {
+        float before = fp->self_vel.y;
+        MSL_TEST_CHECK(msl_test_spent == spent || (spent == was && msl_test_spent == (was | bit)));
+        spent = msl_test_spent;
+        *top = before > *top ? before : *top;
+        MSL_TEST_CHECK(i < 300);
+        MSL_TEST_CHECK(msl_test_air_frame(i % 2 ? &msl_test_neutral : tap) == 0);
+        *rose += (int) fp->motion_id == move && fp->self_vel.y > before;
+    }
+    MSL_TEST_CHECK(msl_test_spent == (was | bit));
+    msl_test_spent_free = 0;
+    msl_test_want_spent = was | bit;
+    return msl_test_air_until(ftCo_MS_Fall);
+}
+
+// Falls with `input` held until the fighter stands on the ground, which must
+// be in `landing`; the spent bits are `was` in the air and `after` from the
+// first frame on the ground, and stay so until the fighter is standing.
+static int msl_test_land(const MslCoreInput* input, int landing, int was, int after)
+{
+    Fighter* fp = msl_test_fighter(0);
+    for (unsigned i = 0; fp->ground_or_air == GA_Air; ++i) {
+        MSL_TEST_CHECK(i < 400);
+        msl_test_spent_free = 1;
+        MSL_TEST_CHECK(msl_test_frame(input) == 0);
+        msl_test_spent_free = 0;
+        MSL_TEST_CHECK(msl_test_spent == (fp->ground_or_air == GA_Air ? was : after));
+    }
+    MSL_TEST_CHECK((int) fp->motion_id == landing);
+    msl_test_want_spent = after;
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    return 0;
+}
+
+// An air attack (`attack` for a frame) kept in the air until its landing lag
+// applies, then brought down to the floor: the fighter lands in the attack's
+// landing state, not in the plain one.
+static int msl_test_land_in_lag(const MslCoreInput* attack, int was, int after)
+{
+    Fighter* fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_air_frame(attack) == 0);
+    MSL_TEST_CHECK(fp->motion_id == ftCo_MS_AttackAirN);
+    for (unsigned i = 0; !fp->cmd_vars[0]; ++i) {
+        MSL_TEST_CHECK(i < 60);
+        MSL_TEST_CHECK(msl_test_air_frame(&msl_test_neutral) == 0);
+    }
+    MSL_TEST_CHECK(fp->motion_id == ftCo_MS_AttackAirN);
+    msl_test_air(1.5F);
+    return msl_test_land(&msl_test_neutral, ftCo_MS_LandingAirN, was, after);
+}
+
+// A laser from above onto the airborne fighter: the hit changes nothing, and
+// the fighter comes out of it falling.
+static int msl_test_hit_in_air(void)
+{
+    Fighter* fp = msl_test_fighter(0);
+    float percent = fp->dmg.x1830_percent;
+    Vec3 pos = { fp->cur_pos.x, fp->cur_pos.y + 30, 0 };
+    it_8029C6A4(-1.57079632679489661923F, 6, msl_test_match.fighters[1], &pos,
+                It_Kind_Falco_Laser);
+    for (unsigned i = 0; fp->dmg.x1830_percent == percent; ++i) {
+        MSL_TEST_CHECK(i < 60);
+        MSL_TEST_CHECK(msl_test_air_frame(&msl_test_neutral) == 0);
+    }
+    return msl_test_air_until(ftCo_MS_Fall);
+}
+
+// A full hop from standing, to the frame the fighter stops rising.
+static int msl_test_jump_to_the_top(void)
+{
+    Fighter* fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_jump, 6, 0) == 0);
+    for (unsigned i = 0; fp->ground_or_air == GA_Ground || fp->self_vel.y > 0; ++i) {
+        MSL_TEST_CHECK(i < 80);
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    }
+    MSL_TEST_CHECK(fp->ground_or_air == GA_Air);
+    return 0;
+}
+
+// A special whose aerial use lifts the fighter once. The first use in the air
+// rises and sets the bit; with the bit set a second use does not rise. A hit
+// leaves the bit; a plain landing clears it on its first frame. A landing in
+// the landing lag of an air attack does not: the game clears these in
+// ftCo_Landing_Enter only, so the fighter stands on the ground with the lift
+// still spent, and a use after the next jump does not rise. A KO clears it.
+// With `hat`, Kirby is given that copied ability first.
+static int msl_test_special_lift(unsigned kind, unsigned hat, const MslCoreInput* press, int bit,
+                                 const char* name)
+{
+    float first, second, again, stale;
+    int rose;
+    MSL_TEST_CHECK(msl_test_setup(kind, MSL_TEST_FALCO) == 0);
+    if (hat != FTKIND_NONE) {
+        msl_test_want_copied = hat;
+        ftKb_SpecialN_800F1BAC(msl_test_match.fighters[0], hat, false);
+    }
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(press, &msl_test_neutral, bit, 0, &first, &rose) == 0);
+    MSL_TEST_CHECK(first > 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(press, &msl_test_neutral, bit, bit, &second, &rose) == 0);
+    MSL_TEST_CHECK(second <= 0);
+    MSL_TEST_CHECK(msl_test_hit_in_air() == 0);
+    MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, 0) == 0);
+
+    // Used again, then a neutral air attack into the floor.
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(press, &msl_test_neutral, bit, 0, &again, &rose) == 0);
+    MSL_TEST_CHECK(again == first);
+    MSL_TEST_CHECK(msl_test_land_in_lag(&msl_test_a, bit, bit) == 0);
+    // Still spent after standing and a jab; the next use is from a jump.
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 30, 0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_a, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 120, 0) == 0);
+    MSL_TEST_CHECK(msl_test_jump_to_the_top() == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(press, &msl_test_neutral, bit, bit, &stale, &rose) == 0);
+    MSL_TEST_CHECK(stale <= 0);
+    MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, 0) == 0);
+
+    // Spent once more, then a KO. The KO takes Kirby's hat, and the copied
+    // move's bit with it, on its own frame.
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(press, &msl_test_neutral, bit, 0, &again, &rose) == 0);
+    MSL_TEST_CHECK(again == first);
+    msl_test_want_copied = MSL_COPIED_NONE;
+    msl_test_want_spent = hat != FTKIND_NONE ? 0 : bit;
+    MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+    fprintf(stderr, "%s: rises at %g a frame, then %g; %g after a landing in landing lag\n", name,
+            first, second, stale);
+    return 0;
+}
+
+// Mario's and Dr. Mario's tornado and Luigi's cyclone rise while B is tapped,
+// once: the game sets the flag part-way through an aerial use, and with it
+// set the taps do nothing. Mario's comes back on a plain landing, like the
+// other lifts. Luigi's is not among the flags a landing clears, and his
+// OnDeath does not clear it either: it stays through landings and a KO until
+// a cyclone touches the ground, which one started on the ground does at once.
+static int msl_test_tornado(unsigned kind, const char* name)
+{
+    const int bit = MSL_SPENT_DOWN_LIFT;
+    const int luigi = kind == FTKIND_LUIGI;
+    const int grounded = luigi ? ftLg_MS_SpecialLw : ftMr_MS_SpecialLw;
+    Fighter* fp;
+    float first, second, later = 0, back;
+    int rose, taps;
+    MSL_TEST_CHECK(msl_test_setup(kind, MSL_TEST_FALCO) == 0);
+    fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_down_b, &msl_test_b, bit, 0, &first,
+                                           &taps) == 0);
+    MSL_TEST_CHECK(taps > 3 && first > 1);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_down_b, &msl_test_b, bit, bit, &second,
+                                           &rose) == 0);
+    MSL_TEST_CHECK(rose == 0 && second < first);
+    MSL_TEST_CHECK(msl_test_hit_in_air() == 0);
+    // A plain landing: Mario's is back, Luigi's is not.
+    MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, luigi ? bit : 0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 30, 0) == 0);
+
+    if (luigi) {
+        // From a jump, tapping: nothing.
+        MSL_TEST_CHECK(msl_test_jump_to_the_top() == 0);
+        MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_down_b, &msl_test_b, bit, bit, &later,
+                                               &rose) == 0);
+        MSL_TEST_CHECK(rose == 0 && later == second);
+        MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, bit) == 0);
+        // A KO: still spent on the new stock.
+        msl_test_reborn_spent = bit;
+        MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+        MSL_TEST_CHECK(msl_test_spent == bit && fp->fv.lg.x222C_cycloneCharge);
+        // A cyclone started on the ground: the game enters it through the
+        // aerial state, which touches the floor at once, so the lift is back
+        // on its first frame.
+        msl_test_want_spent = 0;
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 1, 0) == 0);
+        MSL_TEST_CHECK((int) fp->motion_id == grounded && !fp->fv.lg.x222C_cycloneCharge);
+        MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    }
+    // Spent again for what follows.
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_down_b, &msl_test_b, bit, 0, &back,
+                                           &rose) == 0);
+    MSL_TEST_CHECK(back == first && rose == taps);
+
+    // An aerial one that comes down onto the floor: back from the frame it
+    // touches, in the move's grounded state.
+    msl_test_air(6);
+    msl_test_spent_free = 1;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_down_b, 1, 0) == 0);
+    MSL_TEST_CHECK((int) fp->motion_id == grounded + 1 && msl_test_spent == bit);
+    for (unsigned i = 0; fp->ground_or_air == GA_Air; ++i) {
+        MSL_TEST_CHECK(i < 100);
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+        MSL_TEST_CHECK(msl_test_spent == (fp->ground_or_air == GA_Air ? bit : 0));
+    }
+    MSL_TEST_CHECK((int) fp->motion_id == grounded);
+    msl_test_spent_free = 0;
+    msl_test_want_spent = 0;
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+
+    // And it rises again.
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_down_b, &msl_test_b, bit, 0, &back,
+                                           &rose) == 0);
+    MSL_TEST_CHECK(back == first && rose == taps);
+    if (!luigi) {
+        MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+    }
+    fprintf(stderr, "%s: tapped, speeds up on %d frames to %g a frame; spent, on none (%g)\n",
+            name, taps, first, second);
+    return 0;
+}
+
+// The Ice Climbers: Nana keeps her own Ice Shot flag, published as the
+// follower's bit of her leader's record.
+static int msl_test_ice_climbers(void)
+{
+    MSL_TEST_CHECK(msl_test_special_lift(FTKIND_POPO, FTKIND_NONE, &msl_test_b,
+                                         MSL_SPENT_NEUTRAL_LIFT, "ice shot") == 0);
+    MSL_TEST_CHECK(msl_test_match.follower_fighters[0] != NULL && msl_test_follower_seen > 0);
+    fprintf(stderr, "ice shot: the follower's bit on %d frames\n", msl_test_follower_seen);
+    return 0;
+}
+
+// Mr. Game & Watch's Judge: the game leaves the last two numbers out of the
+// next roll. judge[0] is the hammer the move shows (the motion state is the
+// first hammer's plus the number), judge[1] the one before; every new number
+// differs from both. The match starts, and a new stock starts, with 1 and 0,
+// so the first hammer is never a 1 or a 2. Every fourth roll is in the air:
+// the game has a once-per-airtime variable for an aerial Judge's lift, which
+// no hammer's script ever sets, so there is no bit for it.
+static int msl_test_judge_history(void)
+{
+    Fighter* fp;
+    int seen[9] = { 0 }, aerial_seen[9] = { 0 }, kinds = 0, aerial_kinds = 0;
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_GAMEWATCH, MSL_TEST_FOX) == 0);
+    fp = msl_test_fighter(0);
+    for (int stock = 0; stock < 3; ++stock) {
+        MSL_TEST_CHECK(msl_test_judge[0] == 1 && msl_test_judge[1] == 0);
+        for (int roll = 0; roll < 60; ++roll) {
+            int last = msl_test_judge[0], before = msl_test_judge[1], now;
+            int aerial = roll % 4 == 3;
+            if (aerial) {
+                msl_test_air(60);
+                MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 2, 0) == 0);
+            }
+            msl_test_judge_free = 1;
+            MSL_TEST_CHECK(msl_test_hold(&msl_test_side_b, 1, 0) == 0);
+            now = msl_test_judge[0];
+            MSL_TEST_CHECK(now >= 0 && now < 9 && now != last && now != before &&
+                           msl_test_judge[1] == last);
+            MSL_TEST_CHECK((int) fp->motion_id ==
+                           (aerial ? ftGw_MS_SpecialAirS1 : ftGw_MS_SpecialS1) + now);
+            msl_test_want_judge[0] = now;
+            msl_test_want_judge[1] = last;
+            msl_test_judge_free = 0;
+            kinds += !seen[now]++;
+            aerial_kinds += aerial && !aerial_seen[now]++;
+            for (unsigned i = 0; fp->motion_id != ftCo_MS_Wait; ++i) {
+                MSL_TEST_CHECK(i < 400);
+                MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+                MSL_TEST_CHECK(fp->fv.gw.x2234 == 0);
+            }
+            MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 2, 0) == 0);
+        }
+        MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+        MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+    }
+    MSL_TEST_CHECK(kinds == 9 && aerial_kinds == 9);
+    fprintf(stderr, "judge: 180 rolls, none repeating either of the two before it; hammers 1 to 9 "
+                    "came up %d %d %d %d %d %d %d %d %d times\n",
+            seen[0], seen[1], seen[2], seen[3], seen[4], seen[5], seen[6], seen[7], seen[8]);
+    return 0;
+}
+
+// Holds `input` from standing until the float starts, on which frame it is
+// spent and gauge[0] is `left`.
+static int msl_test_start_float(const MslCoreInput* input, float left)
+{
+    Fighter* fp = msl_test_fighter(0);
+    for (unsigned i = 0; fp->motion_id != ftPe_MS_Float; ++i) {
+        MSL_TEST_CHECK(i < 120);
+        msl_test_spent_free = msl_test_gauge_free = 1;
+        MSL_TEST_CHECK(msl_test_hold(input, 1, 0) == 0);
+        msl_test_spent_free = 0;
+        if (fp->motion_id != ftPe_MS_Float) {
+            MSL_TEST_CHECK(msl_test_spent == 0 && msl_test_gauge[0] == 0);
+        }
+    }
+    MSL_TEST_CHECK(msl_test_spent == MSL_SPENT_FLOAT && msl_test_gauge[0] == left &&
+                   msl_test_gauge[1] == 0);
+    msl_test_want_spent = MSL_SPENT_FLOAT;
+    return 0;
+}
+
+// Peach's float. Spent from the frame the float starts until she is on the
+// ground again, where any change of action gives it back, a landing in an
+// air attack's lag included. gauge[0] is the float's frames left: the loaded
+// attribute as it starts, down by 1 on every frame of
+// the float and of an attack done out of it, and 0 whenever no float is going
+// on, though the game leaves the rest in its variable when a float is let go
+// early.
+static int msl_test_peach_float(void)
+{
+    const int bit = MSL_SPENT_FLOAT;
+    Fighter* fp;
+    float full;
+    int frames = 0, attack = 0;
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_PEACH, MSL_TEST_FALCO) == 0);
+    fp = msl_test_fighter(0);
+    full = ((ftPe_DatAttrs*) fp->dat_attrs)->xC;
+    MSL_TEST_CHECK(full > 60);
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+
+    // Jump held: the float starts as the jump stops rising.
+    MSL_TEST_CHECK(msl_test_start_float(&msl_test_jump, full) == 0);
+    for (unsigned i = 0; i < 20; ++i) {
+        float before = msl_test_gauge[0];
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_jump, 1, 0) == 0);
+        MSL_TEST_CHECK(fp->motion_id == ftPe_MS_Float && msl_test_gauge[0] == before - 1);
+    }
+    // An attack out of the float, and back into the float: one count.
+    for (unsigned i = 0; i == 0 || fp->motion_id != ftPe_MS_Float; ++i) {
+        float before = msl_test_gauge[0];
+        MSL_TEST_CHECK(i < 120);
+        MSL_TEST_CHECK(msl_test_hold(i == 0 ? &msl_test_jump_a : &msl_test_jump, 1, 0) == 0);
+        MSL_TEST_CHECK(msl_test_gauge[0] == before - 1 && msl_test_gauge[1] == 0);
+        MSL_TEST_CHECK(i > 0 || fp->motion_id == ftPe_MS_FloatAttackAirN);
+        attack += fp->motion_id == ftPe_MS_FloatAttackAirN;
+    }
+    MSL_TEST_CHECK(attack > 5 && msl_test_gauge[0] > 10);
+    // Let go: no float is going on, and the game's variable keeps the rest.
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    MSL_TEST_CHECK(fp->motion_id != ftPe_MS_Float && msl_test_gauge[0] == 0 &&
+                   fp->fv.pe.x4 > 10);
+    msl_test_gauge_free = 0;
+    // Jump held again all the way down: no second float.
+    MSL_TEST_CHECK(msl_test_land(&msl_test_jump, ftCo_MS_Landing, bit, 0) == 0);
+    MSL_TEST_CHECK(fp->fv.pe.x4 > 10);
+
+    // A whole float: it ends by itself when the count reaches 0.
+    MSL_TEST_CHECK(msl_test_start_float(&msl_test_jump, full) == 0);
+    for (frames = 1; fp->motion_id == ftPe_MS_Float; ++frames) {
+        float before = msl_test_gauge[0];
+        MSL_TEST_CHECK(frames < 1000);
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_jump, 1, 0) == 0);
+        MSL_TEST_CHECK(msl_test_gauge[0] == (fp->motion_id == ftPe_MS_Float ? before - 1 : 0));
+    }
+    msl_test_gauge_free = 0;
+    MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, 0) == 0);
+
+    // Floated, let go, then an ordinary air attack into the floor: she lands
+    // in the attack's landing lag and has the float back on that frame.
+    MSL_TEST_CHECK(msl_test_start_float(&msl_test_jump, full) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    msl_test_gauge_free = 0;
+    for (unsigned i = 0; i < 20; ++i) {
+        MSL_TEST_CHECK(msl_test_air_frame(&msl_test_neutral) == 0);
+    }
+    MSL_TEST_CHECK(msl_test_land_in_lag(&msl_test_a, bit, 0) == 0);
+
+    // Spent, then a KO.
+    MSL_TEST_CHECK(msl_test_start_float(&msl_test_jump, full) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    msl_test_gauge_free = 0;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+    fprintf(stderr, "float: %g frames loaded, a whole one ends after %d, %d frames of the first in an attack\n", full,
+            frames - 1, attack);
+    return 0;
+}
+
+// The aerial grapple of Link, Young Link and Samus: once until the fighter is
+// on the ground again. A grapple that catches nothing ends in special fall;
+// out of that by a hit, the same input is an air attack, not a grapple. Like
+// the float it is back on any change of action on the ground: a plain
+// landing, the special fall's landing, an air attack's landing lag.
+static int msl_test_tether(unsigned kind, const char* name)
+{
+    const int bit = MSL_SPENT_TETHER;
+    Fighter* fp;
+    MSL_TEST_CHECK(msl_test_setup(kind, MSL_TEST_FALCO) == 0);
+    fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_other_actions(0) == 0);
+    for (int pass = 0; pass < 3; ++pass) {
+        msl_test_air(120);
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+        msl_test_want_spent = bit;
+        MSL_TEST_CHECK(msl_test_hold(&msl_test_z, 1, 0) == 0);
+        MSL_TEST_CHECK(fp->motion_id >= ftCo_MS_Count);
+        MSL_TEST_CHECK(msl_test_air_until(ftCo_MS_FallSpecial) == 0);
+        if (pass == 0) {
+            MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_LandingFallSpecial, bit,
+                                         0) == 0);
+            continue;
+        }
+        MSL_TEST_CHECK(msl_test_hit_in_air() == 0);
+        if (pass == 1) {
+            MSL_TEST_CHECK(msl_test_air_frame(&msl_test_z) == 0);
+            MSL_TEST_CHECK(fp->motion_id == ftCo_MS_AttackAirN);
+            MSL_TEST_CHECK(msl_test_air_until(ftCo_MS_Fall) == 0);
+            MSL_TEST_CHECK(msl_test_land(&msl_test_neutral, ftCo_MS_Landing, bit, 0) == 0);
+        } else {
+            MSL_TEST_CHECK(msl_test_land_in_lag(&msl_test_z, bit, 0) == 0);
+        }
+    }
+    msl_test_air(120);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 3, 0) == 0);
+    msl_test_want_spent = bit;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_z, 1, 0) == 0);
+    MSL_TEST_CHECK(fp->motion_id >= ftCo_MS_Count);
+    // A KO does not give it back: the new stock has none until it has come
+    // down from the respawn platform and stands on the ground.
+    msl_test_reborn_spent = bit;
+    msl_test_landed_spent = 0;
+    MSL_TEST_CHECK(msl_test_ko(0, 0) == 0);
+    fprintf(stderr, "%s: one aerial grapple an airtime\n", name);
+    return 0;
+}
+
+// Wall jumps on Yoshi's Story, against the wall under the left edge: the
+// count goes up by one with each, every jump after the first rises less
+// (the game multiplies by a base to the power of the count), and standing on
+// the ground clears it.
+static int msl_test_wall_jumps(unsigned kind, const char* name)
+{
+    Fighter* fp;
+    float speed[3] = { 0 };
+    int jumps = 0, hug = 0;
+    msl_test_stage = 8;
+    MSL_TEST_CHECK(msl_test_setup(kind, MSL_TEST_FALCO) == 0);
+    msl_test_stage = 32;
+    fp = msl_test_fighter(0);
+    // Off the starting platform with a jump, then next to the wall.
+    MSL_TEST_CHECK(msl_test_jump_to_the_top() == 0);
+    fp->cur_pos = (Vec3) { -100, 60, 0 };
+    fp->prev_pos = fp->cur_pos;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    fp->cur_pos = (Vec3) { -100, -40, 0 };
+    fp->prev_pos = fp->cur_pos;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    msl_test_walls_free = 1;
+    for (unsigned i = 0; jumps < 3; ++i) {
+        int jumping = fp->motion_id == ftCo_MS_PassiveWallJump;
+        int walled = (fp->coll_data.env_flags & (Collide_LeftWallHug | Collide_RightWallHug)) != 0;
+        int before = msl_test_walls;
+        MSL_TEST_CHECK(i < 600 && fp->cur_pos.y > -80 && fp->ground_or_air == GA_Air);
+        if (jumping && fp->cur_pos.y < -55) {
+            // Kept up while the jump plays out, well away from the wall.
+            fp->cur_pos.y += 30;
+            fp->prev_pos = fp->cur_pos;
+        } else if (!jumping && fp->cur_pos.x < -66) {
+            // Next to the wall, below the reach of the ledge.
+            fp->cur_pos = (Vec3) { -62, -40, 0 };
+            fp->prev_pos = fp->cur_pos;
+            fp->self_vel.x = fp->self_vel.y = 0;
+        }
+        hug = walled && !jumping ? hug + 1 : 0;
+        // Into the wall, then away from it once it is touched.
+        MSL_TEST_CHECK(msl_test_frame(jumping ? &msl_test_neutral
+                                              : hug >= 2 ? &msl_test_left : &msl_test_right) == 0);
+        MSL_TEST_CHECK(msl_test_walls == before || msl_test_walls == before + 1);
+        MSL_TEST_CHECK(msl_test_walls == fp->x1969_walljumpUsed && msl_test_walls <= jumps + 1);
+        if (fp->motion_id == ftCo_MS_PassiveWallJump && fp->self_vel.y > speed[msl_test_walls - 1]) {
+            speed[msl_test_walls - 1] = fp->self_vel.y;
+        }
+        jumps = fp->motion_id == ftCo_MS_PassiveWallJump ? jumps : msl_test_walls;
+    }
+    MSL_TEST_CHECK(msl_test_walls == 3 && speed[0] > 0 && speed[1] > 0 && speed[2] > 0);
+    MSL_TEST_CHECK(speed[1] < speed[0] && speed[2] < speed[1]);
+    // Back onto the stage: none from the first frame on the ground.
+    fp->cur_pos = (Vec3) { 0, 30, 0 };
+    fp->prev_pos = fp->cur_pos;
+    for (unsigned i = 0; fp->ground_or_air == GA_Air; ++i) {
+        MSL_TEST_CHECK(i < 200);
+        MSL_TEST_CHECK(msl_test_frame(&msl_test_neutral) == 0);
+        MSL_TEST_CHECK(msl_test_walls == (fp->ground_or_air == GA_Air ? 3 : 0));
+    }
+    msl_test_walls_free = 0;
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    fprintf(stderr, "%s: three wall jumps rising at %g, %g and %g a frame\n", name, speed[0],
+            speed[1], speed[2]);
+    return 0;
+}
+
+// A ledge grab and the climb back onto the stage give a spent lift back no
+// more than a hit does: Marth, on Yoshi's Story, uses his side special in the
+// air, takes the left ledge, climbs up and stands with the lift still spent;
+// the next aerial use does not rise.
+static int msl_test_ledge_keeps_lift(void)
+{
+    const int bit = MSL_SPENT_SIDE_LIFT;
+    Fighter* fp;
+    float first, stale;
+    int rose;
+    msl_test_stage = 8;
+    MSL_TEST_CHECK(msl_test_setup(FTKIND_MARS, MSL_TEST_FALCO) == 0);
+    msl_test_stage = 32;
+    fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_jump_to_the_top() == 0);
+    fp->cur_pos = (Vec3) { -100, 70, 0 };
+    fp->prev_pos = fp->cur_pos;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_side_b, &msl_test_neutral, bit, 0, &first,
+                                           &rose) == 0);
+    MSL_TEST_CHECK(first > 0);
+    // Out to the left of the stage, then down beside the ledge.
+    fp->cur_pos = (Vec3) { -100, 60, 0 };
+    fp->prev_pos = fp->cur_pos;
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 1, 0) == 0);
+    fp->cur_pos = (Vec3) { -61, -20, 0 };
+    fp->prev_pos = fp->cur_pos;
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_CliffWait, 60, 0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 10, 0) == 0);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_right, 2, 0) == 0);
+    MSL_TEST_CHECK(fp->motion_id != ftCo_MS_CliffWait);
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    MSL_TEST_CHECK(fp->ground_or_air == GA_Ground && fp->cur_pos.y > -10 && msl_test_spent == bit);
+    MSL_TEST_CHECK(msl_test_hold(&msl_test_neutral, 10, 0) == 0);
+    MSL_TEST_CHECK(msl_test_jump_to_the_top() == 0);
+    MSL_TEST_CHECK(msl_test_aerial_special(&msl_test_side_b, &msl_test_neutral, bit, bit, &stale,
+                                           &rose) == 0);
+    MSL_TEST_CHECK(stale <= 0);
+    fprintf(stderr, "ledge: marth's side special rises at %g a frame, then %g after a ledge grab "
+                    "and the climb\n", first, stale);
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     int result;
@@ -954,7 +1637,34 @@ int main(int argc, char** argv)
              msl_test_absent_after_last_stock() ||
              msl_test_fire_breath() || msl_test_kirby_fire_breath() ||
              msl_test_kirby_swallows_fox() || msl_test_kirby_swallows_donkey_kong() || msl_test_kirby_copy(FTKIND_SAMUS) ||
-             msl_test_kirby_copy(FTKIND_MEWTWO) || msl_test_kirby_copy(FTKIND_SEAK);
+             msl_test_kirby_copy(FTKIND_MEWTWO) || msl_test_kirby_copy(FTKIND_SEAK) ||
+             msl_test_special_lift(FTKIND_MARIO, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "mario's cape") ||
+             msl_test_special_lift(FTKIND_DRMARIO, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "dr. mario's sheet") ||
+             msl_test_special_lift(FTKIND_MARS, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "marth's side special") ||
+             msl_test_special_lift(FTKIND_EMBLEM, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "roy's side special") ||
+             msl_test_special_lift(FTKIND_MEWTWO, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "confusion") ||
+             msl_test_special_lift(FTKIND_PEACH, FTKIND_NONE, &msl_test_b,
+                                   MSL_SPENT_NEUTRAL_LIFT, "toad") ||
+             msl_test_special_lift(FTKIND_KIRBY, FTKIND_NONE, &msl_test_side_b,
+                                   MSL_SPENT_SIDE_LIFT, "kirby's hammer") ||
+             msl_test_special_lift(FTKIND_KIRBY, FTKIND_PEACH, &msl_test_b,
+                                   MSL_SPENT_NEUTRAL_LIFT, "kirby's copied toad") ||
+             msl_test_special_lift(FTKIND_KIRBY, FTKIND_POPO, &msl_test_b,
+                                   MSL_SPENT_NEUTRAL_LIFT, "kirby's copied ice shot") ||
+             msl_test_ice_climbers() ||
+             msl_test_tornado(FTKIND_MARIO, "mario's tornado") ||
+             msl_test_tornado(FTKIND_DRMARIO, "dr. mario's tornado") ||
+             msl_test_tornado(FTKIND_LUIGI, "luigi's cyclone") ||
+             msl_test_judge_history() || msl_test_peach_float() ||
+             msl_test_tether(FTKIND_LINK, "link") || msl_test_tether(FTKIND_CLINK, "young link") ||
+             msl_test_tether(FTKIND_SAMUS, "samus") ||
+             msl_test_wall_jumps(MSL_TEST_FOX, "fox") || msl_test_wall_jumps(FTKIND_MARIO, "mario") ||
+             msl_test_ledge_keeps_lift();
     msl_core_match_destroy(&msl_test_match);
     msl_core_game_data_deinit(&msl_test_game_data);
     return result != 0;
