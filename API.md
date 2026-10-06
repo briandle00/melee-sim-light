@@ -98,7 +98,7 @@ zeroed.
 `stored[k]` is what the player in `slots[k]` keeps between moves, in the game's
 own units. Slippi does not record it. A character with nothing to keep, an
 unused slot and an absent player read zero, with `copied_char` at
-`MSL_COPIED_NONE`.
+`MSL_COPIED_NONE` and both `judge` numbers at `MSL_JUDGE_NONE`.
 
 `stored[k].charge` is a stored move's count:
 
@@ -141,6 +141,7 @@ hits) and on the frame of a KO.
 | Mr. Game & Watch | the damage the caught shots would have dealt, summed: a whole number, `0` with an empty bucket, with no upper limit in the game (three of Falco's lasers are `9`, three of Mario's fireballs `18`) | `0` |
 | Bowser | Fire Breath's fuel, `40..360`, `360` at rest | Fire Breath's flame size, `60..380`, `380` at rest |
 | Kirby wearing Bowser's hat | his copy's fuel, `40..360` | his copy's flame size, `60..380` |
+| Peach | her float's frames left, `150` on the frame a float starts, `0` while she is not floating | `0` |
 
 Oil Panic's spill deals `floor(gauge[0] * 1.5) + 5` before staling. The spill
 clears the damage with the count. A KO clears the damage at the respawn and
@@ -153,6 +154,70 @@ A flame is spawned with speed `fuel / 360` and scale `size / 380`, so the fuel
 is how far the breath reaches and the size how big its flames are. A respawn
 makes both full. Kirby's pair goes with the hat. Unlike a count, these are not
 `0` at rest.
+
+Peach's float lasts 150 frames. The count goes down by `1` on every frame of
+the float and of an air attack done out of it, and the float ends when it
+reaches `0`. The game reads its variable only in those states and leaves the
+rest in it when a float is let go early, so the observation publishes `0`
+whenever no float is going on.
+
+`stored[k].spent` is a set of bits. Each is something the fighter has used and
+does not have again until the game gives it back:
+
+| bit | value | set while |
+| --- | --- | --- |
+| `MSL_SPENT_NEUTRAL_LIFT` | `1` | the one lift of the neutral special is used |
+| `MSL_SPENT_SIDE_LIFT` | `2` | the one lift of the side special is used |
+| `MSL_SPENT_DOWN_LIFT` | `4` | the one lift of the down special is used |
+| `MSL_SPENT_FLOAT` | `8` | Peach has floated |
+| `MSL_SPENT_TETHER` | `16` | the aerial grapple is used |
+| `MSL_SPENT_FOLLOWER_NEUTRAL_LIFT` | `32` | Nana's own neutral special lift is used |
+
+Which character has which:
+
+| character | bit | move | with the bit set |
+| --- | --- | --- | --- |
+| Mario, Dr. Mario | `MSL_SPENT_SIDE_LIFT` | Cape, Super Sheet | an aerial use does not rise |
+| Mario, Dr. Mario | `MSL_SPENT_DOWN_LIFT` | Mario Tornado, Dr. Tornado | tapping B during an aerial use does not raise him |
+| Luigi | `MSL_SPENT_DOWN_LIFT` | Luigi Cyclone | tapping B during an aerial use does not raise him |
+| Marth, Roy | `MSL_SPENT_SIDE_LIFT` | Dancing Blade, Double-Edge Dance | an aerial use does not rise |
+| Mewtwo | `MSL_SPENT_SIDE_LIFT` | Confusion | an aerial use does not rise |
+| Peach | `MSL_SPENT_NEUTRAL_LIFT` | Toad | an aerial use does not rise |
+| Peach | `MSL_SPENT_FLOAT` | the float | she cannot float |
+| Ice Climbers | `MSL_SPENT_NEUTRAL_LIFT` for the leader, `MSL_SPENT_FOLLOWER_NEUTRAL_LIFT` for Nana | Ice Shot | an aerial use does not rise |
+| Kirby | `MSL_SPENT_SIDE_LIFT` | Hammer | an aerial use does not rise |
+| Kirby wearing Peach's or the Ice Climbers' hat | `MSL_SPENT_NEUTRAL_LIFT` | the copied Toad or Ice Shot | an aerial use does not rise |
+| Link, Young Link, Samus | `MSL_SPENT_TETHER` | the aerial grapple | the same input is an air attack |
+
+The game sets a lift bit during the first aerial use of the move (as it
+starts, or part-way through for the Cape, Toad and the tornadoes), the float
+bit on the frame a float starts, and the tether bit on the frame of the
+grapple. It gives them back in different places, and the bits show exactly
+that:
+
+- A lift comes back on the first frame of a plain landing or of the landing
+  after special fall, when the move itself touches the ground, and at the
+  respawn after a KO. Kirby's copied one also goes with the hat.
+- A lift does not come back on a landing in the landing lag of an air attack:
+  the fighter then stands on the ground with the bit still set, and the next
+  aerial use, after a jump, does not rise. A hit does not give it back either.
+- Luigi's is not given back by any landing, nor by a KO. Only a cyclone that
+  touches the ground does it, which one started on the ground does on its
+  first frame.
+- The float and the tether come back on any change of action on the ground,
+  a landing in an air attack's landing lag included. A KO gives the float back
+  at the respawn. It does not give the tether back: the new stock has none
+  until it stands on the ground.
+
+`stored[k].wall_jumps` counts the wall jumps since the fighter last stood on
+the ground. The game uses it to weaken each wall jump after the first, and
+clears it on the first frame on the ground.
+
+`stored[k].judge` is Mr. Game & Watch's last two Judge numbers, which the game
+leaves out of the next roll: `judge[0]` is the most recent, `judge[1]` the one
+before. Each is the hammer's number minus one (`0..8`), as the game stores it.
+A match and every new stock start with `1` and `0`, so the first hammer is
+never a 1 or a 2. Everyone else reads `MSL_JUDGE_NONE` (`255`) in both.
 
 Top-level fields:
 
@@ -200,6 +265,10 @@ Top-level fields:
 | --- | --- | --- |
 | `charge` | `uint8_t` | a stored move's count, per character above |
 | `copied_char` | `uint8_t` | Kirby's copied ability as `MSL_CHARACTER_*`, or `MSL_COPIED_NONE` (`255`) |
+| `spent` | `uint8_t` | `MSL_SPENT_*` bits, per character above |
+| `wall_jumps` | `uint8_t` | wall jumps since the fighter last stood on the ground |
+| `judge` | `uint8_t[2]` | Mr. Game & Watch's last two Judge numbers, `0..8`, or `MSL_JUDGE_NONE` (`255`) |
+| `_pad0` | `uint8_t[2]` | spare, `0` |
 | `gauge` | `float[2]` | stored amounts that are not a count, per character above |
 
 `MslItem` slots are fixed-capacity. Inactive slots have `exists == 0`.
