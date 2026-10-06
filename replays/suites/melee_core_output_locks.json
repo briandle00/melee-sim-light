@@ -4624,7 +4624,7 @@
       "expected": {
         "native": {
           "frames": 20259,
-          "actual_output_fingerprint": "d63ce878fb30431b"
+          "actual_output_fingerprint": "54a19586f5a91d5b"
         }
       }
     },

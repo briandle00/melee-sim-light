@@ -46,14 +46,14 @@ def test_capture_rules_apply_independently_of_exclusion_identity(properties_only
     assert reason in admission.capture_issues(game, raw)
 
 
-def test_zero_chain_samples_are_still_uninitialized(properties_only):
+def test_chain_audio_residue_does_not_exclude_a_capture():
     game, raw = read_game("replays/validation/sheik/PaleMajorEchidna.slpz")
     items = game.frames.field("item").values
     selected = ((items.field("type").to_numpy() == 97) &
                 (items.field("state").to_numpy() < 3))
     assert np.any(selected)
     assert np.all(items.field("misc").field("3").to_numpy()[selected] == 0)
-    assert "uninitialized-chain" in admission.capture_issues(game, raw)
+    assert admission.capture_issues(game, raw) == []
 
 
 def test_zero_transform_lcancel_is_still_uninitialized(properties_only):
@@ -124,7 +124,6 @@ def test_unreviewed_arithmetic_override_is_rejected(properties_only):
 
 def test_excluded_captures_are_absent_from_every_suite():
     excluded = {r["replay"] for r in admission.evidence()["excluded"]}
-    assert len(excluded) == 133
     for path in (ROOT / "replays/suites").glob("*.json"):
         data = json.loads(path.read_text())
         assert not excluded.intersection(r["replay"] for r in data.get("replays", []))

@@ -12,7 +12,7 @@ enum {
 };
 
 enum {
-    MSL_CORE_ITEM_KIND_BOMBHEI = 6,
+    MSL_ITEM_KIND_BOMBHEI = 6,
     MSL_CORE_ITEM_KIND_MR_SATURN = 7,
     MSL_CORE_ITEM_KIND_FOX_LASER = 54,
     MSL_CORE_ITEM_KIND_FALCO_LASER = 55,
@@ -188,14 +188,15 @@ static inline uint8_t msl_core_item_gameplay_misc_mask(uint16_t kind,
     case MSL_ITEM_KIND_GAMEWATCH_CHEF:
         // x0 is the shared attribute pointer; x4 is the trajectory index.
         return MSL_CORE_ITEM_MISC1;
-    case MSL_CORE_ITEM_KIND_BOMBHEI:
-        // A Bob-omb's xDD8 is its fuse-flash scale direction, first written
-        // (to 1) when the fuse lights; the spawn constructor leaves it
-        // unwritten, so a freshly pulled Bob-omb (Peach's down special)
-        // samples pool residue at xDDB. xDD4, xDE8 and xDEC are written at
-        // spawn and remain gameplay-owned.
-        // refs/melee/src/melee/it/items/itbombhei.c::
-        //   {itBombhei_Logic6_Spawned,it_8027F8E0,it_8027D820}
+    case MSL_ITEM_KIND_BOMBHEI:
+        // xDD8 (misc1) is initialized when the fuse lights. States 5/6
+        // enter through fuse setup; held/thrown choose 8/10 when lit.
+        // Other states can carry unwritten pool residue in this lane.
+        // refs/melee/src/melee/it/kinds/itbombhei.c::{it_8027F8E0,
+        //     fn_8027FCA8,itBombhei_Logic6_PickedUp,it_3F14_Logic6_Thrown}
+        if (state == 5 || state == 6 || state == 8 || state == 10) {
+            return MSL_CORE_ITEM_MISC_ALL;
+        }
         return MSL_CORE_ITEM_MISC0 | MSL_CORE_ITEM_MISC2 |
                MSL_CORE_ITEM_MISC3;
     case MSL_CORE_ITEM_KIND_MR_SATURN:
@@ -266,13 +267,11 @@ static inline uint8_t msl_core_item_gameplay_misc_mask(uint16_t kind,
         // refs/melee/src/melee/it/itCommonItems.h::itYoshiEggLay_ItemVars
         return MSL_CORE_ITEM_MISC0;
     case MSL_CORE_ITEM_KIND_SHEIK_CHAIN:
-        // The first samples are ItemLink pointers; x14/x18 are scalars.
-        // x18 is first assigned by it_802BC080 in state 3; in the picked-up
-        // states 0-2 Slippi samples whatever the pool slot held.
-        // refs/melee/src/melee/it/itCharItems.h::itSeakChain_ItemVars
-        // refs/melee/src/melee/it/items/itseakchain.c::it_802BC080
-        return state < 3 ? MSL_CORE_ITEM_MISC2
-                         : MSL_CORE_ITEM_MISC2 | MSL_CORE_ITEM_MISC3;
+        // The first samples are ItemLink pointers. x14 is gameplay state;
+        // x18 only gates collision audio, even after its first assignment.
+        // refs/melee/src/melee/it/kinds/itseakchain.c::{it_802BC080,
+        //     it_802BBAEC,it_802BB938}
+        return MSL_CORE_ITEM_MISC2;
     case MSL_CORE_ITEM_KIND_PEACH_EXPLODE:
     case MSL_CORE_ITEM_KIND_PEACH_PARASOL:
     case MSL_CORE_ITEM_KIND_PEACH_TOAD:
