@@ -10,7 +10,7 @@ _SIZES = {
     "controller_input": 112,
     "input": 32,
     "match_config": 52,
-    "gamestate": 1208,
+    "gamestate": 1212,
     "terminal": 16,
 }
 
@@ -230,6 +230,7 @@ def gamestate_dtype() -> np.dtype:
             ("slots", gamestate_player_dtype(), (MAX_PLAYERS,)),
             ("items", item_dtype(), (15,)),
             ("followers", gamestate_player_dtype(), (MAX_PLAYERS,)),
+            ("stored_charge", "u1", (MAX_PLAYERS,)),
         ],
         align=False,
     )

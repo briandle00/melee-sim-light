@@ -95,6 +95,26 @@ fighter is awake, including her death animation, but not while she is eliminated
 until the leader's Rebirth. Otherwise, and for every other character, it is
 zeroed.
 
+`stored_charge[k]` is the charge the player in `slots[k]` keeps between moves,
+as the game counts it. Slippi does not record it. It is `0` for every other
+character, for unused slots and while the player is absent.
+
+| character | move | counts | range |
+| --- | --- | --- | --- |
+| Donkey Kong | Giant Punch | arm swings | `0..10`, `10` is full |
+| Samus | Charge Shot | charge steps | `0..7`, `7` is full |
+| Mewtwo | Shadow Ball | charge cycles | `0..7`, `7` is full |
+| Sheik | Needle Storm | needles in hand | `0..6`, `1` as the move starts |
+| Mr. Game & Watch | Oil Panic | shots caught | `0..3`, `3` is full |
+| Kirby | the copied Giant Punch, Charge Shot, Shadow Ball or Needle Storm | as the copied move | as the copied move |
+
+The count rises while the move charges, stays through other actions and
+through hits taken outside the move, and returns to `0` when the move uses it
+(Sheik's needles leave one at a time). A hit during the charge clears it,
+except a full Shadow Ball. A KO clears it by the respawn, except Oil Panic's
+count, which the game keeps. Kirby's goes with the hat. The copied ability
+itself is not in the observation.
+
 Top-level fields:
 
 | field | type | values / range | shape |
@@ -109,6 +129,7 @@ Top-level fields:
 | `slots` | `MslObservationPlayer` | viewpoint-relative players | `[4]` |
 | `items` | `MslItem` | active/inactive item slots | `[15]` |
 | `followers` | `MslObservationPlayer` | follower of each slot's player | `[4]` |
+| `stored_charge` | `uint8_t` | charge kept between moves by each slot's player | `[4]` |
 
 `MslObservationPlayer`:
 

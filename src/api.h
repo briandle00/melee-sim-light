@@ -227,6 +227,11 @@ typedef struct MslObservation {
   // slots[k], present only while Slippi would record a follower row for her
   // (awake, including her death animation; not while asleep before Rebirth).
   MslObservationPlayer followers[MSL_MAX_PLAYERS];
+  // The charge a fighter keeps between moves, as the game counts it:
+  // stored_charge[k] belongs to the player in slots[k]. API.md lists each
+  // character's unit and range; 0 for every other character and while the
+  // player is absent. Slippi does not record it.
+  uint8_t stored_charge[MSL_MAX_PLAYERS];
 } MslObservation;
 
 typedef struct MslTerminal {
