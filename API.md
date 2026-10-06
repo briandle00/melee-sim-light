@@ -117,6 +117,12 @@ through hits taken outside the move, and returns to `0` when the move uses it
 except a full Shadow Ball. A KO clears it by the respawn, except Oil Panic's
 count, which the game keeps. Kirby's goes with the hat.
 
+The values are the game's own variables, so they show the game's quirks as it
+has them (NTSC 1.02; PAL's changes are not modeled). A hit also clears the
+count when it lands during another move that installs the same damage
+callback: Donkey Kong's and Samus's up specials, Sheik's chain while it is
+out, and Mewtwo's Disable once its spark is out (a full Shadow Ball is kept).
+
 `stored[k].copied_char` is Kirby's copied ability: the `MSL_CHARACTER_*` whose
 neutral special he has, in the id space of `char_id`, so it compares directly
 with another slot's `char_id`. It is `MSL_COPIED_NONE` (`255`) for Kirby
