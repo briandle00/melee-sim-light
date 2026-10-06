@@ -91,8 +91,8 @@ def test_melee_core_aggregate_filters_pending_characters_without_losing_inventor
     )
 
     assert suite.name == "melee_core_aggregate"
-    assert len(suite.replays) == 512
-    assert len(cases) == 78
+    assert len(suite.replays) == 514
+    assert len(cases) == 79
     assert all("Peach" not in case.characters for case in cases)
 
 

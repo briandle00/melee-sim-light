@@ -46,13 +46,17 @@ def test_capture_rules_apply_independently_of_exclusion_identity(properties_only
     assert reason in admission.capture_issues(game, raw)
 
 
-def test_chain_audio_residue_does_not_exclude_a_capture():
-    game, raw = read_game("replays/validation/sheik/PaleMajorEchidna.slpz")
+@pytest.mark.parametrize("replay,has_residue", [
+    ("sheik/PaleMajorEchidna.slpz", False),
+    ("bowser/MildMurkyNewt.slpz", True),
+])
+def test_chain_audio_residue_does_not_exclude_a_capture(replay, has_residue):
+    game, raw = read_game("replays/validation/" + replay)
     items = game.frames.field("item").values
     selected = ((items.field("type").to_numpy() == 97) &
                 (items.field("state").to_numpy() < 3))
     assert np.any(selected)
-    assert np.all(items.field("misc").field("3").to_numpy()[selected] == 0)
+    assert bool(np.any(items.field("misc").field("3").to_numpy()[selected] != 0)) == has_residue
     assert admission.capture_issues(game, raw) == []
 
 
