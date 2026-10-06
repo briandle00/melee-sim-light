@@ -49,6 +49,8 @@ static const MslCoreInput msl_test_shield_b = {
 };
 static const MslCoreInput msl_test_down_b = { { { PAD_BUTTON_B, 0, -80 } } };
 static const MslCoreInput msl_test_taunt = { { { PAD_BUTTON_UP } } };
+static const MslCoreInput msl_test_up_b = { { { PAD_BUTTON_B, 0, 80 } } };
+static const MslCoreInput msl_test_side_b = { { { PAD_BUTTON_B, 80, 0 } } };
 // The value observed for port 0 after the last frame.
 static int msl_test_charge;
 // Its two gauges, and what a player who keeps nothing reads.
@@ -323,6 +325,61 @@ static int msl_test_hit_during_wind_up(void)
     MSL_TEST_CHECK(fp->motion_id == ftDk_MS_SpecialNLoop);
     MSL_TEST_CHECK(msl_test_laser(&msl_test_neutral, 3) == 0);
     MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, 0) == 0);
+    return 0;
+}
+
+// A count stored by one move is also lost to a hit taken during another move
+// of the same fighter, where that move installs the damage callback that
+// clears it. The best known case is NTSC Melee's Donkey Kong, who loses his
+// Giant Punch when he is hit out of his up special: ftDk_SpecialHi.c sets
+// take_dmg_cb to ftDk_Init_8010D774, which clears the count. Samus's up
+// special and Sheik's chain do the same to theirs, and Mewtwo's Disable to a
+// Shadow Ball that is not full. The observation shows it because it reads the
+// game's variable: `stored` up to the hit, `after` from the frame it lands.
+static int msl_test_hit_during_other_move(FighterKind kind, int full, const MslCoreInput* move,
+                                          const MslCoreInput* held, int motion, int after)
+{
+    const MslCoreInput* charge = kind == FTKIND_SEAK ? &msl_test_b : &msl_test_neutral;
+    const MslCoreInput* shield = kind == FTKIND_SEAK ? &msl_test_shield_b : &msl_test_shield;
+    Fighter* fp;
+    Vec3 pos;
+    float percent;
+    int stored = full ? full : 2, hit = 0;
+    MSL_TEST_CHECK(msl_test_setup_in_range(kind, MSL_TEST_FALCO) == 0);
+    fp = msl_test_fighter(0);
+    MSL_TEST_CHECK(msl_test_frame(&msl_test_b) == 0);
+    if (kind == FTKIND_DONKEY && !full) {
+        // The shield is taken at the top of the next swing, which counts.
+        MSL_TEST_CHECK(msl_test_rise(charge, 1, 300) == 0);
+        MSL_TEST_CHECK(msl_test_hold(shield, 1, 1) == 0);
+        MSL_TEST_CHECK(msl_test_rise(charge, 2, 60) == 0);
+    } else {
+        MSL_TEST_CHECK(msl_test_rise(charge, stored, 900) == 0);
+        MSL_TEST_CHECK(msl_test_hold(shield, 1, stored) == 0);
+    }
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 200, stored) == 0);
+
+    // Into the other move, to the state that installs the callback (for
+    // Mewtwo, once Disable's spark is out); then a laser down on the head.
+    percent = fp->dmg.x1830_percent;
+    MSL_TEST_CHECK(msl_test_hold(move, 1, stored) == 0);
+    for (unsigned i = 0; (int) fp->motion_id != motion ||
+                         (kind == FTKIND_MEWTWO && fp->fv.mt.x222C_disableGObj == NULL); ++i) {
+        MSL_TEST_CHECK(i < 60);
+        MSL_TEST_CHECK(msl_test_hold(held, 1, stored) == 0);
+    }
+    pos = (Vec3) { fp->cur_pos.x, fp->cur_pos.y + 60, 0 };
+    it_8029C6A4(-1.57079632679489661923F, 4, msl_test_match.fighters[1], &pos,
+                It_Kind_Falco_Laser);
+    for (unsigned i = 0; !hit; ++i) {
+        int in_move = (int) fp->motion_id == motion;
+        MSL_TEST_CHECK(i < 40);
+        MSL_TEST_CHECK(msl_test_frame(held) == 0);
+        hit = fp->dmg.x1830_percent > percent;
+        // The hit lands while the other move is still going.
+        MSL_TEST_CHECK(msl_test_charge == (hit ? after : stored) && in_move);
+    }
+    MSL_TEST_CHECK(msl_test_until(&msl_test_neutral, ftCo_MS_Wait, 300, after) == 0);
     return 0;
 }
 
@@ -878,6 +935,20 @@ int main(int argc, char** argv)
              msl_test_hit_during_charge(FTKIND_SAMUS) ||
              msl_test_hit_during_charge(FTKIND_SEAK) ||
              msl_test_hit_during_charge(FTKIND_MEWTWO) ||
+             msl_test_hit_during_other_move(FTKIND_DONKEY, 0, &msl_test_up_b, &msl_test_neutral,
+                                            ftDk_MS_SpecialHi, 0) ||
+             msl_test_hit_during_other_move(FTKIND_DONKEY, 10, &msl_test_up_b, &msl_test_neutral,
+                                            ftDk_MS_SpecialHi, 0) ||
+             msl_test_hit_during_other_move(FTKIND_SAMUS, 0, &msl_test_up_b, &msl_test_neutral,
+                                            ftSs_MS_SpecialHi, 0) ||
+             msl_test_hit_during_other_move(FTKIND_SAMUS, 7, &msl_test_up_b, &msl_test_neutral,
+                                            ftSs_MS_SpecialHi, 0) ||
+             msl_test_hit_during_other_move(FTKIND_SEAK, 0, &msl_test_side_b, &msl_test_b,
+                                            ftSk_MS_SpecialS, 0) ||
+             msl_test_hit_during_other_move(FTKIND_MEWTWO, 0, &msl_test_down_b, &msl_test_neutral,
+                                            ftMt_MS_SpecialLw, 0) ||
+             msl_test_hit_during_other_move(FTKIND_MEWTWO, 7, &msl_test_down_b, &msl_test_neutral,
+                                            ftMt_MS_SpecialLw, 7) ||
              msl_test_charge_shot() || msl_test_needles() ||
              msl_test_shadow_ball() || msl_test_oil_panic_damage() ||
              msl_test_absent_after_last_stock() ||
