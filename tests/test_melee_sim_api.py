@@ -58,7 +58,9 @@ def test_followers_pair_with_their_leaders_in_teams(monkeypatch, viewpoint: int)
 
 def _nothing_stored(stored) -> bool:
     return (not stored["charge"].any() and not stored["gauge"].any()
-            and np.all(stored["copied_char"] == 255))
+            and np.all(stored["copied_char"] == 255)
+            and not stored["spent"].any() and not stored["wall_jumps"].any()
+            and np.all(stored["judge"] == 255) and not stored["_pad0"].any())
 
 
 @pytest.mark.parametrize("viewpoint", range(4))
@@ -206,6 +208,93 @@ def test_kirby_copied_ability_names_the_stored_move(monkeypatch, viewpoint: int)
         assert _nothing_stored(env.current_frame[0]["stored"][slots.index(1)])
 
 
+@pytest.mark.parametrize("viewpoint", range(2))
+def test_judge_history_is_the_two_numbers_the_next_roll_avoids(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    with msl.EnvBatch(batch_size=1, length=64) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=(msl.PlayerConfig(msl.Character.GAMEWATCH),
+                     msl.PlayerConfig(msl.Character.FOX)),
+            viewpoint_player=viewpoint)])
+        env.reset_all()
+        pair, rolls = (1, 0), 0
+        for tick in range(2000):
+            if env.t == env.length:
+                env.reset_cursor()
+            action = env.controller_action_view[env.t]["players"]
+            # A Judge every 100 frames.
+            pressed = tick >= 150 and tick % 100 == 0
+            action["main_stick_x"][0, 0] = 1.0 if pressed else 0.5
+            action["buttons"]["B"][0, 0] = pressed
+            env.step()
+            row = env.current_frame[0]
+            slots = list(row["slots"]["source_player"])
+            now = tuple(int(number) for number in row["stored"][slots.index(0)]["judge"])
+            if now != pair:
+                # The new number is neither of the two before it, and the
+                # newer of those is now the older.
+                assert pressed and now[1] == pair[0] and now[0] not in pair and 0 <= now[0] < 9
+                pair, rolls = now, rolls + 1
+            fox = row["stored"][slots.index(1)]
+            assert tuple(fox["judge"]) == (255, 255) and fox["spent"] == 0
+        assert rolls == len(range(200, 2000, 100))
+
+
+@pytest.mark.parametrize("viewpoint", range(4))
+def test_spent_bits_stay_with_their_players_in_teams(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    peach, marth, mario, luigi = (msl.Character.PEACH, msl.Character.MARTH,
+                                  msl.Character.MARIO, msl.Character.LUIGI)
+    # Side special lift, down special lift, float.
+    side, down, floated = 2, 4, 8
+    with msl.EnvBatch(batch_size=1, length=64, num_players=4) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=tuple(msl.PlayerConfig(c, team_id=t)
+                          for c, t in ((peach, 0), (marth, 0), (mario, 1), (luigi, 1))),
+            is_teams=True, viewpoint_player=viewpoint)])
+        env.reset_all()
+        assert _nothing_stored(env.current_frame["stored"])
+        seen = {c: set() for c in (peach, marth, mario, luigi)}
+        longest = 0.0
+        for tick in range(600):
+            if env.t == env.length:
+                env.reset_cursor()
+            action = env.controller_action_view[env.t]["players"]
+            action["buttons"]["X"][0] = 0
+            action["buttons"]["B"][0] = 0
+            action["main_stick_x"][0] = 0.5
+            action["main_stick_y"][0] = 0.5
+            # Everyone jumps. Peach keeps the button down and floats; at the
+            # top Marth and Mario use the side special, Luigi the down one.
+            action["buttons"]["X"][0, 0] = 150 <= tick < 300
+            action["buttons"]["X"][0, 1:] = 150 <= tick < 156
+            if tick == 172:
+                action["buttons"]["B"][0, 1:] = 1
+                action["main_stick_x"][0, 1:3] = 1.0
+                action["main_stick_y"][0, 3] = 0.0
+            if 172 < tick < 260:
+                action["buttons"]["B"][0, 3] = tick % 2
+            env.step()
+            row = env.current_frame[0]
+            order = row["slots"]["source_player"]
+            assert sorted(order) == [0, 1, 2, 3] and order[0] == viewpoint
+            assert not row["stored"]["wall_jumps"].any() and np.all(row["stored"]["judge"] == 255)
+            for char, stored in zip(row["slots"]["char_id"], row["stored"]):
+                seen[char].add(int(stored["spent"]))
+                if char == peach:
+                    # The float's frames left, only while she floats.
+                    assert (stored["gauge"][0] > 0) <= (stored["spent"] == floated)
+                    longest = max(longest, float(stored["gauge"][0]))
+                else:
+                    assert stored["gauge"][0] == 0
+        assert seen[peach] == {0, floated} and longest > 100
+        assert seen[marth] == {0, side} and seen[mario] == {0, side}
+        assert seen[luigi] == {0, down}
+        # Back on the ground: only Luigi's is still spent.
+        final = dict(zip(row["slots"]["char_id"], row["stored"]["spent"]))
+        assert final == {peach: 0, marth: 0, mario: 0, luigi: down}
+
+
 def test_peach_pull_throw_reserves_runtime_items(monkeypatch) -> None:
     monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
     with msl.EnvBatch(batch_size=64, length=128, num_players=4) as env:
@@ -234,9 +323,13 @@ def test_python_wire_layout_matches_public_c_api() -> None:
     assert dtypes.controller_input_dtype().itemsize == 112
     assert dtypes.input_dtype().itemsize == 32
     assert dtypes.match_config_dtype().itemsize == 52
-    assert dtypes.gamestate_dtype().itemsize == 1256
-    assert dtypes.gamestate_stored_dtype().itemsize == 12
+    assert dtypes.gamestate_dtype().itemsize == 1272
+    assert dtypes.gamestate_stored_dtype().itemsize == 16
     assert dtypes.gamestate_stored_dtype().fields["copied_char"][1] == 1
+    assert dtypes.gamestate_stored_dtype().fields["spent"][1] == 2
+    assert dtypes.gamestate_stored_dtype().fields["wall_jumps"][1] == 3
+    assert dtypes.gamestate_stored_dtype().fields["judge"][1] == 4
+    assert dtypes.gamestate_stored_dtype().fields["gauge"][1] == 8
     assert dtypes.gamestate_stage_dtype().itemsize == 24
     assert dtypes.gamestate_stage_dtype().fields["whispy"][1] == 20
     assert dtypes.terminal_dtype().itemsize == 16
