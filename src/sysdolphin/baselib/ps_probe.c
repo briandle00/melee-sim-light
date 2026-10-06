@@ -50,6 +50,11 @@
 //   ["e", frame, uid]                          a generator ended by its owner
 //   ["x", frame]                               an owner's effects ended (the
 //                                              list was walked)
+//   ["q", frame, list, uid, x, y, z, vx, vy, vz, srt (0 or 1), tx, ty, tz,
+//    rx, ry, rz, sx, sy, sz]
+//                                              slim, every 60th frame: a
+//                                              particle after the update, in
+//                                              its list's order
 //   ["a", frame, uid, command, count, genLife, particles, type, kind]
 //                                              a generator after the update,
 //                                              in the list's order
@@ -348,6 +353,25 @@ static void pm_frame(int frame);
 static void pm_owner_ended(HSD_GObj* owner, int frame);
 static void pm_reset(void);
 
+// A diagnostic (MSL_PARTICLE_PROBE_FLUSH): the process heap checked after a
+// step of the probe's, the first bad one written.
+static int probe_checks;
+static int probe_heap_bad;
+static void probe_heap_check(const char* where)
+{
+#ifdef _WIN32
+    if (probe_checks && !probe_heap_bad && probe_out != NULL &&
+        !HeapValidate(GetProcessHeap(), 0, NULL))
+    {
+        probe_heap_bad = 1;
+        fprintf(probe_out, "[\"heap\",%d,\"%s\"]\n", probe_frame_no, where);
+        fflush(probe_out);
+    }
+#else
+    (void) where;
+#endif
+}
+
 int msl_particle_probe_on(void)
 {
     return probe_out != NULL;
@@ -372,6 +396,11 @@ void msl_particle_probe_begin(void)
 #ifdef _WIN32
     AddVectoredExceptionHandler(1, probe_crashed);
 #endif
+    probe_checks = getenv("MSL_PARTICLE_PROBE_FLUSH") != NULL;
+    probe_heap_bad = 0;
+    if (probe_checks) {
+        setvbuf(probe_out, NULL, _IONBF, 0);
+    }
     // efLib_Init's
     hsd_8039D354(0);
     hsd_80398A08(0);
@@ -668,6 +697,7 @@ void msl_particle_probe_placed(void* made, int frame, s32 gfx_id, int how,
             (unsigned) gen->kind, gen->pos.x, gen->pos.y, gen->pos.z);
     probe_srt(gen->appsrt);
     fprintf(probe_out, ",%.9g]\n", gen->count);
+    probe_heap_check("generator made");
 }
 
 // hsd_8039D688 over a joint tree (efLib_DestroyAll's HSD_JObjWalkTree)
@@ -712,6 +742,7 @@ void msl_particle_probe_owner_ended(HSD_GObj* owner, int frame)
     // (the walk itself: where the next new generator goes depends on it)
     fprintf(probe_out, "[\"x\",%d]\n", frame);
     probe_sweep();
+    probe_heap_check("owner ended");
 }
 
 static unsigned probe_rgba(GXColor c)
@@ -740,7 +771,9 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
     saved_real = *seed_ptr;
     *seed_ptr = state;
     pp_draw_phase = 1;
+    probe_heap_check("gameplay");
     pm_frame(frame);
+    probe_heap_check("models stepped");
     state = *seed_ptr;
     *seed_ptr = saved_real;
     // (the ones waiting to be placed from their joints, as the update's
@@ -808,6 +841,7 @@ void msl_particle_probe_frame(int frame, u32 state, int skipped)
     hsd_8039EE24(0x10000);
     pp_draw_phase = 0;
     *seed_ptr = saved_real;
+    probe_heap_check("particles updated");
     if (pp_draw_on) {
         int d;
         fprintf(probe_out, "[\"D\",%d,%d", frame, pp_draw_lost);
@@ -856,6 +890,20 @@ void msl_particle_probe_frame_written(int frame)
             fprintf(probe_out, "[\"w\",%d,%d,%d,%.9g,%.9g,%.9g", frame,
                     probe_uid(gen), idx, gen->pos.x, gen->pos.y, gen->pos.z);
             probe_srt(gen->appsrt);
+            fprintf(probe_out, "]\n");
+        }
+    }
+    // (slim, a sampled frame: every particle's place and motion, and its
+    // transform's place when it is under one, in the lists' order - the place
+    // check's second half: a particle is where its generator's joint, turned
+    // as the joint is turned, sent it)
+    for (list = 0; list < 16 && probe_slim && frame % 60 == 0; ++list) {
+        const HSD_Particle* pp;
+        for (pp = hsd_804D0908[list]; pp != NULL; pp = pp->next) {
+            fprintf(probe_out, "[\"q\",%d,%d,%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g", frame,
+                    list, probe_uid(pp->gen), pp->pos.x, pp->pos.y, pp->pos.z,
+                    pp->vel.x, pp->vel.y, pp->vel.z);
+            probe_srt(pp->appsrt);
             fprintf(probe_out, "]\n");
         }
     }
@@ -1398,6 +1446,7 @@ static void probe_line(HSD_Generator* gen, int frame, s32 id, int how, u32 state
             gen->pos.z);
     probe_srt(gen->appsrt);
     fprintf(probe_out, ",%.9g]\n", gen->count);
+    probe_heap_check("generator made");
 }
 
 void msl_particle_probe_stage(int how, s32 id, int bank, const Vec3* pos,
@@ -1563,6 +1612,7 @@ void msl_particle_probe_stage_end(int how, HSD_JObj* jobj)
     }
     fprintf(probe_out, "[\"x\",%d]\n", frame);
     probe_sweep();
+    probe_heap_check("owner ended");
 }
 
 void msl_particle_probe_joint_gone(HSD_JObj* jobj)

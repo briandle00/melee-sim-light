@@ -41,6 +41,7 @@ int msl_viewer_track_on;
 enum {
     TRACK_STAGE_BATTLEFIELD = 31,
     TRACK_STAGE_FINAL_DESTINATION = 32,
+    TRACK_STAGE_FOUNTAIN = 2,
 };
 
 static FILE* track_out;
@@ -348,27 +349,63 @@ static int stage_joint_walk(HSD_JObj* at, HSD_JObj* want, int* count)
     return 0;
 }
 
+static int stage_joint_in(HSD_GObj* gobj, HSD_JObj* jobj)
+{
+    HSD_JObj* root = gobj != NULL ? gobj->hsd_obj : NULL;
+    int count = 1;
+    if (root == NULL) {
+        return -1;
+    }
+    if (root == jobj) {
+        return 0;
+    }
+    return stage_joint_walk(root->child, jobj, &count) ? count : -1;
+}
+
 static void stage_joint(HSD_JObj* jobj, int* map, int* joint)
 {
+    MslCoreMatch* match = msl_core_try_active_match();
+    HSD_GObj* gobj;
+    int others[64];
     int i;
     *map = -1;
     *joint = -1;
     for (i = 0; jobj != NULL && i < 64; ++i) {
-        HSD_GObj* gobj = stage_info.x180[i];
-        HSD_JObj* root = gobj != NULL ? gobj->hsd_obj : NULL;
-        int count = 0;
-        if (root == NULL) {
-            continue;
-        }
-        if (root == jobj) {
+        int at = stage_joint_in(stage_info.x180[i], jobj);
+        if (at >= 0) {
             *map = i;
-            *joint = 0;
+            *joint = at;
             return;
         }
-        count = 1;
-        if (stage_joint_walk(root->child, jobj, &count)) {
-            *map = i;
-            *joint = count;
+    }
+    // A stage object the stage's table does not hold: the table keeps one
+    // object a number, the last made, and a stage's code can make more
+    // (Fountain of Dreams' two water columns are both number 4: the table has
+    // the right one's, made second). Such an object is named by its number
+    // plus 1000 for each one of that number made before it and still there,
+    // itself counted: 1004 is the first column.
+    // refs/melee/src/melee/gr/{ground.c::Ground_801C14D0,grizumi.c::grIzumi_801CCBDC}
+    if (jobj == NULL || match == NULL || match->gobj.entities == NULL) {
+        return;
+    }
+    memset(others, 0, sizeof(others));
+    for (gobj = (HSD_GObj*) match->gobj.entities->x14; gobj != NULL; gobj = gobj->next) {
+        Ground* gp;
+        int id;
+        int at;
+        if (gobj->classifier != HSD_GOBJ_CLASS_STAGE || gobj->user_data == NULL) {
+            continue;
+        }
+        gp = GET_GROUND(gobj);
+        id = (int) gp->map_id;
+        if (id < 0 || id >= 64 || stage_info.x180[id] == gobj) {
+            continue;
+        }
+        ++others[id];
+        at = stage_joint_in(gobj, jobj);
+        if (at >= 0) {
+            *map = id + 1000 * others[id];
+            *joint = at;
             return;
         }
     }
@@ -817,6 +854,34 @@ static void track_stage(int frame, const MslCoreMatch* match)
                     }
                 }
             }
+        }
+    }
+
+    // Fountain of Dreams: how high each platform stands, left then right -
+    // each water column's own height (grIzumi_801CC358's xD0: the file's
+    // units, what its joint is stretched by and the platform's joint set to).
+    // A replay says it from Slippi 3.18 on; the game's own is here for all.
+    // refs/melee/src/melee/gr/grizumi.c::{grIzumi_801CCBDC,grIzumi_801CC358}
+    if (match->config.stage_id == TRACK_STAGE_FOUNTAIN && match->gobj.entities != NULL &&
+        !msl_viewer_track_plain())
+    {
+        float h[2] = { 0.0F, 0.0F };
+        int have = 0;
+        HSD_GObj* gobj;
+        for (gobj = (HSD_GObj*) match->gobj.entities->x14; gobj != NULL; gobj = gobj->next) {
+            Ground* gp;
+            if (gobj->classifier != HSD_GOBJ_CLASS_STAGE || gobj->user_data == NULL) {
+                continue;
+            }
+            gp = GET_GROUND(gobj);
+            if ((int) gp->map_id == 4 && (gp->gv.izumi3.xC8 == 0 || gp->gv.izumi3.xC8 == 1)) {
+                h[gp->gv.izumi3.xC8] = gp->gv.izumi3.xD0;
+                have |= 1 << gp->gv.izumi3.xC8;
+            }
+        }
+        if (have == 3) {
+            snprintf(value, sizeof(value), ",%.6g,%.6g", h[0], h[1]);
+            emit_state(frame, "\"fod\"", value);
         }
     }
 
