@@ -250,8 +250,8 @@ static void inlineA0(Fighter_GObj* gobj, float f1, float f2)
 {
     {
         Fighter* fp = gobj->user_data;
-        efAsync_Spawn(gobj, fp->x60C, 4U, 0x406U, fp->parts[FtPart_TopN].joint,
-                      f1, fp, f2);
+        efAsync_Spawn(gobj, &fp->x60C, 4U, 0x406U,
+                      fp->parts[FtPart_TopN].joint, f1, fp, f2);
     }
 }
 
