@@ -179,6 +179,61 @@ static void write_fighter(const MslCoreMatch* match, const Fighter* fp,
     out[offsetof(MslCoreObservationPlayer, invulnerable)] = hurtbox != 0;
 }
 
+// The charge a fighter keeps between moves, as the game counts it. These are
+// the fighters ftData_UnkMotionStates4 gives a full-charge overlay, read from
+// the variable each of those callbacks tests; Kirby's is the one his copied
+// ability owns. Slippi records none of them, so there is no compare lane:
+// both observation builders read the fighter.
+// refs/melee/src/melee/ft/ftdata.c::ftData_UnkMotionStates4
+static uint8_t stored_charge(const MslCoreMatch* match, int player)
+{
+    const Fighter* fp = GET_FIGHTER(match->fighters[player]);
+    int charge = 0;
+
+    if (fp->x221F_b3) {
+        return 0;
+    }
+    switch (fp->kind) {
+    case FTKIND_DONKEY:
+        charge = fp->fv.dk.x222C;
+        break;
+    case FTKIND_SAMUS:
+        charge = fp->fv.ss.x2230;
+        break;
+    case FTKIND_MEWTWO:
+        charge = fp->fv.mt.x2234_shadowBallCharge;
+        break;
+    case FTKIND_SEAK:
+        charge = fp->fv.sk.x0;
+        break;
+    case FTKIND_GAMEWATCH:
+        charge = fp->fv.gw.x2238_panicCharge;
+        break;
+    case FTKIND_KIRBY:
+        // refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::ftKb_Init_UnkMotionStates4
+        switch (fp->fv.kb.hat.kind) {
+        case FTKIND_DONKEY:
+            charge = fp->fv.kb.xBC;
+            break;
+        case FTKIND_SAMUS:
+            charge = fp->fv.kb.xA8;
+            break;
+        case FTKIND_MEWTWO:
+            charge = fp->fv.kb.x9C;
+            break;
+        case FTKIND_SEAK:
+            charge = fp->fv.kb.xB4;
+            break;
+        default:
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+    return charge < 0 ? 0 : charge > UINT8_MAX ? UINT8_MAX : (uint8_t) charge;
+}
+
 // Writes the player into slots[slot] and its follower (Nana) into
 // followers[slot]. The follower follows the compare lanes' life-cycle: she is
 // absent while asleep before Rebirth.
@@ -191,6 +246,7 @@ static void write_slot(const MslCoreMatch* match, int player, uint8_t relation,
     write_fighter(match, GET_FIGHTER(match->fighters[player]),
                   match->output_pos_x[player], match->output_pos_y[player],
                   player, relation, &output->slots[slot]);
+    output->stored_charge[slot] = stored_charge(match, player);
     if (match->follower_fighters[player] == NULL) {
         return;
     }
@@ -475,6 +531,7 @@ int msl_core_match_write_observation_from_compare(
 
     viewpoint_team = source[offsetof(MslCoreCompare, team_id) +
                             viewpoint_player];
+    output->stored_charge[slot] = stored_charge(match, viewpoint_player);
     write_follower_from_compare(compare, viewpoint_player, 0,
                                 &output->followers[slot]);
     write_player_from_compare(compare, viewpoint_player, 0,
@@ -485,6 +542,7 @@ int msl_core_match_write_observation_from_compare(
                 source[offsetof(MslCoreCompare, team_id) + player] ==
                     viewpoint_team)
             {
+                output->stored_charge[slot] = stored_charge(match, player);
                 write_follower_from_compare(compare, player, 1,
                                             &output->followers[slot]);
                 write_player_from_compare(compare, player, 1,
@@ -498,6 +556,7 @@ int msl_core_match_write_observation_from_compare(
              source[offsetof(MslCoreCompare, team_id) + player] !=
                  viewpoint_team))
         {
+            output->stored_charge[slot] = stored_charge(match, player);
             write_follower_from_compare(compare, player, 2,
                                         &output->followers[slot]);
             write_player_from_compare(compare, player, 2,
