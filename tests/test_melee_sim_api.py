@@ -56,6 +56,47 @@ def test_followers_pair_with_their_leaders_in_teams(monkeypatch, viewpoint: int)
                 assert not follower.tobytes().strip(b"\0")
 
 
+@pytest.mark.parametrize("viewpoint", range(4))
+def test_stored_charges_stay_with_their_players_in_teams(monkeypatch, viewpoint: int) -> None:
+    monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
+    dk, fox, sheik, samus = (msl.Character.DONKEY_KONG, msl.Character.FOX,
+                             msl.Character.SHEIK, msl.Character.SAMUS)
+    # A full Giant Punch, no charge, six needles, a full Charge Shot.
+    full = {dk: 10, fox: 0, sheik: 6, samus: 7}
+    with msl.EnvBatch(batch_size=1, length=64, num_players=4) as env:
+        env.configure_matches([msl.MatchConfig(
+            players=tuple(msl.PlayerConfig(c, team_id=t)
+                          for c, t in ((dk, 0), (fox, 0), (sheik, 1), (samus, 1))),
+            is_teams=True, viewpoint_player=viewpoint)])
+        env.reset_all()
+        assert not env.current_frame["stored_charge"].any()
+        for tick in range(700):
+            if env.t == env.length:
+                env.reset_cursor()
+            pressed = env.controller_action_view[env.t]["players"]["buttons"]["B"]
+            pressed[:] = 0
+            # Donkey Kong and Samus start the move and it charges by itself;
+            # Sheik holds the button. Fox stands still.
+            pressed[0, 0] = pressed[0, 3] = tick == 150
+            pressed[0, 2] = tick >= 150
+            env.step()
+            row = env.current_frame[0]
+            order = row["slots"]["source_player"]
+            assert sorted(order) == [0, 1, 2, 3] and order[0] == viewpoint
+            charges = dict(zip(row["slots"]["char_id"], row["stored_charge"]))
+            assert all(charges[c] <= full[c] for c in full), (tick, charges)
+        assert charges == full
+        # A reset clears them; the restored match publishes them again.
+        published = env.current_frame.copy()
+        snapshot = env.save(0)
+        env.reset_matches([0])
+        assert not env.current_frame["stored_charge"].any()
+        env.restore(0, snapshot)
+        env.observe()
+        np.testing.assert_array_equal(env.current_frame["stored_charge"],
+                                      published["stored_charge"])
+
+
 def test_peach_pull_throw_reserves_runtime_items(monkeypatch) -> None:
     monkeypatch.setenv("MSL_DATA_DIR", str(ROOT / "data"))
     with msl.EnvBatch(batch_size=64, length=128, num_players=4) as env:
@@ -84,7 +125,7 @@ def test_python_wire_layout_matches_public_c_api() -> None:
     assert dtypes.controller_input_dtype().itemsize == 112
     assert dtypes.input_dtype().itemsize == 32
     assert dtypes.match_config_dtype().itemsize == 52
-    assert dtypes.gamestate_dtype().itemsize == 1208
+    assert dtypes.gamestate_dtype().itemsize == 1212
     assert dtypes.gamestate_stage_dtype().itemsize == 24
     assert dtypes.gamestate_stage_dtype().fields["whispy"][1] == 20
     assert dtypes.terminal_dtype().itemsize == 16
