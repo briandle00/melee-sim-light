@@ -1508,6 +1508,28 @@ static void* translate_fighter_common_public(MslNativeArchive* context,
                                                element_types[i]);
         }
     }
+    // Pointer 9 (Fighter_804D6530, the shake of a fighter that is hit) is
+    // three pairs of a table and that table's length: air, ground, electric.
+    // The source reads it as six pointer-sized slots. A length is a plain
+    // word with no relocation, so as a pointer it came out null:
+    // ftCo_80090594 stored a length of 0 and Fighter_8006A360 put the
+    // shake's index back to 0 every frame. The lengths are the file's own
+    // words, kept in the odd slots where the source reads them.
+    // refs/melee/src/melee/ft/chara/ftCommon/ftCo_DamageFall.c::{
+    //   ftCo_80090594,ftCo_80090690}
+    // refs/melee/src/melee/ft/fighter.c::Fighter_8006A360
+    {
+        uint32_t target = raw_pointer(context, offset + 9 * 4);
+        void** pairs = result[9];
+        if (target != UINT32_MAX && pairs != NULL &&
+            next_boundary(context, target) - target >= 24)
+        {
+            for (i = 0; i < 3; ++i) {
+                pairs[i * 2 + 1] = (void*) (uintptr_t) read_be32(
+                    context->data + target + (i * 2 + 1) * 4);
+            }
+        }
+    }
     return result;
 }
 
