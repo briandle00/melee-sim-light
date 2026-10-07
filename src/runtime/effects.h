@@ -63,5 +63,9 @@ void msl_effect_match_init(const MslCoreEffectData* data,
                            MslCoreEffectState* state);
 void msl_effect_projection_bind(const MslCoreEffectData* data,
                                 MslCoreEffectState* state);
+// Checked-out nodes; must be zero after a complete frame.
+u32 msl_effect_queue_used(void);
+// Print checked-out nodes' spawn kinds and effect ids.
+void msl_effect_queue_dump(void);
 
 #endif
