@@ -3,7 +3,7 @@
  "ucf_enabled": true,
  "ucf_cardinals_1_0_enabled": true,
  "replays": [
-    {
+  {
    "replay": "replays/validation/icies/auto-falco-2025-10_Game_20251013T073200.slpz",
    "ports": [
     1,
@@ -15,7 +15,7 @@
     "2": "Falco"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/auto-fox-2025-02_Game_20250215T021224.slpz",
    "ports": [
     1,
@@ -27,7 +27,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/auto-fox-2025-02_Game_20250224T030855.slpz",
    "ports": [
     1,
@@ -39,7 +39,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/auto-fox-2025-07_Game_20250717T133210.slpz",
    "ports": [
     1,
@@ -51,7 +51,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/auto-sheik-2026-05_Game_20260512T230931.slpz",
    "ports": [
     1,
@@ -63,7 +63,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/bf-dk-2025-12_Game_20251222T224142.slpz",
    "ports": [
     1,
@@ -75,7 +75,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/bf-falco-2025-03_Game_20250329T000322.slpz",
    "ports": [
     1,
@@ -87,7 +87,7 @@
     "2": "Falco"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/bf-fox-2025-03_Game_20250309T224836.slpz",
    "ports": [
     1,
@@ -99,7 +99,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/bf-marth-2025-03_Game_20250321T234954.slpz",
    "ports": [
     1,
@@ -111,7 +111,7 @@
     "2": "Marth"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/dl-fox-2025-05_Game_20250504T134832.slpz",
    "ports": [
     1,
@@ -123,7 +123,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/dl-fox-2025-08_Game_20250831T204147.slpz",
    "ports": [
     1,
@@ -135,7 +135,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/dl-fox-2025-09_Game_20250911T223118.slpz",
    "ports": [
     1,
@@ -147,7 +147,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/dl-marth-2025-04_Game_20250417T142520.slpz",
    "ports": [
     1,
@@ -159,7 +159,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/fd-falco-2025-02_Game_20250213T164734.slpz",
    "ports": [
     1,
@@ -171,7 +171,7 @@
     "2": "Falco"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/fd-falco-2025-08_Game_20250830T182914.slpz",
    "ports": [
     1,
@@ -183,7 +183,7 @@
     "2": "Falco"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/fd-peach-2025-05_Game_20250531T123551.slpz",
    "ports": [
     1,
@@ -195,7 +195,7 @@
     "2": "Peach"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/fod-fox-2025-03_Game_20250326T160358.slpz",
    "ports": [
     1,
@@ -207,7 +207,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/fod-sheik-2025-02_Game_20250205T180543.slpz",
    "ports": [
     1,
@@ -219,7 +219,7 @@
     "2": "Sheik"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/gm-peach-2026-03_Game_20260329T142118.slpz",
    "ports": [
     1,
@@ -231,7 +231,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/ics-ditto-d18-2025-05_Game_20250518T163949.slpz",
    "ports": [
     1,
@@ -243,7 +243,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/master-fox-2026-03_Game_20260315T195912.slpz",
    "ports": [
     1,
@@ -255,7 +255,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/medium-fox-2025-08_Game_20250831T105254.slpz",
    "ports": [
     1,
@@ -267,7 +267,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/medium-marth-2025-09_Game_20250919T221733.slpz",
    "ports": [
     1,
@@ -279,7 +279,7 @@
     "2": "Marth"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/medium-sheik-2026-01_Game_20260131T001158.slpz",
    "ports": [
     1,
@@ -291,7 +291,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/ps-fox-2025-08_Game_20250801T213237.slpz",
    "ports": [
     1,
@@ -303,7 +303,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/ys-fox-2025-06_Game_20250606T191516.slpz",
    "ports": [
     1,
@@ -315,7 +315,7 @@
     "2": "Fox"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/ys-fox-2025-07_Game_20250715T230816.slpz",
    "ports": [
     1,
@@ -327,7 +327,7 @@
     "2": "Ice Climbers"
    }
   },
-    {
+  {
    "replay": "replays/validation/icies/ys-peach-2025-02_23549_Game_20250221T133850.slpz",
    "ports": [
     1,
@@ -364,6 +364,19 @@
     "2": "Ice Climbers"
    },
    "played_on": "network"
+  },
+  {
+   "replay": "replays/validation/icies/platinum-platinum-9dc16c938bf8ed578f6d43dd.slpz",
+   "ports": [
+    1,
+    2
+   ],
+   "stage_id": 32,
+   "characters": {
+    "1": "Marth",
+    "2": "Ice Climbers"
+   },
+   "played_on": "network"
   }
-  ]
+ ]
 }
