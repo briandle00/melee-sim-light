@@ -1482,7 +1482,13 @@ static void* translate_fighter_common_public(MslNativeArchive* context,
         // refs/melee/src/melee/ft/ft_0D4D.c::ftCo_800D4FF4
         msl_dat_root_Fighter_804D6534_t,
         msl_dat_root_MslDatVec2Pointer,
-        msl_dat_root_MslDatByte,
+        // Pointers 10 and 11 are one (list, length) pair each: the shake of
+        // a held fighter that mashes and of a smash charge. Fighter_804D652C_t
+        // has Fighter_804D6528_t's layout; as bytes the pair kept the file's
+        // 32-bit words and ftCommon_InitGrab read its length past them.
+        // refs/melee/src/melee/ft/ftcommon.c::{ftCommon_InitGrab,
+        //   ftCommon_GrabMash,ftCommon_8008021C}
+        msl_dat_root_Fighter_804D6528_t,
         msl_dat_root_Fighter_804D6528_t,
         msl_dat_root_Fighter_804D6524_t,
         msl_dat_root_Fighter_804D6520_t,

@@ -6,10 +6,13 @@
 // steps dmg.x18FC through the list once a frame while the shake lasts, and
 // ftCo_80090690 gives the entry the model is shifted by. The lists and their
 // lengths are read here from the file itself and compared with what the game
-// was handed and with what each hit does.
+// was handed and with what each hit does. Pointer 10 (Fighter_804D652C) is one
+// more pair, the shake of a held fighter that mashes; only a fighter a ReDead
+// holds asks for it, so it is compared with the file and not driven.
 // refs/melee/src/melee/ft/chara/ftCommon/ftCo_DamageFall.c::{
 //   ftCo_80090594,ftCo_80090690}
 // refs/melee/src/melee/ft/fighter.c::Fighter_8006A360
+// refs/melee/src/melee/ft/ftcommon.c::{ftCommon_InitGrab,ftCommon_GrabMash}
 #include "runtime/scalar.h"
 #include "ft/fighter.h"
 #include "ft/ftcommon.h"
@@ -40,6 +43,7 @@ static MslCoreGameData msl_test_game_data;
 static MslCoreMatch msl_test_match;
 static const MslCoreInput msl_test_neutral;
 static MslTestTable msl_test_file[MSL_TEST_TABLES];
+static MslTestTable msl_test_file_held;
 static const char* const msl_test_names[MSL_TEST_TABLES] = { "air", "ground", "electric" };
 
 #define MSL_TEST_CHECK(condition) do { \
@@ -80,7 +84,8 @@ static int msl_test_read_pair(const uint8_t* data, uint32_t size, uint32_t pair,
 
 // PlCo.dat as the disc has it: a 0x20-byte header, the data section, the
 // relocation table, then the one public symbol (ftLoadCommonData), whose
-// tenth word points at the three pairs.
+// tenth word points at the three pairs and whose eleventh at the held
+// fighter's pair.
 static int msl_test_read_file(const char* data_root)
 {
     char path[1024];
@@ -107,12 +112,15 @@ static int msl_test_read_file(const char* data_root)
     for (unsigned k = 0; k < MSL_TEST_TABLES; ++k) {
         MSL_TEST_CHECK(msl_test_read_pair(data, data_size, pairs + k * 8, &msl_test_file[k]) == 0);
     }
+    MSL_TEST_CHECK(msl_test_read_pair(data, data_size, msl_test_be32(data + root + 10 * 4),
+                             &msl_test_file_held) == 0);
     free(raw);
     return 0;
 }
 
 // What the game was handed against the file: each pair's length in its odd
-// slot, as ftCo_80090594 reads it, and every entry of each list.
+// slot, as ftCo_80090594 reads it, and every entry of each list; then the
+// held fighter's pair, as ftCommon_InitGrab reads it.
 static int msl_test_loaded_tables(void)
 {
     MSL_TEST_CHECK(Fighter_804D6530 != NULL);
@@ -130,6 +138,17 @@ static int msl_test_loaded_tables(void)
         for (uint32_t i = 0; i < file->length; ++i) {
             MSL_TEST_CHECK(list[i].x == file->entries[i].x && list[i].y == file->entries[i].y);
         }
+    }
+    MSL_TEST_CHECK(Fighter_804D652C != NULL);
+    if ((uint32_t) Fighter_804D652C->x4 != msl_test_file_held.length) {
+        fprintf(stderr, "held list: the game was handed a length of %d, the file has %u\n",
+                (int) Fighter_804D652C->x4, msl_test_file_held.length);
+        return -1;
+    }
+    MSL_TEST_CHECK(Fighter_804D652C->x0 != NULL);
+    for (uint32_t i = 0; i < msl_test_file_held.length; ++i) {
+        MSL_TEST_CHECK(Fighter_804D652C->x0[i].x == msl_test_file_held.entries[i].x &&
+              Fighter_804D652C->x0[i].y == msl_test_file_held.entries[i].y);
     }
     return 0;
 }
