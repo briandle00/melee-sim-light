@@ -25,14 +25,6 @@
         "src/melee/ft/fighter.c::Fighter_procUpdate"
       ]
     },
-    "uninitialized-chain": {
-      "description": "Reject recorded Chain item 97 in its initial states before x18 is assigned, including zero-valued misc3 samples.",
-      "sources": [
-        "refs/melee/src/melee/it/items/itseakchain.c::it_802BB428",
-        "refs/melee/src/melee/it/items/itseakchain.c::it_802BC080",
-        "refs/melee/src/melee/it/items/itseakchain.c::it_802BCED4"
-      ]
-    },
     "uninitialized-transform-lcancel": {
       "description": "Reject the first publication of a previously sleeping Sheik/Zelda transform partner: its extended L-cancel byte has not been reset, even if it reads zero.",
       "sources": [
@@ -125,34 +117,6 @@
       ]
     },
     {
-      "replay": "replays/validation/bowser/MildMurkyNewt.slpz",
-      "sha256_slp": "54de97e422c1bc3297e5f449abb4fb8933d586d95be95ecd8ab703e84a34bc17",
-      "reasons": [
-        "uninitialized-chain"
-      ],
-      "evidence": "The ten raw item.misc3 rows belong to Sheik chain (kind 97) before its first dynamic-chain publication. Retail itSeakChain_Spawn reads x18 before assignment; the existing hosted constructor initializes this word to zero. The original allocator residue is 33. Native and PPC agree on all residual rows and every other field is exact. Preserve the existing deterministic constructor policy and the strict raw comparison; the later live x18 scalar is not masked.",
-      "sources": [
-        "src/melee/it/items/itseakchain.c::itSeakChain_Spawn",
-        "src/melee/it/items/itseakchain.c::it_802BC080",
-        "refs/slippi-ssbm-asm/Recording/SendItemInfo.s",
-        "https://github.com/kyhavlov/melee-sim-light/blob/8d049aba187a38b7ace9961ba2eaf3c03f5487ee/agent_docs/CORRECTNESS_COMPLETION_2026-09-08.md"
-      ]
-    },
-    {
-      "replay": "replays/validation/dk/9560_Game_20250405T084316.slpz",
-      "sha256_slp": "3ab2bac71f7c9aec95dadcdbe896d382bdeaccb54f604941c8bc616720a0a0ab",
-      "reasons": [
-        "uninitialized-chain"
-      ]
-    },
-    {
-      "replay": "replays/validation/doubles_recent/Game_20260704T012353.slpz",
-      "sha256_slp": "6886e29ef4c691349f5f4199cfff634d30c23474696afc5744ddb48b761809cd",
-      "reasons": [
-        "uninitialized-chain"
-      ]
-    },
-    {
       "replay": "replays/validation/falcon/EmotionalNaturalLemur.slpz",
       "sha256_slp": "cb9371a757528237dafa85e9c37066eb36e2db0b327d914cda1d2703a73b15d9",
       "reasons": [
@@ -206,13 +170,6 @@
         "refs/slippi-ssbm-asm/Recording/GetLCancelStatus/ResetLCancelStatus.asm",
         "src/platform/slippi.c::msl_slippi_lcancel_get",
         "https://github.com/kyhavlov/melee-sim-light/blob/8d049aba187a38b7ace9961ba2eaf3c03f5487ee/agent_docs/CORRECTNESS_COMPLETION_2026-09-08.md"
-      ]
-    },
-    {
-      "replay": "replays/validation/icies/gm-sheik-2026-04_Game_20260428T204324.slpz",
-      "sha256_slp": "37b20a4f342a2008e3686ccba583e10f090b6a91d391335330a87fd979a02838",
-      "reasons": [
-        "uninitialized-chain"
       ]
     },
     {
@@ -674,7 +631,6 @@
       "sha256_slp": "d19007c173933bf4f7fdbf80673cd4ca38409bc4fc099f63f9b67580d8d6499c",
       "reasons": [
         "missing-recorded-inputs",
-        "uninitialized-chain",
         "uninitialized-transform-lcancel"
       ]
     },
@@ -776,13 +732,6 @@
       "sha256_slp": "fd9ab1741cc1076fa50413311423e0a459abec99fd024f916edbdd060f3308dd",
       "reasons": [
         "vanilla-magnifier"
-      ]
-    },
-    {
-      "replay": "replays/validation/pikachu/43799_Game_20250624T005320.slpz",
-      "sha256_slp": "cdfff4fd17d71d09e455b8bf627c6bec541623329e7e44419d1756df0a796021",
-      "reasons": [
-        "uninitialized-chain"
       ]
     },
     {
@@ -984,13 +933,6 @@
       ]
     },
     {
-      "replay": "replays/validation/sheik/PaleMajorEchidna.slpz",
-      "sha256_slp": "47c22b9903a46363ca66a787a007385f5408bb4e46aa06ce24c2693c4319ad56",
-      "reasons": [
-        "uninitialized-chain"
-      ]
-    },
-    {
       "replay": "replays/validation/sheik/RuralReasonableRat.slpz",
       "sha256_slp": "5839b9f4be2779b59c0ad9049caa7d4d527ee952e6ef34e07e9f161618cda353",
       "reasons": [
@@ -1054,34 +996,10 @@
       ]
     },
     {
-      "replay": "replays/validation/sheik/sheik_demo_game.slpz",
-      "sha256_slp": "6cc665763a58978dc94dba5ae42d271c3bb0136d25712f4a028b0edfb63083c3",
-      "reasons": [
-        "uninitialized-chain"
-      ],
-      "evidence": "All remaining rows are attack-velocity signed zero. Current retail scalar fnmsubs preserves -0 on exact cancellation, while this historical capture contains +0. The capture does not identify the original emulator/JIT floating-point settings. Keep strict zero-sign comparison and the source instruction semantics.",
-      "sources": [
-        "refs/melee/src/melee/ft/fighter.c::Fighter_procUpdate",
-        "refs/melee/src/sysdolphin/baselib/mtx.c",
-        "refs/melee/src/melee/it/items/itseakneedlethrown.c::itSeakneedlethrown_UnkMotion0_Anim",
-        "refs/slippi-ssbm-asm/Recording/SendItemInfo.s::SendItemInfo",
-        "https://github.com/kyhavlov/melee-sim-light/blob/8d049aba187a38b7ace9961ba2eaf3c03f5487ee/agent_docs/CORRECTNESS_COMPLETION_2026-09-08.md"
-      ]
-    },
-    {
       "replay": "replays/validation/sheik/sheik_demo_game_2.slpz",
       "sha256_slp": "5a5e71f3217cc47d9966e32f613fc25eaa382e7fe7cc1f28610fcf09f3d54c42",
       "reasons": [
-        "uninitialized-chain",
         "uninitialized-transform-lcancel"
-      ],
-      "evidence": "Slippi records Chain x18 through a generic item byte before the source constructor assigns that field. Retail fixed-pool residue is 16 for 55 rows, while the headless runtime deterministically initializes it to zero; the field becomes exact at its first gameplay assignment. One later isolated thrown-needle historical-position byte differs by one count, followed by 3,149 exact transitions.",
-      "sources": [
-        "refs/melee/src/melee/it/items/itseakchain.c::itSeakChain_Spawn",
-        "refs/melee/src/melee/it/items/itseakchain.c::it_802BC080",
-        "refs/slippi-ssbm-asm/Recording/SendItemInfo.s::SendItemInfo",
-        "refs/melee/src/melee/it/items/itseakneedlethrown.c::itSeakneedlethrown_UnkMotion0_Anim",
-        "https://github.com/kyhavlov/melee-sim-light/blob/8d049aba187a38b7ace9961ba2eaf3c03f5487ee/agent_docs/CORRECTNESS_COMPLETION_2026-09-08.md"
       ]
     },
     {
