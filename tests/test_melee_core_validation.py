@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
+import pyarrow as pa
 import pytest
 
 from tools.validation import validate_replay
@@ -27,6 +30,51 @@ STARTER_REPLAY = (
     / "aggregate_recent"
     / "PutridJoyousOryx.slpz"
 )
+
+
+@pytest.mark.parametrize("replay,kind,lane,states,ignored", [
+    ("sheik/PaleMajorEchidna.slpz", 97, "3", None, True),
+    ("sheik/PaleMajorEchidna.slpz", 97, "2", None, False),
+    ("yoshi/slippi-2025-06_Game_20250626T221245.slpz", 6, "1", None, True),
+    ("yoshi/slippi-2025-06_Game_20250626T221245.slpz", 6, "0", None, False),
+    ("ness/51444_Game_20250301T143614.slpz", 7, "1", (0, 4, 5, 11), True),
+    ("ness/51444_Game_20250301T143614.slpz", 7, "1", (2,), False),
+])
+def test_item_misc_comparison_preserves_gameplay_lanes(
+    monkeypatch, replay, kind, lane, states, ignored
+) -> None:
+    if not NATIVE.is_file() or not NATIVE_BINARY.is_file():
+        pytest.skip("native core validation artifacts are unavailable")
+    original_read = validate_replay._read_slippi
+
+    def replace_field(array, name, replacement):
+        return pa.StructArray.from_arrays(
+            [replacement if field.name == name else array.field(field.name)
+             for field in array.type], fields=array.type, mask=array.is_null())
+
+    def read_with_changed_misc(*args):
+        game = original_read(*args)
+        items = game.frames.field("item")
+        values = items.values
+        selected = values.field("type").to_numpy() == kind
+        if states is not None:
+            selected &= np.isin(values.field("state").to_numpy(), states)
+        assert np.any(selected)
+        misc = values.field("misc")
+        changed = misc.field(lane).to_numpy().copy()
+        changed[selected] ^= 0xFF
+        values = replace_field(values, "misc", replace_field(misc, lane, pa.array(changed)))
+        items = pa.ListArray.from_arrays(items.offsets, values, type=items.type,
+                                        mask=items.is_null())
+        return SimpleNamespace(frames=replace_field(game.frames, "item", items),
+                               start=game.start, metadata=game.metadata, end=game.end)
+
+    monkeypatch.setattr(validate_replay, "_read_slippi", read_with_changed_misc)
+    result = validate_one(load_native(), ROOT / "replays/validation" / replay,
+                          frames=0, start_frame=None, timeout=20.0, backend="native")
+    assert result["pass"] is ignored
+    assert {field["field"].split("[")[0] for field in result["mismatch_fields"]} == (
+        set() if ignored else {f"item.misc{lane}"})
 
 
 @pytest.mark.parametrize("backend", ["ppc", "native"])

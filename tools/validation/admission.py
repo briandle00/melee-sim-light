@@ -198,13 +198,6 @@ def capture_issues(game, raw: bytes, *, played_on: str | None = None,
             # has not run SlippiResetLCancelStatus at its first publication.
             if 7 in characters and 19 in characters:
                 issues.append("uninitialized-transform-lcancel")
-    items = game.frames.field("item").take(pa.array(rows)).values
-    kinds = items.field("type").to_numpy(zero_copy_only=False)
-    states = items.field("state").to_numpy(zero_copy_only=False)
-    # itseakchain.c: x18 is first assigned by it_802BC080 after the initial
-    # picked-up states. Do not condition this rule on the sampled misc3 value.
-    if np.any((kinds == 97) & (states < 3)):
-        issues.append("uninitialized-chain")
     return sorted(set(issues))
 
 
