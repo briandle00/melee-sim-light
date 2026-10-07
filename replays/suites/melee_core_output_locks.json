@@ -133,6 +133,15 @@
       }
     },
     {
+      "replay": "replays/validation/bowser/MildMurkyNewt.slpz",
+      "expected": {
+        "native": {
+          "frames": 14105,
+          "actual_output_fingerprint": "7859618af448e748"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/bowser/MustyGummyLemur.slpz",
       "expected": {
         "native": {
@@ -4256,6 +4265,15 @@
       }
     },
     {
+      "replay": "replays/validation/sheik/PaleMajorEchidna.slpz",
+      "expected": {
+        "native": {
+          "frames": 10638,
+          "actual_output_fingerprint": "e1f81ac8a331141f"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/sheik/StiffLustrousZebra.slpz",
       "expected": {
         "native": {
@@ -4624,7 +4642,7 @@
       "expected": {
         "native": {
           "frames": 20259,
-          "actual_output_fingerprint": "d63ce878fb30431b"
+          "actual_output_fingerprint": "54a19586f5a91d5b"
         }
       }
     },
