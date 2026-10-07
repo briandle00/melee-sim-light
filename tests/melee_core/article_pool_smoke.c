@@ -73,6 +73,8 @@ enum {
   CHAR_PEACH = 9,
   CHAR_YOUNG_LINK = 20,
   CHAR_PIKACHU = 12,
+  CHAR_FOX = 1,
+  CHAR_FALCO = 22,
   // Thunder cadence for Pikachu ports. The article count per fighter is fixed,
   // so any cadence that keeps four ports overlapping reaches the same peak.
   THUNDER_PERIOD = 30,
@@ -110,6 +112,13 @@ enum {
   TURNIP_PERIOD = 45,
   TURNIP_HOLD = 3,
   TURNIP_TOSS = 30,
+  // Falco's cadence clears the whole hop so B does not land in jumpsquat.
+  // Tilt-turn outward without dashing to avoid disrupting the other ports.
+  LASER_PERIOD = 36,
+  LASER_JUMP_HOLD = 2,
+  LASER_FIRE = 8,
+  LASER_FIRE_HOLD = 2,
+  LASER_TURN_TILT = 30,
   // Size classes the mem-piece sampler can track; nb_memory_list is 32 in
   // every reached configuration, so this only needs to stay comfortably
   // above it.
@@ -238,6 +247,15 @@ static const Scenario scenarios[] = {
     // after four other specials have warmed the lists; here it comes first.
     {"four-ics-belay-cold-fd", 32, 4, {10, 10, 10, 10}, GRAPPLE_GROUND,
      NESS_FLASH, ICS_CYCLE, TETHER_COLD, 0, 0, 0, 0, 0, 0, 0, 1},
+    // Blaster guns and lasers share the Item pool.
+    {"four-falco-laser-fd", 32, 4, {22, 22, 22, 22}, GRAPPLE_GROUND,
+     NESS_FLASH, ICS_CYCLE, TETHER_NONE, 450, 0, 0, 0, 10, 0, 0},
+    // Fox's grounded blaster loop has a different rate and laser lifetime.
+    {"four-fox-laser-fd", 32, 4, {1, 1, 1, 1}, GRAPPLE_GROUND, NESS_FLASH,
+     ICS_CYCLE, TETHER_NONE, 450, 0, 0, 0, 11, 0, 0},
+    // Exercise Falco's lasers alongside Peach's turnips.
+    {"falco-peach-laser-fd", 32, 2, {22, 9, 0, 0}, GRAPPLE_GROUND, NESS_FLASH,
+     ICS_CYCLE, TETHER_NONE, 450, 0, 0, 0, 3, 0, 0},
 };
 
 static void config_init(MslCoreMatchConfig* config, const Scenario* scenario) {
@@ -270,7 +288,7 @@ static int step(MslCoreMatch* match, const MslCoreInput* input) {
 
 static void live_articles(const MslCoreMatch* match, uint32_t* detonations,
                           uint32_t* grapples, uint32_t* blizzards,
-                          uint32_t* thunder, uint32_t* tethers) {
+                          uint32_t* thunder, uint32_t* tethers, uint32_t* turnips) {
   MslCoreItem items[MSL_CORE_MAX_ITEMS] = {0};
   int i;
   *detonations = 0;
@@ -278,12 +296,15 @@ static void live_articles(const MslCoreMatch* match, uint32_t* detonations,
   *blizzards = 0;
   *thunder = 0;
   *tethers = 0;
+  *turnips = 0;
   msl_core_write_items_into_zeroed(match, items);
   for (i = 0; i < MSL_CORE_MAX_ITEMS; ++i) {
     if (!items[i].exists) {
       continue;
     }
-    if (items[i].type == It_Kind_Ness_PKFlush_Explode) {
+    if (items[i].type == It_Kind_Peach_Turnip) {
+      *turnips += 1;
+    } else if (items[i].type == It_Kind_Ness_PKFlush_Explode) {
       *detonations += 1;
     } else if (items[i].type == It_Kind_Samus_GBeam) {
       *grapples += 1;
@@ -318,18 +339,6 @@ static void sample_class_live(const MslCoreMatch* match,
       live[i] = entry->nb_alloc - entry->nb_free;
     }
   }
-}
-
-// item_alloc_data is file-static in item.c, so locate its pool by object size
-// in this match's allocator context instead of by symbol.
-static HSD_ObjAllocData* pool_by_size(MslCoreMatch* match, u32 object_bytes) {
-  u32 i;
-  for (i = 0; i < match->objalloc.count; ++i) {
-    if (match->objalloc.values[i].size == object_bytes) {
-      return &match->objalloc.values[i];
-    }
-  }
-  return NULL;
 }
 
 // used + free is the pool's capacity; it is constant unless the pool grew, and
@@ -369,6 +378,7 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
   uint32_t blizzard_peak = 0;
   uint32_t thunder_peak = 0;
   uint32_t tether_peak = 0;
+  uint32_t turnip_peak = 0;
   uint32_t class_seal[CLASS_SAMPLE_MAX];
   uint32_t class_live[CLASS_SAMPLE_MAX];
   uint32_t class_delta_peak[CLASS_SAMPLE_MAX] = {0};
@@ -394,6 +404,7 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
     uint32_t blizzards;
     uint32_t thunder;
     uint32_t tethers;
+    uint32_t turnips;
     uint32_t fobj_used;
     uint32_t aobj_used;
     uint32_t gobj_used;
@@ -405,7 +416,18 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
     memset(&input, 0, sizeof(input));
     if (frame >= CHARGE_START_FRAME) {
       for (player = 0; player < scenario->num_players; ++player) {
-        if (scenario->tether_mode == TETHER_COLD) {
+        if (scenario->char_ids[player] == CHAR_PEACH) {
+          // Crouch before pulling, then toss with A instead of holding shield.
+          int phase = (frame + player * 11) % TURNIP_PERIOD;
+          if (phase < 2) {
+            input.p[player].main_y = -STICK_MAX;
+          } else if (phase < 2 + TURNIP_HOLD) {
+            input.p[player].buttons = PAD_BUTTON_B;
+            input.p[player].main_y = -STICK_MAX;
+          } else if (phase >= TURNIP_TOSS && phase < TURNIP_TOSS + 3) {
+            input.p[player].buttons = PAD_BUTTON_A;
+          }
+        } else if (scenario->tether_mode == TETHER_COLD) {
           // Drive only the tether so its joint-graph burst lands on the class
           // free lists exactly as the seal left them; any earlier special
           // would warm them and hide the cold-start cost.
@@ -430,17 +452,6 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
                 input.p[player].main_x =
                     (int8_t)(pos_x > 0.0F ? -STICK_MAX : STICK_MAX);
               }
-            }
-          } else if (tether_char == CHAR_PEACH) {
-            // Not a tether: Peach is here because the reported RL crash was
-            // Peach vs Link, and her turnip pulls feed on the same class
-            // mem-piece allocator the hookshot chain needs.
-            int phase = (frame + player * 11) % TURNIP_PERIOD;
-            if (phase < TURNIP_HOLD) {
-              input.p[player].buttons = PAD_BUTTON_B;
-              input.p[player].main_y = -STICK_MAX;
-            } else if (phase >= TURNIP_TOSS && phase < TURNIP_TOSS + 3) {
-              input.p[player].buttons = PAD_TRIGGER_Z;
             }
           } else if (tether_char == CHAR_POPO) {
             // Up-B is Belay; the string article spawns on the toss.
@@ -565,6 +576,32 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
             input.p[player].buttons = PAD_BUTTON_B;
             input.p[player].main_y = -STICK_MAX;
           }
+        } else if (scenario->char_ids[player] == CHAR_FOX) {
+          // Tilt-turn outward, then repeat B presses for the grounded loop.
+          int phase = frame - CHARGE_START_FRAME;
+          float pos_x = observation.slots[player].pos_x;
+          if (phase < 3) {
+            input.p[player].main_x =
+                (int8_t)(pos_x > 0.0F ? LASER_TURN_TILT : -LASER_TURN_TILT);
+          } else if (phase >= 6 && phase % 4 < 2) {
+            input.p[player].buttons = PAD_BUTTON_B;
+          }
+        } else if (scenario->char_ids[player] == CHAR_FALCO) {
+          // Tilt-turn away from the centre once, then short-hop laser.
+          int phase = frame - CHARGE_START_FRAME;
+          int cycle = phase % LASER_PERIOD;
+          float pos_x = observation.slots[player].pos_x;
+          if (phase < 3) {
+            input.p[player].main_x =
+                (int8_t)(pos_x > 0.0F ? LASER_TURN_TILT : -LASER_TURN_TILT);
+          } else if (phase >= 30) {
+            if (cycle < LASER_JUMP_HOLD) {
+              input.p[player].buttons = PAD_BUTTON_X;
+            } else if (cycle >= LASER_FIRE &&
+                       cycle < LASER_FIRE + LASER_FIRE_HOLD) {
+              input.p[player].buttons = PAD_BUTTON_B;
+            }
+          }
         } else if (scenario->char_ids[player] == CHAR_LINK ||
                    scenario->char_ids[player] == CHAR_YOUNG_LINK) {
           // The hookshot is a tether, so these ports need the grapple cadence
@@ -626,10 +663,10 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
     gobj_used = HSD_ObjAllocResolve(&gobj_alloc_data)->used;
     link_used = HSD_ObjAllocResolve(&item_link_alloc_data)->used;
     robj_used = HSD_ObjAllocResolve(HSD_RObjGetAllocData())->used;
-    item_pool = pool_by_size(match, (u32) sizeof(Item));
-    item_used = item_pool != NULL ? item_pool->used : 0;
+    item_pool = HSD_ObjAllocResolve(msl_item_runtime_pool());
+    item_used = item_pool->used;
     live_articles(match, &detonations, &grapples, &blizzards, &thunder,
-                  &tethers);
+                  &tethers, &turnips);
     sample_class_live(match, class_live);
     for (class_index = 0; class_index < CLASS_SAMPLE_MAX; ++class_index) {
       uint32_t delta = class_live[class_index] > class_seal[class_index]
@@ -672,6 +709,9 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
     if (tethers > tether_peak) {
       tether_peak = tethers;
     }
+    if (turnips > turnip_peak) {
+      turnip_peak = turnips;
+    }
   }
 
   for (class_index = 0; class_index < CLASS_SAMPLE_MAX; ++class_index) {
@@ -681,9 +721,15 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
       class_worst_size = entry != NULL ? entry->size : 0;
     }
   }
-  printf("%s detonations=%u grapples=%u robjs=%u items=%u blizzards=%u thunder=%u tethers=%u\n",
+  printf("%s detonations=%u grapples=%u robjs=%u items=%u blizzards=%u thunder=%u tethers=%u turnips=%u\n",
          scenario->name, detonation_peak, grapple_peak, robj_peak, item_peak, blizzard_peak,
-         thunder_peak, tether_peak);
+         thunder_peak, tether_peak, turnip_peak);
+  for (int player = 0; player < scenario->num_players; ++player) {
+    if (scenario->char_ids[player] == CHAR_PEACH && turnip_peak == 0) {
+      fprintf(stderr, "%s: Peach never produced a turnip\n", scenario->name);
+      return -1;
+    }
+  }
   // The class mem-piece reserve is per reached size class, so the figure that
   // sizes hsdPreallocateMemPieces is the worst single class's live growth
   // over the seal state.
@@ -759,11 +805,7 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
   if (check_pool(scenario->name, "robj", HSD_RObjGetAllocData(), robj_peak) != 0) {
     return -1;
   }
-  item_pool = pool_by_size(match, (u32) sizeof(Item));
-  if (item_pool == NULL) {
-    fprintf(stderr, "%s: no item pool in this match\n", scenario->name);
-    return -1;
-  }
+  item_pool = HSD_ObjAllocResolve(msl_item_runtime_pool());
   if (check_pool(scenario->name, "item", item_pool, item_peak) != 0) {
     return -1;
   }
