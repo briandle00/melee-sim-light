@@ -219,7 +219,6 @@ NATIVE_SMOKE_SRCS := \
 	$(ROOT)/tests/melee_core/public_api_smoke.c \
 	$(ROOT)/tests/melee_core/context_smoke.c \
 	$(ROOT)/tests/melee_core/thread_shared_state_smoke.c \
-	$(ROOT)/tests/melee_core/shared_write_audit.c \
 	$(ROOT)/tests/melee_core/data_load_smoke.c \
 	$(ROOT)/tests/melee_core/gameplay_parts_smoke.c \
 	$(ROOT)/tests/melee_core/article_pool_smoke.c \
@@ -230,6 +229,9 @@ NATIVE_SMOKE_SRCS := \
 	$(ROOT)/tests/melee_core/scheduler_smoke.c \
 	$(ROOT)/tests/melee_core/lifecycle_bench.c \
 	$(ROOT)/tests/melee_core/wasm_parity.c
+ifeq ($(UNAME_S)/$(HOST_TARGET_ARCH),Linux/x86_64)
+NATIVE_SMOKE_SRCS += $(ROOT)/tests/melee_core/shared_write_audit.c
+endif
 PPC_SMOKE_OBJS := $(patsubst $(ROOT)/%.c,$(PPC_OBJ_DIR)/%.o,$(SMOKE_SRCS))
 NATIVE_SMOKE_OBJS := $(patsubst $(ROOT)/%.c,$(NATIVE_OBJ_DIR)/%.o,$(NATIVE_SMOKE_SRCS))
 NATIVE_REPLAY_BENCH_OBJ := $(NATIVE_OBJ_DIR)/tests/melee_core/replay_bench.o
@@ -738,7 +740,7 @@ endef
 define link_native_smoke
 $(1): $(NATIVE_CORE_OBJS) $(2)
 	@mkdir -p "$$(@D)"
-	@"$(HOST_CC)" $(NATIVE_EXE_LINK_FLAGS) $(NATIVE_LINK_FLAGS) $$^ $(LDLIBS) -o "$$@"
+	@"$(HOST_CC)" $(NATIVE_EXE_LINK_FLAGS) $(NATIVE_LINK_FLAGS) $$^ $$(LDLIBS) -o "$$@"
 endef
 
 $(eval $(call link_smoke,$(ARCHIVE_SMOKE),$(PPC_OBJ_DIR)/tests/melee_core/archive_smoke.o))
@@ -755,8 +757,11 @@ $(eval $(call link_native_smoke,$(NATIVE_SCALAR_API_SMOKE),$(NATIVE_OBJ_DIR)/tes
 $(eval $(call link_native_smoke,$(NATIVE_CONTEXT_SMOKE),$(NATIVE_OBJ_DIR)/tests/melee_core/context_smoke.o))
 $(eval $(call link_native_smoke,$(NATIVE_THREAD_SHARED_STATE_SMOKE),$(NATIVE_OBJ_DIR)/tests/melee_core/thread_shared_state_smoke.o))
 $(NATIVE_THREAD_SHARED_STATE_SMOKE): LDLIBS += -pthread
+$(NATIVE_OBJ_DIR)/tests/melee_core/thread_shared_state_smoke.o: NATIVE_CFLAGS += -pthread
+ifeq ($(UNAME_S)/$(HOST_TARGET_ARCH),Linux/x86_64)
 $(eval $(call link_native_smoke,$(NATIVE_SHARED_WRITE_AUDIT),$(NATIVE_OBJ_DIR)/tests/melee_core/shared_write_audit.o))
 $(NATIVE_SHARED_WRITE_AUDIT): LDLIBS += -Wl,-z,now
+endif
 $(eval $(call link_native_smoke,$(NATIVE_BATCH_API_SMOKE),$(NATIVE_OBJ_DIR)/tests/melee_core/batch_api_smoke.o))
 $(eval $(call link_native_smoke,$(NATIVE_PUBLIC_API_SMOKE),$(NATIVE_OBJ_DIR)/tests/melee_core/public_api_smoke.o))
 $(eval $(call link_native_smoke,$(NATIVE_GAMEPLAY_PARTS_SMOKE),$(NATIVE_OBJ_DIR)/tests/melee_core/gameplay_parts_smoke.o))

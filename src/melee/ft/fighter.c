@@ -182,7 +182,9 @@ void Fighter_800679B0(void)
     HSD_ObjAllocInit(&fighter_dat_attrs_alloc_data, /*size*/ 0x424,
                      /*align*/ 4);
     ft_800852B0();
+#ifndef MSL_CORE_NATIVE
     Fighter_LoadCommonData();
+#endif
     ft_8008549C();
 #ifndef MSL_CORE_HOSTED
     // This owner initializes the scene light rig; the headless port has no
@@ -244,12 +246,7 @@ void Fighter_LoadCommonData(void)
     //   (&Fighter_804D64FC)[23-1-i] = pData[i];
     // loop unrolling doesn't work (only up to 8 elements)
 #ifdef MSL_CORE_HOSTED
-    // GameData preload publishes these tables; a later Match finds them equal
-    // and skips its write, because Matches stepped on other threads read them.
-    if (memcmp(msl_core_fighter_common_data(), pData, sizeof(void*) * 23) != 0)
-    {
-        memcpy(msl_core_fighter_common_data(), pData, sizeof(void*) * 23);
-    }
+    memcpy(msl_core_fighter_common_data(), pData, sizeof(void*) * 23);
 #if defined(MSL_CORE_NATIVE) && !defined(MSL_CORE_WASM)
     {
         MslSourceGameData* source = msl_core_context_source_game_data;
@@ -257,19 +254,13 @@ void Fighter_LoadCommonData(void)
 
         for (kind = 0; kind < FTKIND_MAX; ++kind) {
             struct Fighter_804D6540_t* desc = Fighter_804D6540[kind];
-            uint32_t part_flags[UINT8_MAX + 1] = { 0 };
             int i;
 
-            if (desc != NULL) {
-                for (i = 0; i < desc->x4; ++i) {
-                    part_flags[desc->x0[i].x0] = 1U << i;
-                }
+            if (desc == NULL) {
+                continue;
             }
-            if (memcmp(source->fighter.part_flags[kind], part_flags,
-                       sizeof(part_flags)) != 0)
-            {
-                memcpy(source->fighter.part_flags[kind], part_flags,
-                       sizeof(part_flags));
+            for (i = 0; i < desc->x4; ++i) {
+                source->fighter.part_flags[kind][desc->x0[i].x0] = 1U << i;
             }
         }
     }

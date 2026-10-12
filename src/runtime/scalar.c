@@ -847,6 +847,11 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     init_hsd();
     msl_effect_game_data_init(&game_data->effects);
 #ifdef MSL_CORE_NATIVE
+    // These source loaders publish immutable GameData, not Match state.
+    // Run them once before constructing the preload matches.
+    Fighter_LoadCommonData();
+    Player_80036DD8();
+    Item_80266FA8();
     if (preload_supported_game_data(game_data) != 0) {
         return -1;
     }
@@ -1222,11 +1227,11 @@ static int match_construct(MslCoreMatch* match,
     spec->source->OnLoad();
     configure_headless_ground_schedule(match, spec);
     // refs/melee/src/melee/gm/gm_16AE.c::fn_8016DCC0 and fn_8016E730.
-    // Keep the source owners intact: Player_InitAllPlayers also initializes
-    // each slot's statistics state, and Player_80036DD8 loads the common
-    // player table consumed by the scheduled statistics pass.
+    // Player_InitAllPlayers initializes each slot's statistics state.
     Player_InitAllPlayers();
+#ifndef MSL_CORE_NATIVE
     Player_80036DD8();
+#endif
     for (i = 0; i < match->config.num_players; ++i) {
         int slot = match->source_slots[i];
         int spawn_order = neutral_spawn_order(match, i);
@@ -1302,11 +1307,9 @@ static int match_construct(MslCoreMatch* match,
         Player_80032768(slot, (Vec3*) spawn);
     }
     resolve_initial_facing(match);
-    // The versus bootstrap initializes fighter/device/item allocation before
-    // Fighter_Create. Items are disabled in the current Fox/FD domain, so the
-    // exact Item_80266FA8(false) entry is equivalent to Item_80266F70's source
-    // gate without retaining the scene-owned item-switch aggregate.
+#ifndef MSL_CORE_NATIVE
     Item_80266FA8();
+#endif
     Item_80266FCC();
     Player_80036DA4();
     for (i = 0; i < match->config.num_players; ++i) {
