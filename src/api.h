@@ -255,6 +255,8 @@ MSL_API MslResult msl_game_data_acquire(const char* data_root);
 MSL_API void msl_game_data_release(void);
 MSL_API uint32_t msl_game_data_references(void);
 
+// Different batches may be used concurrently, including creation/destruction.
+// Synchronize access to each batch (both batches for copy) and caller buffers.
 // data_root is the extraction root or its raw/ directory.
 MSL_API MslResult msl_batch_create(const char* data_root, uint32_t batch_size,
                                    MslBatch** out_batch);

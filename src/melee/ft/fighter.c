@@ -191,8 +191,9 @@ void Fighter_800679B0(void)
     // LObj graph and none of its writes are consumed by locomotion.
     ftCo_8009F4A4();
 #endif
-    ftCo_800C8064();
 #ifndef MSL_CORE_HOSTED
+    // This model supplies only the metal-fighter renderer's material.
+    ftCo_800C8064();
     // This source owner only installs the alternate renderer material used by
     // ftMaterial_800BF2B8. The headless runtime has no fighter draw traversal.
     // refs/melee/src/melee/ft/ft_0C8C.c::ftCo_800C8F6C

@@ -43,7 +43,7 @@ def game_data_loaded() -> bool:
 
 
 class EnvBatch:
-    """One single-threaded batch backed directly by ``src/api.h``."""
+    """One single-threaded batch; independent batches may run concurrently."""
 
     __slots__ = (
         "batch_size",

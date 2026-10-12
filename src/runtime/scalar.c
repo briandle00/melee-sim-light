@@ -450,10 +450,6 @@ static void init_hsd(void)
 {
     HSD_GObjLibInitDataType init;
 
-    // The DOL runs MSL's constructor table before scene bootstrap. The ELF
-    // host build has no MetroWerks .ctors section, so initialize trigf's
-    // split 4/pi constants explicitly before any gameplay math.
-    __sinit_trigf_c();
     HSD_AObjInitAllocData();
     HSD_FObjInitAllocData();
     HSD_IDInitAllocData();
@@ -1144,7 +1140,6 @@ static int match_construct(MslCoreMatch* match,
     msl_camera_state_init(&match->camera);
     msl_slippi_state_init(&match->slippi, match->config.stage_event_streams);
 
-    msl_host_set_data_root(game_data->root);
     msl_effect_match_init(&game_data->effects, &match->effects);
     // Standard versus creates the source camera owner before stage/fighters.
     // The HSD CObj/draw link remains headless; the transform process and
@@ -1384,7 +1379,9 @@ static int match_construct(MslCoreMatch* match,
     }
 #endif
 
+#ifndef MSL_CORE_HOSTED
     Camera_80030730(Ground_801C20D0());
+#endif
     Ground_EnableMatchCamera();
     Camera_8002F3AC();
     // Slippi installs the versus on-unpause override. fn_8016E730 invokes it

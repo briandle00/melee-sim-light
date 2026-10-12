@@ -151,6 +151,9 @@ jobs:
             | tee aggregate.log
           grep -E "^\[native\] summary" aggregate.log >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check independent threaded batches and immutable game data
+        run: make thread-smoke -j4 PY=python3
+
       - name: Run pytest
         env:
           PYTHONPATH: ${{ github.workspace }}

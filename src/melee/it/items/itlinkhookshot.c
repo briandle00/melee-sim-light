@@ -84,7 +84,11 @@ ItemStateTable it_803F6998[] = { {
                                  { -1, itLinkhookshot_UnkMotion8_Anim,
                                    itLinkhookshot_UnkMotion8_Phys, NULL } };
 
+#ifdef MSL_CORE_HOSTED
+static const f32 it_804D6D48 = 6.0f;
+#else
 f32 it_804D6D48;
+#endif
 
 void it_802A2418(Item_GObj* obj)
 {
@@ -407,11 +411,13 @@ Item_GObj* it_802A2BA4(Fighter_GObj* arg0, Vec3* arg1, f32 arg2, s32 arg3)
         Item_8026AB54(gobj, arg0, ftParts_GetBoneIndex(fp, FtPart_RThumbNb));
         it_802A2428(gobj);
     }
+#ifndef MSL_CORE_HOSTED
     if ((enum FighterKind) fp->kind == FTKIND_CLINK) {
         it_804D6D48 = 6.0f;
     } else {
         it_804D6D48 = 6.0f;
     }
+#endif
     return gobj;
 }
 

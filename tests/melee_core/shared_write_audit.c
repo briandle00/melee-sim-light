@@ -1,14 +1,7 @@
-// Shared-write audit: every write, after game data load, to memory that the
-// batches of one process share — GameData (its struct and arenas) and the
-// process globals. Batches stepped on separate threads race on any such
-// write, and one that passes through a transient value (store NULL, look up,
-// store) is a crash waiting for the right interleaving.
-//
-// The shared memory is made read-only, then Matches run through the public
-// batch API on one thread with random inputs, resetting finished matches
-// with fresh configs as training does. Each faulting write is recorded by
-// instruction, let through by single-stepping it, and its page protected
-// again, so a run lists every writing site (x86-64 Linux only).
+// Reject writes to shared GameData and executable globals during reset/step.
+// Acquire data and create the batch before protecting memory: API lifetime
+// bookkeeping uses its own lock and is outside this audit. A faulting write
+// is recorded, single-stepped, and protected again (Linux x86-64 only).
 //
 //     shared-write-audit <data root> [frames per env]
 #include "api.h"
@@ -27,7 +20,7 @@
 #include <unistd.h>
 
 #define ENVS 8
-#define MAX_REGIONS 4
+#define MAX_REGIONS 10
 #define MAX_SITES 4096
 #define MAX_PENDING 8
 #define FRAMES 10
@@ -116,7 +109,9 @@ static void on_write_fault(int signal_number, siginfo_t* info, void* context)
         return;
     }
     record((uintptr_t) uc->uc_mcontext.gregs[GREG_RIP], address, region);
-    mprotect((void*) page, audit->page, PROT_READ | PROT_WRITE);
+    if (mprotect((void*) page, audit->page, PROT_READ | PROT_WRITE) != 0) {
+        _exit(2);
+    }
     audit->pending[audit->pending_count++] = page;
     uc->uc_mcontext.gregs[GREG_EFL] |= TRAP_FLAG;
 }
@@ -128,7 +123,9 @@ static void on_single_step(int signal_number, siginfo_t* info, void* context)
     (void) signal_number;
     (void) info;
     for (p = 0; p < audit->pending_count; ++p) {
-        mprotect((void*) audit->pending[p], audit->page, PROT_READ);
+        if (mprotect((void*) audit->pending[p], audit->page, PROT_READ) != 0) {
+            _exit(2);
+        }
     }
     audit->pending_count = 0;
     uc->uc_mcontext.gregs[GREG_EFL] &= ~TRAP_FLAG;
@@ -167,9 +164,12 @@ static MslMatchConfig random_config(uint64_t* rng)
     config.stage = stages[next_random(rng) % 6];
     config.random_seed = next_random(rng);
     config.max_frame = 600;
-    config.num_players = 2;
-    config.players[0].character = characters[next_random(rng) % 26];
-    config.players[1].character = characters[next_random(rng) % 26];
+    config.num_players = 2 + next_random(rng) % 3;
+    config.is_teams = config.num_players > 2;
+    for (int p = 0; p < config.num_players; ++p) {
+        config.players[p].character = characters[next_random(rng) % 26];
+        config.players[p].costume = next_random(rng) % 4;
+    }
     return config;
 }
 
@@ -181,7 +181,7 @@ static void random_input(MslInput* input, uint64_t* rng)
     };
     int p;
     memset(input, 0, sizeof(*input));
-    for (p = 0; p < 2; ++p) {
+    for (p = 0; p < MSL_MAX_PLAYERS; ++p) {
         MslInputPlayer* player = &input->players[p];
         uint32_t bits = next_random(rng);
         int b;
@@ -231,12 +231,29 @@ int main(int argc, char** argv)
 
     audit = mmap(NULL, sizeof(*audit), PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (audit == MAP_FAILED) {
+        perror("mmap audit");
+        return 1;
+    }
     audit->page = (uintptr_t) sysconf(_SC_PAGESIZE);
     add_region("globals", __data_start, (size_t) (_end - __data_start));
     add_region("gamedata", game_data, sizeof(*game_data));
     add_region("arena", game_data->memory.arena, game_data->memory.capacity);
     add_region("native-dat", game_data->native_dat.arena,
                game_data->native_dat.arena_used);
+
+    add_region("allocation-ledger", game_data->memory.allocations,
+               game_data->memory.allocation_capacity * sizeof(MslMemoryAllocation));
+    const MslFighterPosePrograms* pose = &game_data->fighter_pose_programs;
+    add_region("pose-programs", pose->programs,
+               pose->program_count * sizeof(*pose->programs));
+    add_region("pose-nodes", pose->nodes, pose->node_count * sizeof(*pose->nodes));
+    add_region("pose-values", pose->values,
+               pose->value_count * sizeof(*pose->values));
+    add_region("pose-tracks", pose->track_nodes,
+               pose->track_node_count * sizeof(*pose->track_nodes));
+    add_region("pose-hash", pose->program_hash,
+               (pose->program_hash_mask + 1) * sizeof(*pose->program_hash));
 
     memset(&action, 0, sizeof(action));
     action.sa_flags = SA_SIGINFO | SA_NODEFER;
@@ -245,8 +262,12 @@ int main(int argc, char** argv)
     action.sa_sigaction = on_single_step;
     sigaction(SIGTRAP, &action, NULL);
     for (i = 0; i < audit->region_count; ++i) {
-        mprotect((void*) audit->regions[i].begin,
-                 audit->regions[i].end - audit->regions[i].begin, PROT_READ);
+        if (mprotect((void*) audit->regions[i].begin,
+                     audit->regions[i].end - audit->regions[i].begin, PROT_READ) != 0)
+        {
+            perror("protect shared data");
+            return 1;
+        }
     }
 
     for (i = 0; i < ENVS; ++i) {
@@ -300,5 +321,5 @@ int main(int argc, char** argv)
         }
         printf("\n");
     }
-    return 0;
+    return audit->site_count != 0 || audit->dropped != 0;
 }
