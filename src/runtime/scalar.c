@@ -179,11 +179,7 @@ static const MslCoreStageSpec stage_specs[] = {
       OLDPUPUPU,
       "/GrOp.dat",
       &grOp_803E6748,
-      // Map 1's animation carries particle events (stage generators
-      // 30000-30002), and creating each generator draws from the gameplay
-      // RNG ahead of that frame's CPU decisions (Nana's ledge option).
-      // Keep it animating.
-      // refs/melee/src/melee/ef/eflib.c::efLib_Cb_DPtcl
+      // Map 1's particle events consume gameplay RNG before CPU decisions.
       (1U << 1) | (1U << 2) | (1U << 7),
       0,
       { { -46.6F, 37.2F, 0.0F }, { 47.4F, 37.3F, 0.0F },
@@ -1725,13 +1721,11 @@ static int preload_supported_game_data(MslCoreGameData* game_data)
             return -1;
         }
     }
-    // Each stage's particle command bank (map_ptcl), read once: a ground
-    // joint animation's particle event creates a generator from it, and
-    // creation draws from the gameplay RNG (effects.c::msl_effect_match_dptcl).
+    // Stage particle creation consumes gameplay RNG; preload its commands.
     for (i = 0; i < sizeof(stage_specs) / sizeof(stage_specs[0]); ++i) {
         HSD_Archive* archive = lbArchive_LoadArchive(stage_specs[i].archive);
         if (archive == NULL ||
-            msl_effect_load_stage_bank(&game_data->stage_particles,
+            msl_effect_load_stage_bank(&game_data->effects,
                                        stage_specs[i].internal_id,
                                        archive) != 0)
         {

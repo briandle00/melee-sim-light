@@ -2127,8 +2127,9 @@ void msl_native_archive_locate_extern(HSD_Archive* archive,
 // psInitDataBankLoad's command bank: version 0 lists [0, count); versions
 // 0x40..0x43 list [first, first + count) and are indexed by the full id.
 // refs/melee/src/sysdolphin/baselib/particle.c::psInitDataBankLoad
-static int translate_particle_bank(MslNativeArchive* context, uint32_t bank,
-                                   int* count, HSD_PSCmdList*** commands)
+static int msl_translate_particle_bank(MslNativeArchive* context, uint32_t bank,
+                                       int* count, int* id_base,
+                                       HSD_PSCmdList*** commands)
 {
     uint32_t entries;
     uint32_t first_count;
@@ -2157,13 +2158,14 @@ static int translate_particle_bank(MslNativeArchive* context, uint32_t bank,
     {
         return -1;
     }
-    result = native_alloc((size_t) total * sizeof(*result));
-    for (i = version == 0 ? 0 : first_count; i < total; ++i) {
+    *id_base = version == 0 ? 0 : (int) first_count;
+    result = native_alloc((size_t) (total - *id_base) * sizeof(*result));
+    for (i = (uint32_t) *id_base; i < total; ++i) {
         uint32_t relative = read_be32(
             context->data + entries +
             (version == 0 ? i : i - first_count) * 4);
         if (relative != 0) {
-            result[i] = translate_target_count(
+            result[i - *id_base] = translate_target_count(
                 context, bank + relative, msl_dat_root_HSD_PSCmdList, 1);
         }
     }
@@ -2173,7 +2175,8 @@ static int translate_particle_bank(MslNativeArchive* context, uint32_t bank,
 }
 
 int msl_native_effect_bank(HSD_Archive* archive, const char* symbol,
-                           int* count, HSD_PSCmdList*** commands)
+                           int* count, int* id_base,
+                           HSD_PSCmdList*** commands)
 {
     require_dat_initialization("native effect bank translation");
     MslNativeArchive* context = archive_context(archive);
@@ -2196,16 +2199,18 @@ int msl_native_effect_bank(HSD_Archive* archive, const char* symbol,
             raw_pointer(context, table + 4) == UINT32_MAX)
         {
             *count = 0;
+            *id_base = 0;
             *commands = NULL;
             return 0;
         }
         return -1;
     }
-    return translate_particle_bank(context, bank, count, commands);
+    return msl_translate_particle_bank(context, bank, count, id_base, commands);
 }
 
 int msl_native_particle_bank(HSD_Archive* archive, const char* symbol,
-                             int* count, HSD_PSCmdList*** commands)
+                             int* count, int* id_base,
+                             HSD_PSCmdList*** commands)
 {
     // A stage archive publishes its command bank itself as map_ptcl (not a
     // table of bank pointers): Ground_801C0800 hands it straight to
@@ -2217,11 +2222,12 @@ int msl_native_particle_bank(HSD_Archive* archive, const char* symbol,
     bank = raw_public_offset(archive, symbol);
     if (bank == UINT32_MAX) {
         *count = 0;
+        *id_base = 0;
         *commands = NULL;
         return 0;
     }
-    return translate_particle_bank(archive_context(archive), bank, count,
-                                   commands);
+    return msl_translate_particle_bank(archive_context(archive), bank, count,
+                                       id_base, commands);
 }
 
 EF_EffectDesc* msl_native_effect_models(HSD_Archive* archive,

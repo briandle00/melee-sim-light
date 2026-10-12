@@ -30,6 +30,61 @@ Compare changes on the same host, compiler and workload. Keep measurements and
 validation results in the commit description; put raw logs under ignored
 `reports/triage/`. Historical experiments remain in Git history.
 
+## PR review recheck (2026-10-12)
+
+Alternating strict-release executables built in the same checkout with GCC 13.3,
+CPU 0, performance governor, 256 resident matches, 524,288 timed match-frames,
+eight warmup ticks and the same 510-recording tape manifest. Four runs per version:
+
+| Version | Mean match-frames/second | Range |
+| --- | ---: | ---: |
+| Pre-review main `45bae153` | 121,400 | 119,304–122,305 |
+| Main after #77/#68, `d395cc72` | 121,469 | 120,675–122,204 |
+| Initial narrowed #67 candidate | 118,529 | 117,938–118,936 |
+
+The initial narrowed #67 candidate was 2.42% slower than current main on this workload;
+merged main shows no cumulative slowdown against the pre-review baseline.
+Main and pre-review output digests match (`c6e5d56628c52a37`); #67's intended
+RNG changes produce `38a4d0d243799a3c`. This measures end-to-end throughput,
+not isolated instruction overhead: RNG-driven gameplay can change the workload.
+
+Two main/candidate runs each in main/candidate/candidate/main order on subsets:
+Dream Land (83 tapes) averages 150,394 → 136,812 FPS (−9.03%); the other stages
+(427 tapes) average 123,546 → 121,572 FPS (−1.60%). These results supersede the
+prior two-run conclusion that #67 had no noticeable cost. The repair below
+addresses the regression. Raw results and preserved candidate diff are under
+`reports/triage/pr67_perf_recheck/`.
+
+### Particle animation repair
+
+Disabling the new RNG callback left Dream Land's slowdown intact while restoring
+main's output digest. Profiling found 317,611 object-1 animation selections in
+524,288 frames: loading visual tracks, then discarding them, dominated the added
+cost. The replacement loads only source particle tracks and their AObj clocks;
+it keeps source selection, event order and interpolation without visual animation
+construction. No replay toggle or persistent match state was added.
+
+Final main/original/optimized/optimized/original/main comparison on CPU 4 (same
+V-cache CCD), using the same mixed-stage workload and two runs per version:
+
+| Version | Mean FPS | Runs |
+| --- | ---: | --- |
+| Main `d395cc72` | 121,664 | 121,098 / 122,230 |
+| Previous narrowed #67 | 119,361 | 119,906 / 118,815 |
+| Particle-only animation loader | 121,624 | 121,182 / 122,065 |
+
+The final difference from main is −0.03%; the earlier candidate was −1.89% in
+this comparison. CPU 0's three-run recheck was noisier: main averaged 121,754,
+optimized 120,849 (−0.74%), with medians 121,986 and 122,930 respectively. The
+optimized candidate's low run coincided with 5.31% sibling-thread activity.
+These bounded checks no longer show a repeatable regression; they do not prove
+zero instruction overhead. Original/optimized free-running digests match on both
+the mixed workload (`38a4d0d243799a3c`) and Dream Land (`ae7d8192c3e420e4`).
+
+Strict-release validation passes all 517 recordings / 4,768,869 frames and their
+output locks. Source/native smoke and native/Wasm parity pass. Raw diagnostic,
+profiling and benchmark results are under `reports/triage/pr67_cost/`.
+
 ## Memory
 
 Measured at `24ee1e58` on 2026-09-24 (16-core Linux host, private resident bytes

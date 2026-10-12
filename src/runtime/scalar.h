@@ -64,8 +64,6 @@ typedef struct MslCoreGameData {
 #ifdef MSL_CORE_NATIVE
     MslNativeDatContext native_dat;
 #endif
-    // Last, so the fields above keep their offsets.
-    MslCoreEffectStageBanks stage_particles;
 } MslCoreGameData;
 
 typedef struct MslCoreMatch {
