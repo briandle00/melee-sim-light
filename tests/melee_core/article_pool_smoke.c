@@ -203,12 +203,8 @@ static const Scenario scenarios[] = {
     // fifteen-wide observation array and aborted on the sixteenth.
     {"four-pikachu-fd", 32, 4, {12, 12, 12, 12}, GRAPPLE_GROUND, NESS_FLASH, ICS_CYCLE,
      TETHER_NONE, 0, 0, 0, 0, 16, 0, 0},
-    // Eight climbers churning through the full move set keep more live
-    // animation tracks attached than four of any other fighter: 1058 measured
-    // post-compaction against the former flat 1024-track capacity, which
-    // asserted in allocate_tracks. The track arena is a bump cursor with no
-    // live-count to sample, so completing the cycle without that assert is
-    // the check; the Blizzard bar proves the ports actually run their moves.
+    // Eight climbers cycle the full move set to stress pose and article pools.
+    // The Blizzard bar verifies that the workload reaches concurrent articles.
     {"four-ics-fd", 32, 4, {10, 10, 10, 10}, GRAPPLE_GROUND, NESS_FLASH, ICS_CYCLE,
      TETHER_NONE, 1380, 0, 0, 0, 0, 6, 0},
     // The second pairing reported from RL: a steered PK Thunder is seven live
@@ -514,8 +510,9 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
             int phase = (frame - CHARGE_START_FRAME) % ICS_SLOT;
             if (phase < 4) {
               switch (slot) {
-                case 0: /* ice shot */
+                case 0: /* blizzard before the climbers can separate */
                   input.p[player].buttons = PAD_BUTTON_B;
+                  input.p[player].main_y = -STICK_MAX;
                   break;
                 case 1: /* squall hammer */
                   input.p[player].buttons = PAD_BUTTON_B;
@@ -525,9 +522,8 @@ static int run_scenario(MslCoreMatch* match, const MslCoreGameData* game_data,
                   input.p[player].buttons = PAD_BUTTON_B;
                   input.p[player].main_y = STICK_MAX;
                   break;
-                case 3: /* blizzard */
+                case 3: /* ice shot */
                   input.p[player].buttons = PAD_BUTTON_B;
-                  input.p[player].main_y = -STICK_MAX;
                   break;
                 case 4: /* grab */
                   input.p[player].buttons = PAD_TRIGGER_Z;
