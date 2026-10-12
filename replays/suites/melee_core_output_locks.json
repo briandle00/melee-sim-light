@@ -3144,6 +3144,15 @@
       }
     },
     {
+      "replay": "replays/validation/mewtwo/master-platinum-3764cfdde76b6367c9b161d3.slpz",
+      "expected": {
+        "native": {
+          "frames": 7750,
+          "actual_output_fingerprint": "4c93ef11025ce087"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/mewtwo_interactions/absorb.slpz",
       "expected": {
         "native": {
