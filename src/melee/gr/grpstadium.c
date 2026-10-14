@@ -2394,23 +2394,12 @@ void msl_stadium_display_event(int screen)
 
 static const int msl_stadium_kinds[] = { 3, 4, 6, 9 };
 
-// grStadium_801D2528 for a transformation screen (modes 2-6), outside
-// training mode: the jumbotron shows it for x28 frames and its camera
-// subject is framed (x8 = 0) meanwhile. The mode's picture bit (xE6) is the
-// only other write, and it is presentation. The retail function also owns
-// every text screen, whose SisLib/language/game-mode dependencies are not
-// part of the headless library; no transformation screen reaches them, and
-// none draws random numbers.
-// refs/melee/src/melee/gr/grpstadium.c::grStadium_801D2528
+// A transformation screen (modes 2-6) goes through the headless schedule's
+// own grStadium_801D2528 (msl_stadium_show, from #60 below), as every other
+// screen does.
 static void msl_stadium_show_transformation(Ground_GObj* display, int screen)
 {
-    Ground* gp = GET_GROUND(display);
-    gp->u.display.xEA = gp->u.display.xE4;
-    gp->u.display.xE4 = screen;
-    gp->u.display.xE0 = yaku->x28;
-    if (gp->u.display.xF4 != NULL) {
-        gp->u.display.xF4->x8 = 0;
-    }
+    msl_stadium_show(display, screen, 0);
 }
 
 // A transformation other than the one before last: the retail loop at

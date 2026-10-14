@@ -17,7 +17,6 @@
 #include "gr/grizumi.h"
 #include "gr/grpstadium.h"
 #include "gr/ground.h"
-#include "gr/grpstadium.h"
 #include "gr/types.h"
 #include "it/inlines.h"
 #include "it/it_26B1.h"
