@@ -127,7 +127,7 @@
       "sources": [
         "refs/slippi-ssbm-asm/Online/Core/BrawlOffscreenDamage.asm",
         "refs/melee/src/melee/gm/gmvs.c::getSpawnPoint",
-        "tools/validation/admission.py::neutral_spawn"
+        "tools/validation/admission.py::slippi_patches"
       ]
     },
     {
