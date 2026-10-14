@@ -85,6 +85,55 @@ Strict-release validation passes all 517 recordings / 4,768,869 frames and their
 output locks. Source/native smoke and native/Wasm parity pass. Raw diagnostic,
 profiling and benchmark results are under `reports/triage/pr67_cost/`.
 
+## Static-pose blend review (#58)
+
+Against main `24784d88`, CPU 4, batch 256, 524,288 timed match-frames, two
+strict-release runs per version in main/candidate/candidate/main order:
+
+| Workload | Main FPS | Corrected blend FPS | Change |
+| --- | ---: | ---: | ---: |
+| Same 510 human tapes | 121,881 | 123,545 | +1.37% |
+| Tilted-shield probe | 162,200 | 157,491 | −2.90% |
+
+The mixed result is evidence of no observed slowdown, not a claimed speedup.
+The shield probe uses eight FD dittos (Fox, Falco, Marth, Sheik, Dr. Mario,
+Falcon, Link, Samus), 20 tilted-shield frames followed by 60 neutral frames;
+a debugger confirmed it reaches `ftAnim_80070108` with partial blend weights.
+Its higher shielding frequency exposes a repeatable cost hidden by the mixed
+workload. Both workloads retain identical main/candidate output digests.
+The fix preserves the existing batched arithmetic and adds no allocations or
+state; it blends eligible unanimated joints that were incorrectly skipped.
+
+Validation: 518/518 recordings, 4,782,367 frames; all 517 prior output locks
+unchanged, one new lock. Source/native smoke, Wasm parity and 40 affected tooling
+tests pass. Raw results and probe generation are in `reports/triage/pr58_review/`.
+
+### Presentation-only joint exclusion
+
+Profiling put 4.81% of the shield probe's instrumented time in
+`ftAnim_80070108`, including 3.74% in its blend kernel. Removing the animation
+shortcut also admitted the shared `JOBJ_MSL_GAMEPLAY_COLD` placeholder that
+`ftparts.c` uses for presentation-only bones: its part flags are clear, so it
+passes `msl_fighter_part_can_animate`. The retained fix checks that existing
+marker, while still blending every eligible unanimated gameplay joint.
+
+Final paired main/candidate/candidate/main runs with the same settings above:
+
+| Workload | Main FPS (runs) | Final FPS (runs) | Change |
+| --- | ---: | ---: | ---: |
+| Tilted shield | 165,807 (165,769 / 165,844) | 164,672 (164,758 / 164,585) | −0.68% |
+| Same 510 human tapes | 124,608 (123,704 / 125,511) | 123,693 (123,754 / 123,631) | −0.73% |
+
+This removes most of the original 2.9% shield-heavy penalty, not literally all
+measured cost. Both workload digests are unchanged. All 518 replay locks and
+4,782,367 compared frames pass; source/native smoke and Wasm parity pass.
+There is no new state, allocation, cache, or arithmetic change.
+
+Rejected alternatives: compact quaternion worklists were 1.43% slower than the
+unoptimized PR; shared vector math and independent axis comparisons recovered
+less than 1% together. Both were reverted in favor of the narrower owner fix.
+Raw profiles, experiments and final measurements: `reports/triage/pr58_perf/`.
+
 ## Memory
 
 Measured at `24ee1e58` on 2026-09-24 (16-core Linux host, private resident bytes
