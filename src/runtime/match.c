@@ -112,6 +112,11 @@ void msl_core_match_rules_init(MslCoreMatchRules* rules, int is_teams,
     msl_ucf_shield_drop_084_enabled = ucf_shield_drop_084_enabled != 0;
 }
 
+bool msl_slippi_patch(int patch)
+{
+    return (msl_core_active_match()->config.slippi_patches & patch) != 0;
+}
+
 bool msl_whispy_ignores_dead_fighters(void)
 {
     return msl_core_active_match()->config.whispy_dead_fighter_fix != 0;
@@ -831,8 +836,3 @@ int ftCo_804D903C = 0x3F800000;
 float ftCo_804D90D0 = 0.0F;
 float ftCo_804D90D4 = 1.0F;
 double ftCo_804D90D8 = 1.0;
-
-bool msl_slippi_patch(int patch)
-{
-    return (msl_core_active_match()->config.slippi_patches & patch) != 0;
-}

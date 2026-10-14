@@ -18,13 +18,13 @@ from tools.validation.validate_replay import (
     load_suite_cases,
     ReplayCase,
 )
-from tools.validation.admission import require_admissible
+from tools.validation.admission import gecko_codes, require_admissible, slippi_patches
 from tools.validation.slpz import replay_path_for_peppi
 
 
 FORMAT_VERSION = 4
 # Export semantics can change without changing the tape layout.
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 DEFAULT_SUITE = ROOT / "replays/suites/melee_core_aggregate.json"
 DEFAULT_OUTPUT = ROOT / "build/melee_core/benchmark/cases.tsv"
 
@@ -60,7 +60,7 @@ def _cached_frame_count(path: Path) -> int | None:
     except (OSError, struct.error):
         return None
     if (
-        magic != b"MSLRPB03"
+        magic != b"MSLRPB04"
         or version != FORMAT_VERSION
         or header_size < 24
         or input_size != 52
@@ -113,6 +113,7 @@ def prepare(args: argparse.Namespace) -> None:
                         ucf_shield_drop_extended_enabled=case.ucf_shield_drop_extended_enabled,
                         ucf_shield_drop_084_enabled=case.ucf_shield_drop_084_enabled,
                         fnmsubs_profile=case.fnmsubs_profile,
+                        slippi_patches=slippi_patches(gecko_codes(peppi_path.read_bytes())),
                     )
                     os.replace(temporary, case_path)
                 finally:

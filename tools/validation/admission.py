@@ -83,9 +83,7 @@ PATCH_FD_BACKGROUND_FROZEN = 1 << 0
 
 
 def slippi_patches(codes: dict[int, bytes]) -> int:
-    """Single-instruction Slippi patches the capture ran
-    (MslCoreMatchConfig.slippi_patches): External/Frozen All/Core/2.asm puts
-    a nop at 0x8021AAE4, over Final Destination's background think."""
+    """Identify supported Slippi patches from their recorded instructions."""
     patches = 0
     if codes.get(0x0421AAE4, b"")[4:8] == bytes.fromhex("60000000"):
         patches |= PATCH_FD_BACKGROUND_FROZEN

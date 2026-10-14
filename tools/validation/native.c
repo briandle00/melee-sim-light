@@ -2505,8 +2505,8 @@ static PyObject* validate_replay(PyObject* self, PyObject* args, PyObject* kwarg
   if (msl_set_fnmsubs_profile(&replay, fnmsubs_profile) != 0) {
     goto done;
   }
-  if (slippi_patches < 0 || slippi_patches > 1) {
-    PyErr_SetString(PyExc_ValueError, "slippi_patches must be 0 to 1");
+  if (slippi_patches < 0 || (slippi_patches & ~MSL_PATCH_FD_BACKGROUND_FROZEN)) {
+    PyErr_SetString(PyExc_ValueError, "unsupported slippi_patches bits");
     goto done;
   }
   replay.slippi_patches = (uint8_t)slippi_patches;
@@ -2619,6 +2619,7 @@ static PyObject* write_benchmark_case(PyObject* self, PyObject* args, PyObject* 
       "ucf_shield_drop_extended_enabled",
       "ucf_shield_drop_084_enabled",
       "fnmsubs_profile",
+      "slippi_patches",
       NULL,
   };
   PyObject* frames_obj;
@@ -2627,6 +2628,7 @@ static PyObject* write_benchmark_case(PyObject* self, PyObject* args, PyObject* 
   PyObject* arrow_pair = NULL;
   const char* output_path;
   const char* fnmsubs_profile = NULL;
+  int slippi_patches = 0;
   int ucf_cardinals_1_0_enabled = 1;
   int ucf_shield_sdi_enabled = 1;
   int ucf_sdi_enabled = 1;
@@ -2645,11 +2647,11 @@ static PyObject* write_benchmark_case(PyObject* self, PyObject* args, PyObject* 
   PyObject* result = NULL;
   (void)self;
 
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOOs|pppppz:write_benchmark_case", keywords,
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOOs|pppppzi:write_benchmark_case", keywords,
                                    &frames_obj, &start_obj, &metadata_obj, &output_path,
                                    &ucf_cardinals_1_0_enabled, &ucf_shield_sdi_enabled,
                                    &ucf_sdi_enabled, &ucf_shield_drop_extended_enabled,
-                                   &ucf_shield_drop_084_enabled, &fnmsubs_profile)) {
+                                   &ucf_shield_drop_084_enabled, &fnmsubs_profile, &slippi_patches)) {
     return NULL;
   }
   memset(&replay, 0, sizeof(replay));
@@ -2667,6 +2669,11 @@ static PyObject* write_benchmark_case(PyObject* self, PyObject* args, PyObject* 
   if (msl_set_fnmsubs_profile(&replay, fnmsubs_profile) != 0) {
     goto done;
   }
+  if (slippi_patches < 0 || (slippi_patches & ~MSL_PATCH_FD_BACKGROUND_FROZEN)) {
+    PyErr_SetString(PyExc_ValueError, "unsupported slippi_patches bits");
+    goto done;
+  }
+  replay.slippi_patches = (uint8_t)slippi_patches;
 
   arrow_pair = PyObject_CallMethod(frames_obj, "__arrow_c_array__", NULL);
   if (arrow_pair == NULL) {

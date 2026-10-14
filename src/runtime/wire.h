@@ -141,16 +141,13 @@ typedef struct MslCoreMatchConfig {
     uint8_t stage_event_streams;
     // Online/Core/WhispyBlowDirFix excludes death animations from the vote.
     uint8_t whispy_dead_fighter_fix;
-    // Other single-instruction Slippi patches the capture's list carries
-    // (MSL_PATCH_*).
+    // MSL_PATCH_* capabilities from the replay code list.
     uint8_t slippi_patches;
     MslCoreMatchPlayerConfig players[MSL_CORE_MAX_PLAYERS];
 } MslCoreMatchConfig;
 
 enum {
-    // External/Frozen All/Core/2.asm: a nop in place of Final Destination's
-    // background think (the bl at 0x8021AAE4), so the background never
-    // transforms and never draws random numbers.
+    // External/Frozen All/Core/2.asm: nop the call at 0x8021AAE4.
     MSL_PATCH_FD_BACKGROUND_FROZEN = 1 << 0,
 };
 

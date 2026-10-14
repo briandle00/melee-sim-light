@@ -23,7 +23,7 @@ typedef struct MslCoreBenchmarkCaseHeader {
 #pragma pack(pop)
 
 static const uint8_t msl_core_benchmark_case_magic[8] = {
-    'M', 'S', 'L', 'R', 'P', 'B', '0', '3',
+    'M', 'S', 'L', 'R', 'P', 'B', '0', '4',
 };
 
 _Static_assert(sizeof(MslCoreBenchmarkCaseHeader) == 24 + sizeof(MslCoreMatchConfig),
