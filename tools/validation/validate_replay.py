@@ -374,7 +374,7 @@ def validate_one(
 def with_human_levels(start: dict, path: Path) -> dict:
     """The start block with each human port's recorded level byte as
     "human_level" (a human Ice Climber's Nana sets her AI up from it)."""
-    levels = raw_player_levels(path.read_bytes()) if path.exists() else None
+    levels = raw_player_levels(path.read_bytes())
     if levels is None:
         return start
     start = dict(start)

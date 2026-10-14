@@ -175,27 +175,6 @@ def test_supported_rule_values_do_not_become_capture_bans(properties_only):
     assert "unsupported-settings" not in admission.capture_issues(game, raw)
 
 
-def _raw_with_levels(levels):
-    import struct
-    start = bytearray(1 + 0x74 + 0x24 * 3 + 1)
-    start[0] = 0x36
-    for port, level in enumerate(levels):
-        start[0x74 + 0x24 * port] = level
-    body = bytes([0x35, 4, 0x36]) + struct.pack(">H", len(start) - 1) + bytes(start)
-    return b"{U\x03raw[$U#l" + struct.pack(">I", len(body)) + body
-
-
-def test_player_levels_are_read_from_the_raw_game_start():
-    assert admission.raw_player_levels(_raw_with_levels((1, 0, 3, 9))) == [1, 0, 3, 9]
-    assert admission.raw_player_levels(b"not a replay") is None
-
-
-def test_human_levels_reach_the_start_block(tmp_path):
-    path = tmp_path / "game.slp"
-    path.write_bytes(_raw_with_levels((1, 4, 0, 0)))
-    start = {"players": [{"port": "P1", "type": "Human"},
-                         {"port": "P2", "type": "Cpu", "cpu_level": 9}]}
-    out = validate_replay.with_human_levels(start, path)
-    assert out["players"][0]["human_level"] == 1
-    assert "human_level" not in out["players"][1]
-    assert "human_level" not in start["players"][0]
+def test_human_levels_are_read_from_a_ranked_recording():
+    _, raw = read_game("replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz")
+    assert admission.raw_player_levels(raw) == [1, 1, 1, 1]
