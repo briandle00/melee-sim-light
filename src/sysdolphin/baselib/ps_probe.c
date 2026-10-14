@@ -474,8 +474,10 @@ static int probe_bank(int bank)
     }
     probe_commands[bank] = calloc((size_t) data->count, sizeof(HSD_PSCmdList*));
     probe_bank_source[bank] = data->commands;
-    for (i = 0; i < data->count; ++i) {
-        const HSD_PSCmdList* command = data->commands[i];
+    // (the library indexes by the full id; the simulator's array holds only
+    // the occupied range [id_base, count), at id - id_base)
+    for (i = data->id_base; i < data->count; ++i) {
+        const HSD_PSCmdList* command = data->commands[i - data->id_base];
         uint32_t size = 0;
         const uint8_t* script;
         HSD_PSCmdList* copy;

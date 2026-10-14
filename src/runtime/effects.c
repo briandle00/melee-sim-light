@@ -42,6 +42,10 @@ static void msl_effect_consume_bank_command(
 // each file's table has - read from the files by the viewer's own reader -
 // and, per model, how many draws its animation's first step makes.
 enum { MSL_EFFECT_MODELS_PER_FILE = 16, MSL_EFFECT_VIEW_BANKS = 50 };
+// psInitDataBankLoad's slot for the stage archive's map_ptcl (gameplay's
+// test in msl_effect_match_dptcl writes it as 0x1E).
+// refs/melee/src/melee/gr/ground.c::Ground_801C0800
+enum { MSL_CORE_EFFECT_STAGE_BANK = 0x1E };
 // Gameplay's own table (msl_effect_game_data_init) is a list written by
 // hand, a file added as each fighter's draws were needed, and one slot short
 // of the game's. For the viewer track and the particle probe every file of
@@ -296,7 +300,7 @@ static void msl_effect_load_view_bank(int bank, const char* filename,
         return;
     }
     if (msl_native_effect_bank(view->archive, symbol, &view->count,
-                               &view->commands) != 0)
+                               &view->id_base, &view->commands) != 0)
     {
         view->count = 0;
         view->commands = NULL;
@@ -603,20 +607,18 @@ const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank)
 {
     // (the stage's own: the running stage's map_ptcl)
     if (bank == MSL_CORE_EFFECT_STAGE_BANK) {
-        const MslCoreEffectStageBanks* stages;
-        int i;
-        if (msl_core_try_active_match() == NULL ||
-            msl_core_context_game_data == NULL)
+#ifdef MSL_CORE_NATIVE
+        if (msl_bound_effect_data == NULL ||
+            (u32) stage_info.internal_stage_id >=
+                sizeof(msl_bound_effect_data->stage_banks) /
+                    sizeof(msl_bound_effect_data->stage_banks[0]))
         {
             return NULL;
         }
-        stages = &msl_core_context_game_data->stage_particles;
-        for (i = 0; i < stages->count; ++i) {
-            if (stages->ids[i] == (s32) stage_info.internal_stage_id) {
-                return &stages->banks[i];
-            }
-        }
+        return &msl_bound_effect_data->stage_banks[stage_info.internal_stage_id];
+#else
         return NULL;
+#endif
     }
     if (msl_effect_view_only(bank)) {
         return &msl_effect_view_banks[bank];
@@ -644,7 +646,7 @@ int msl_effect_generator_draws(int bank, int generator_id)
     {
         return 0;
     }
-    command = data->commands[generator_id];
+    command = data->commands[generator_id - data->id_base];
     return command != NULL && !(command->kind & 0x100) &&
            command->random >= 0.0F;
 }
