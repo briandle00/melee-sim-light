@@ -3077,6 +3077,15 @@
       }
     },
     {
+      "replay": "replays/validation/marios/platinum-platinum-3d9c7e1486bef415564c4005.slpz",
+      "expected": {
+        "native": {
+          "frames": 13498,
+          "actual_output_fingerprint": "3a47eb7e3705bfb1"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/marios/silver-fox-2026-06_Game_20260615T232450.slpz",
       "expected": {
         "native": {
