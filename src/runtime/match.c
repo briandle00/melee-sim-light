@@ -444,8 +444,12 @@ bool msl_ucf_pass_oos_stick_check(const Fighter* fp)
 float msl_ucf_squatrv_threshold(const Fighter* fp, float vanilla_threshold)
 {
     // refs/ucf/src/dbooc/dbooc.S. Raise SquatRv's release threshold only for
-    // a one-frame rim input; 0.5900 is the UCF 0.84 IC-safe value.
-    if (fp->x670_timer_lstick_tilt_x < 1 &&
+    // a one-frame rim input; 0.5900 is the UCF 0.84 IC-safe value. The fix
+    // is UCF 0.84's (External/UCF 0.84/UCF/UCF DBOOC SquatRv Fix.asm at
+    // 0x800D65EC); the UCF 0.8 code set, which clears
+    // ucf_shield_drop_084_enabled, does not carry it.
+    if (msl_ucf_shield_drop_084_enabled &&
+        fp->x670_timer_lstick_tilt_x < 1 &&
         msl_ucf_is_rim_coord(fp->input.lstick))
     {
         return 0.5900F;
