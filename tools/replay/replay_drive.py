@@ -214,9 +214,50 @@ def finalized_rows(ids):
     return keep, 0
 
 
+def raw_cpu_levels(raw):
+    """Each port's CPU level byte from the raw Game Start event (Slippi spec
+    offset 0x74 + 0x24 * port), or None when the file cannot be walked.
+
+    The byte is there for every port, humans included, and Slippi playback
+    restores it. It matters for a human's Nana: her AI is set up with the
+    player's level (ftCo_800B9704: x34 = (10 - level) * (15 r + 15) + 10),
+    and peppi reports the level only for CPU players."""
+    import struct
+    try:
+        at = raw.index(b"raw[$U#l") + 8
+        size = struct.unpack(">I", raw[at:at + 4])[0]
+        body = raw[at + 4:at + 4 + size]
+        if body[0] != 0x35:
+            return None
+        sizes = {}
+        for k in range(2, 1 + body[1], 3):
+            sizes[body[k]] = struct.unpack(">H", body[k + 1:k + 3])[0]
+        start = 1 + body[1]
+        if body[start] != 0x36 or sizes.get(0x36, 0) < 0x74 + 0x24 * 3:
+            return None
+        return [body[start + 0x74 + 0x24 * port] for port in range(4)]
+    except (ValueError, IndexError, struct.error):
+        return None
+
+
+HUMAN_LEVEL = 0x80      # wire.h MSL_CORE_HUMAN_LEVEL
+
+
+def tape_level(player):
+    """MslCoreMatchPlayerConfig.cpu_level for a recorded player: the CPU
+    level for a CPU, or MSL_CORE_HUMAN_LEVEL | level for a human whose
+    level byte is set."""
+    if player.get("type") != "Human":
+        return player["cpu_level"]
+    level = player.get("human_level", 0)
+    return HUMAN_LEVEL | level if 1 <= level <= 9 else 0
+
+
 def read(path):
     """Everything the tape needs plus the per-frame truth to compare against."""
     game = _read_slippi(str(path), False)
+    with open(path, "rb") as handle:
+        levels = raw_cpu_levels(handle.read())
     start = game.start
     frames = game.frames
     names = frames.type.names
@@ -242,6 +283,11 @@ def read(path):
             "stocks": int(player["stocks"] or 4),
             "team": player["team"],
             "cpu_level": int(player["cpu_level"] or 0),
+            # The level byte a controller slot carries (wire.h
+            # MSL_CORE_HUMAN_LEVEL); a human's Nana sets her AI up from it.
+            "human_level": (levels["P1P2P3P4".index(str(player["port"])) // 2]
+                            if levels is not None and
+                            str(player["type"]) == "Human" else 0),
             "pre_seed": column(pre, "random_seed"),
             "buttons": column(pre, "buttons_physical"),
             "raw_x": column(pre, "raw_analog_x"),
@@ -611,7 +657,7 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
                          ((players[index]["port"] + 1) << 1) |
                          (1 if players[index]["direction"][0] > 0 else 0),
                          players[index]["costume"], players[index]["handicap"],
-                         0, players[index]["cpu_level"], 0)
+                         0, tape_level(players[index]), 0)
                         if index < len(players) else (0,) * 8)],
         count)
 

@@ -205,3 +205,20 @@ def test_rollback_rows_and_a_discarded_tail():
     assert keep.tolist() == [0, 1, 5, 6] and dropped == 1
     keep, dropped = rd.finalized_rows(np.array([], dtype=np.int32))
     assert len(keep) == 0 and dropped == 0
+
+
+def test_human_level_byte_reaches_the_tape():
+    import struct
+    # A minimal raw array: the payload-sizes event, then Game Start.
+    start = bytearray(1 + 0x74 + 0x24 * 3 + 1)
+    start[0] = 0x36
+    for port, level in enumerate((1, 0, 3, 9)):
+        start[0x74 + 0x24 * port] = level
+    sizes = bytes([0x35, 4, 0x36]) + struct.pack(">H", len(start) - 1)
+    body = sizes + bytes(start)
+    raw = b"{U\x03raw[$U#l" + struct.pack(">I", len(body)) + body
+    assert rd.raw_cpu_levels(raw) == [1, 0, 3, 9]
+    assert rd.raw_cpu_levels(b"not a replay") is None
+    assert rd.tape_level({"type": "Human", "cpu_level": 0, "human_level": 1}) == 0x81
+    assert rd.tape_level({"type": "Human", "cpu_level": 0, "human_level": 0}) == 0
+    assert rd.tape_level({"type": "Cpu", "cpu_level": 7, "human_level": 0}) == 7
