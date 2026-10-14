@@ -2513,7 +2513,8 @@ static PyObject* validate_replay(PyObject* self, PyObject* args, PyObject* kwarg
     goto done;
   }
   if (slippi_patches < 0 ||
-      (slippi_patches & ~(MSL_PATCH_FD_BACKGROUND_FROZEN | MSL_PATCH_PREVENT_WOBBLING))) {
+      (slippi_patches & ~(MSL_PATCH_FD_BACKGROUND_FROZEN | MSL_PATCH_PREVENT_WOBBLING |
+                          MSL_PATCH_RETAIL_SPAWNS))) {
     PyErr_SetString(PyExc_ValueError, "unsupported slippi_patches bits");
     goto done;
   }
@@ -2686,7 +2687,8 @@ static PyObject* write_benchmark_case(PyObject* self, PyObject* args, PyObject* 
     goto done;
   }
   if (slippi_patches < 0 ||
-      (slippi_patches & ~(MSL_PATCH_FD_BACKGROUND_FROZEN | MSL_PATCH_PREVENT_WOBBLING))) {
+      (slippi_patches & ~(MSL_PATCH_FD_BACKGROUND_FROZEN | MSL_PATCH_PREVENT_WOBBLING |
+                          MSL_PATCH_RETAIL_SPAWNS))) {
     PyErr_SetString(PyExc_ValueError, "unsupported slippi_patches bits");
     goto done;
   }

@@ -156,6 +156,8 @@ enum {
     // External/PreventWobbling: Init Wobble Count at 0x800DB880/0x800DBBD4,
     // Wobble Check at 0x8008F090.
     MSL_PATCH_PREVENT_WOBBLING = 1 << 1,
+    // No External/NeutralSpawn (0x8016E510): each port at its own spawn point.
+    MSL_PATCH_RETAIL_SPAWNS = 1 << 2,
 };
 
 enum {
