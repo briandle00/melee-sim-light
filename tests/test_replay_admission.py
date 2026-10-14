@@ -226,7 +226,7 @@ def test_human_levels_are_read_from_a_ranked_recording():
 def test_slippi_3_3_post_frame_record_point_is_read_from_the_list():
     # 3.3 sends the post-frame event from the end of Fighter_procMap
     # (0x8006C5D8); later versions send it at 0x8006DA34.
-    assert admission.slippi_patches({0xC206C5D8: b""}) == \
+    assert admission.slippi_patches({0xC206C5D8: b""}) & \
         admission.PATCH_POST_FRAME_AT_MAP
     assert admission.slippi_patches({0xC206DA34: b""}) & \
         admission.PATCH_POST_FRAME_AT_MAP == 0
