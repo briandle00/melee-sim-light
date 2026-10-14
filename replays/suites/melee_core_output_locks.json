@@ -1574,6 +1574,15 @@
       }
     },
     {
+      "replay": "replays/validation/icies/platinum-platinum-9dc16c938bf8ed578f6d43dd.slpz",
+      "expected": {
+        "native": {
+          "frames": 12846,
+          "actual_output_fingerprint": "0b6471786b3c3d7d"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/icies/ps-fox-2025-08_Game_20250801T213237.slpz",
       "expected": {
         "native": {

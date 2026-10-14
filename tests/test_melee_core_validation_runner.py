@@ -105,7 +105,9 @@ def test_suite_replay_execution_metadata_reaches_native_validator(
 
     @contextmanager
     def fake_replay_path(_path: Path):
-        yield tmp_path / "legacy.slp"
+        path = tmp_path / "legacy.slp"
+        path.touch()
+        yield path
 
     class FakeNative:
         @staticmethod
@@ -115,6 +117,7 @@ def test_suite_replay_execution_metadata_reaches_native_validator(
 
     monkeypatch.setattr(validate_replay, "replay_path_for_peppi", fake_replay_path)
     monkeypatch.setattr(validate_replay, "_read_slippi", lambda _path, _flag: game)
+    monkeypatch.setattr(validate_replay, "gecko_codes", lambda _raw: {})
     monkeypatch.setattr(validate_replay, "game_data_dir", lambda: tmp_path)
 
     validate_replay.validate_one(

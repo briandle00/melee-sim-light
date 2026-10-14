@@ -159,3 +159,31 @@ Item reserves (`msl_item_reserve_runtime_pools`: the ItCo.dat article bound,
 ItemLink and DynamicBoneTable pools) are 47–59% of that arena. A host running
 `E` environments over `P` forked workers needs roughly
 `300 MB + 10 MB × P + 1.0–1.7 MB × E` for the simulator.
+
+## Frozen FD replay capability
+
+PR #43 against main `8e4fa0a7`, Linux amd64 GCC 13.3, CPU 4 on the V-cache
+CCD, performance governor. Two strict-release runs per cell; 256 resident
+matches, 524,288 timed match-frames, eight warmup ticks, history 128.
+The fixed 510-tape corpus is the same as the preceding PR checks. Candidate
+copies insert only the new zero capability byte and update the tape header;
+all input bytes are identical. The FD subset contains 139 tapes.
+
+| Workload | Main FPS | Candidate FPS | Change |
+| --- | ---: | ---: | ---: |
+| Mixed, patch off | 122,594 | 122,023 | −0.47% |
+| FD only, patch off | 140,776.5 | 140,211.5 | −0.40% |
+| FD only, patch on | 140,776.5 | 141,161.5 | +0.27% |
+
+These short samples show no material slowdown; their spread exceeds the
+mean differences. The enabled case changes the simulated rules and is not
+an equivalent-computation speedup. Default digests match main (`38a4d0d243799a3c`
+mixed, `04e4f4f92b207d08` FD). No additional allocations or tables; the FD
+callback adds one capability check. Public API constructors keep the bit clear.
+
+The supplied FD Marth/Icies replay improves from 12,798/12,846 to exact.
+All 519 replays (4,795,213 frames) pass, preserving all 518 previous locks.
+Native checks, Wasm parity and viewer schema pass. The existing Python selection
+passes all 151 tests, with its usual timing-test exclusion; no new synthetic
+gameplay tests.
+Raw logs: `reports/triage/pr43_review/`.

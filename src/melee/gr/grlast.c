@@ -313,9 +313,13 @@ static void grLast_8021AAB0(Ground_GObj* gobj)
     Ground* gp = GET_GROUND(gobj);
     if (!gp->u.map.xC4_b1 && !gp->u.map.xC4_b0) {
 #ifdef MSL_CORE_HOSTED
-        if (!msl_slippi_patch(MSL_PATCH_FD_BACKGROUND_FROZEN))
+        // Frozen All/Core/2.asm replaces only the call at 0x8021AAE4.
+        if (!msl_slippi_patch(MSL_PATCH_FD_BACKGROUND_FROZEN)) {
 #endif
-        grLast_8021B2E8(gobj);
+            grLast_8021B2E8(gobj);
+#ifdef MSL_CORE_HOSTED
+        }
+#endif
         if (gp->u.map.xC4_b26) {
             int tmp = grLast_8021B5C4(gobj);
             if (tmp != 0) {

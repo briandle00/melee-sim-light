@@ -11,3 +11,9 @@
   to 0.68% relative to main; the final mixed check is −0.73%. All 518 replay
   locks, native checks and Wasm parity pass. General math experiments reverted.
   [Measurement details](BASELINE.md#presentation-only-joint-exclusion).
+
+- PR #43: select FD's frozen-background call suppression from recorded Slippi
+  instructions, including benchmark exports. Mixed/default timing is −0.47%
+  and FD/default −0.40%, within the short-run spread; all 519 replay locks,
+  native checks and Wasm parity pass.
+  [Measurement details](BASELINE.md#frozen-fd-replay-capability).
