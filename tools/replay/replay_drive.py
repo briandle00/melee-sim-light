@@ -73,7 +73,7 @@ DRIVER = Path(os.environ.get(
     ROOT / "build/melee_core/python/replay_drive.exe"))
 DATA_ROOT = Path(os.environ.get("MSL_DATA_DIR", ROOT / "data")) / "raw"
 
-CONFIG_FMT = "<IiiIIf16B32BI"
+CONFIG_FMT = "<IiiIIf17B32BI"
 FRAME_FMT = "<II4B2f" + "H4b3B4f" * 4
 MAX_ITEMS = 15
 # replay_drive.c OutItem: exists, state, owner, misc_mask, type, instance_id,
@@ -532,6 +532,39 @@ def drive_fitted(replay, count, profile, tries=4, rounds=64):
     return blob, flips
 
 
+# wire.h MSL_JIT_*: the capturing Dolphin's host arithmetic, in the order
+# drive_arithmetic tries them.
+JIT_ARITHMETIC = (0, 1)     # FMA3 host, then MSL_JIT_NO_HOST_FMA
+
+
+def drive_arithmetic(replay, count, profile):
+    """drive_fitted() under each host arithmetic the capturing Dolphin could
+    have run, keeping the one that matches furthest (replay["jit_arithmetic"]
+    is left at it).
+
+    The recording does not say whether the capturing machine had FMA3: a
+    Dolphin without it rounds the product of a double-precision fmadd before
+    the add, which moves the last bit of a sqrtf or a collision intersection
+    now and then. Like the UCF profile, this is a fit to the recording, and a
+    second drive only runs when the first one differs."""
+    global LAST_DRIVES
+    best = None
+    drives = 0
+    for jit in JIT_ARITHMETIC:
+        replay["jit_arithmetic"] = jit
+        blob, flips = drive_fitted(replay, count, profile)
+        drives += LAST_DRIVES
+        first = first_difference(replay, blob)
+        reach = len(blob) if first is None else first
+        if best is None or reach > best[0]:
+            best = (reach, jit, blob, flips)
+        if first is None:
+            break
+    replay["jit_arithmetic"] = best[1]
+    LAST_DRIVES = drives
+    return best[2], best[3]
+
+
 def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
                cstick_gate=GATE_SNAP):
     players = replay["players"]
@@ -559,6 +592,7 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
         ucf[0], ucf[1], ucf[2], ucf[3], ucf[4],
         streams, replay.get("stadium", 0) or 0,
         replay.get("slippi_patches", 0),
+        replay.get("jit_arithmetic", 0),
         *[value
           for index in range(4)
           for value in ((int(players[index]["internal_char"][0]),
@@ -833,7 +867,7 @@ def state_matches_recording(path, through=None, profiles=None,
     profiles = candidate_profiles(replay)
   for profile in profiles:
     if raw_cstick:
-      blob, _ = drive_fitted(replay, count, profile)
+      blob, _ = drive_arithmetic(replay, count, profile)
     else:
       blob = drive(replay, count, profile, raw_cstick=False)
     rows = len(blob) // OUT_SIZE

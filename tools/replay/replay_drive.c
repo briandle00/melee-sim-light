@@ -78,6 +78,7 @@ typedef struct TapeConfig {
     uint8_t stage_event_streams;
     uint8_t stadium_transformations;    /* MSL_STADIUM_* (wire.h) */
     uint8_t slippi_patches;             /* MSL_PATCH_* (wire.h) */
+    uint8_t jit_arithmetic;             /* MSL_JIT_* (wire.h) */
     TapePlayer players[4];
     uint32_t frame_count;
 } TapeConfig;
@@ -542,6 +543,7 @@ int main(int argc, char** argv)
     config.stage_event_streams = tape.stage_event_streams;
     config.stadium_transformations = tape.stadium_transformations;
     config.slippi_patches = tape.slippi_patches;
+    config.jit_arithmetic = tape.jit_arithmetic;
     for (player = 0; player < 4; ++player) {
         config.players[player].char_id = tape.players[player].char_id;
         config.players[player].team_id = tape.players[player].team_id;
