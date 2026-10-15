@@ -19,8 +19,6 @@
 #
 # Environment:
 #   CC        host compiler (default: gcc)
-#   PPC_CC    PowerPC compiler for the DWARF types object
-#             (default: devkitPPC's powerpc-eabi-gcc)
 #   PY        Python for the code generators (default: .venv/Scripts/python.exe)
 #   OPT       optimization level for the core (default: -O2; -O0 is the
 #             gate profile and produced identical output here)
@@ -40,7 +38,6 @@ GEN="$BUILD/native/generated"
 OBJ="$BUILD/python/obj"
 
 CC="${CC:-gcc}"
-PPC_CC="${PPC_CC:-/c/devkitPro/devkitPPC/bin/powerpc-eabi-gcc}"
 PY="${PY:-$ROOT/.venv/Scripts/python.exe}"
 OPT="${OPT:--O2}"
 JOBS="${JOBS:-16}"
@@ -78,11 +75,6 @@ FAST_CFLAGS=(-O2 -ffp-contract=fast -fno-builtin-sinf -fno-builtin-cosf -mfma)
 mkdir -p "$GEN" "$OBJ" "$BUILD/python"
 step() { printf '\n== %s\n' "$*"; }
 
-step "PPC DWARF types"
-"$PPC_CC" "${CPPFLAGS[@]}" -g -gdwarf-4 -fno-eliminate-unused-debug-types \
-  -std=gnu11 -w -c "$ROOT/tools/build/native_dat_types.c" \
-  -o "$GEN/native_dat_types_ppc.o"
-
 step "host DWARF types"
 "$CC" "${NATIVE_CPPFLAGS[@]}" -g -gdwarf-4 -w -fno-eliminate-unused-debug-types \
   -std=gnu11 -c "$ROOT/tools/build/native_dat_types.c" \
@@ -90,9 +82,9 @@ step "host DWARF types"
 
 step "generated command accessors and DAT layout"
 "$PY" "$ROOT/tools/build/generate_command_accessors.py" \
-  --object "$GEN/native_dat_types_ppc.o" --output "$GEN/msl_command_fields.h"
+  --ppc "$ROOT/tools/build/ppc_layout.json" --output "$GEN/msl_command_fields.h"
 "$PY" "$ROOT/tools/build/generate_native_dat_layout.py" \
-  --ppc "$GEN/native_dat_types_ppc.o" --native "$GEN/native_dat_types_native.o" \
+  --ppc "$ROOT/tools/build/ppc_layout.json" --native "$GEN/native_dat_types_native.o" \
   --output "$GEN/native_dat_layout.c"
 
 step "generated match relocation layout"
