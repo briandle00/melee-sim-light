@@ -186,6 +186,18 @@
       ]
     },
     {
+      "replay": "replays/validation/icies/master-diamond-bf25cf805e23959b754c2c71.slpz",
+      "sha256_slp": "bf132d3abe79a7ee58781a520382fd1023af7459a9f5edcebacd6bf1a2174b87",
+      "reasons": [
+        "missing-recorded-inputs"
+      ],
+      "evidence": "UCF 0.8 online capture (Slippi 3.15, Battlefield, Sheik vs Ice Climbers), kept as the recording behind UCF 0.8's magnitude dashback. Without it the Ice Climbers port's facing first differs at frame 9229, where the leader turns back with the stick against the facing direction (a dashback under 0.8's |stick x| test, a tilt turn under 0.84's); with it all 12,376 frames are equal. Slippi 3.15 records no raw C-stick bytes. Measured with a Windows build and a replay driver comparing fighter and item gameplay lanes with the recording's own code list; the C-stick bytes this Slippi version does not record come from the driver's fixed reading of the processed C-stick, not from a fit (one drive). Not run with tools/validation.",
+      "sources": [
+        "refs/slippi-ssbm-asm/External/UCF 0.8/Logic/UCF DB.asm",
+        "src/runtime/match.c::msl_ucf_apply_dashback"
+      ]
+    },
+    {
       "replay": "replays/validation/icies/master-diamond-e1f45bc846c8b64f90b35a94.slpz",
       "sha256_slp": "1b1c2cadac531ee28ebb38c12272d8c9160dde1feab15285704d199d02b1e6c4",
       "reasons": [
