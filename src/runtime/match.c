@@ -302,6 +302,9 @@ void msl_ucf_apply_pad_buffer(Fighter* fp)
 
 void msl_ucf_apply_dashback(Fighter* fp)
 {
+    if (msl_slippi_patch(MSL_PATCH_UCF_DASHBACK_ABSENT)) {
+        return;
+    }
     float stick_x = fp->input.lstick.x;
 
     // Direct C translation of UCF 0.84/UCF/UCF Dashback.asm at the
@@ -337,6 +340,11 @@ bool msl_ucf_damagefall_wiggle_check(const Fighter* fp)
 {
     u8 hold_time = fp->x670_timer_lstick_tilt_x;
     float last_stick_x;
+
+    if (msl_slippi_patch(MSL_PATCH_UCF_TUMBLE_ABSENT)) {
+        // refs/melee/src/melee/ft/chara/ftCommon/ftCo_DamageFall.c
+        return hold_time < p_ftCommonData->x214;
+    }
 
     // Direct C translation of refs/ucf/src/tumble/tumble.cpp, injected at
     // ftCo_DamageFall_IASA+0xCC (0x800908F4). Vanilla already accepts a
@@ -396,6 +404,9 @@ static float msl_ucf_08_rim_lane(float value)
 
 bool msl_ucf_suppress_spotdodge(const Fighter* fp)
 {
+    if (msl_slippi_patch(MSL_PATCH_UCF_SHIELD_DROP_ABSENT)) {
+        return false;
+    }
     // The common Escape owner calls this at both vanilla spot-dodge entry
     // sites; the gecko hooks ftCo_80099894+0x10 and, when it suppresses,
     // unwinds to the caller's `li r3, 0` so the check reports no dodge.

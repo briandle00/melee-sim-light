@@ -20,6 +20,16 @@
   "sha256": "1ff20dc2011ac30ce68101ad1d61187d130b0b89635f9a893b09d4192f91883f"
  },
  {
+  "fix": "ucf_074_no_tumble",
+  "path": "master-diamond-cb9041ea5f8f4a1586517e31.slp",
+  "sha256": "f5a44bca4226d885e1b092859d397c3b11e6d7232beea0a0627570c33331ddb4"
+ },
+ {
+  "fix": "ucf_074_no_tumble",
+  "path": "platinum-platinum-716d9c800991426ef9c91e00.slp",
+  "sha256": "a51e830fe1b664bbd4e0ef2fdbb71805f9bfe8be35e9ca62e6a4ad2154c5b6db"
+ },
+ {
   "fix": "host_without_fma3",
   "path": "platinum-platinum-ab04b49fc7f3b06be608d3c2.slp",
   "sha256": "58d338524572a3f21d18ce2fdebd768bdd8f3c0c97b4d4283011a82c3c9da7bb"

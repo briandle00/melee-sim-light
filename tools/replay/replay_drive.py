@@ -96,13 +96,21 @@ NOT_A_VERDICT = ('not admission and not a validation result: the inputs '
                  'profile is fitted by trying each one, which the strict '
                  'gate forbids (agent_docs/VALIDATION.md)')
 
-# cardinals, shield SDI, SDI, extended shield drop, 0.84 shield drop.
+# cardinals, shield SDI, SDI, extended shield drop, 0.84 shield drop, and
+# the UCF injections absent (1 tumble, 2 dashback, 4 shield drop: wire.h
+# MSL_PATCH_UCF_*_ABSENT, slippi_patches bits 4 to 6).
 UCF_PROFILES = {
-    "ucf10": (1, 1, 1, 1, 1),
-    "ucf084": (0, 0, 0, 1, 1),
-    "ucf08": (0, 0, 0, 0, 0),
+    "ucf10": (1, 1, 1, 1, 1, 0),
+    "ucf084": (0, 0, 0, 1, 1, 0),
+    "ucf08": (0, 0, 0, 0, 0, 0),
+    "ucf074": (0, 0, 0, 0, 0, 1),
+    "vanilla": (0, 0, 0, 0, 0, 7),
 }
-PROFILE_ORDER = ("ucf10", "ucf084", "ucf08")
+PROFILE_ORDER = ("ucf10", "ucf084", "ucf08", "ucf074", "vanilla")
+UCF_TUMBLE = 0xC20908F4
+UCF_DASHBACK = 0xC20C9A44
+# The absent mask's place in slippi_patches (wire.h MSL_PATCH_UCF_TUMBLE_ABSENT).
+UCF_ABSENT_SHIFT = 4
 
 # The UCF injections a recording's gecko list carries, by address, in
 # UCF_PROFILES order. UCF 0.8 and 0.84 both inject the classic shield drop at
@@ -119,26 +127,31 @@ UCF_084_SHIELD_DROP_SIZE = 208
 
 def recorded_profile(raw):
     """The UCF profile the recording's own gecko list says it ran, as a
-    UCF_PROFILES-style name ("ucf:" and five bits), or None when the list has
-    no UCF shield drop to go by."""
+    UCF_PROFILES-style name ("ucf:", five bits and the absent-code mask), or
+    None when the recording has no gecko list to go by."""
     from tools.validation.admission import gecko_codes
     try:
         codes = gecko_codes(raw)
     except ValueError:
         return None
-    drop = codes.get(UCF_SHIELD_DROP)
-    if drop is None:
+    if not codes:
         return None
+    drop = codes.get(UCF_SHIELD_DROP)
     bits = [1 if address in codes else 0 for address in UCF_CODES]
-    bits.append(1 if len(drop) == UCF_084_SHIELD_DROP_SIZE else 0)
-    return "ucf:" + "".join(str(bit) for bit in bits)
+    bits.append(1 if drop is not None and
+                len(drop) == UCF_084_SHIELD_DROP_SIZE else 0)
+    absent = ((0 if UCF_TUMBLE in codes else 1) |
+              (0 if UCF_DASHBACK in codes else 2) |
+              (0 if drop is not None else 4))
+    return "ucf:" + "".join(str(bit) for bit in bits) + str(absent)
 
 
 def profile_bits(profile):
     if profile in UCF_PROFILES:
         return UCF_PROFILES[profile]
     if isinstance(profile, str) and profile.startswith("ucf:"):
-        return tuple(int(bit) for bit in profile[4:])
+        bits = tuple(int(bit) for bit in profile[4:])
+        return bits if len(bits) == 6 else bits + (0,)
     raise KeyError(profile)
 
 
@@ -647,7 +660,10 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
         online, offscreen, dead_up_fall, whispy_fix,
         ucf[0], ucf[1], ucf[2], ucf[3], ucf[4],
         streams, replay.get("stadium", 0) or 0,
-        replay.get("slippi_patches", 0),
+        # The profile's absent UCF routines replace the list's (a fitted
+        # profile is tried against the recording like the other fields).
+        (replay.get("slippi_patches", 0) & ~(7 << UCF_ABSENT_SHIFT)) |
+        (ucf[5] << UCF_ABSENT_SHIFT),
         replay.get("jit_arithmetic", 0),
         *[value
           for index in range(4)

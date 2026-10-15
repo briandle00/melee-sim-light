@@ -83,6 +83,11 @@ PATCH_FD_BACKGROUND_FROZEN = 1 << 0
 PATCH_PREVENT_WOBBLING = 1 << 1
 PATCH_RETAIL_SPAWNS = 1 << 2
 PATCH_POST_FRAME_AT_MAP = 1 << 3
+PATCH_UCF_TUMBLE_ABSENT = 1 << 4
+PATCH_UCF_DASHBACK_ABSENT = 1 << 5
+PATCH_UCF_SHIELD_DROP_ABSENT = 1 << 6
+PATCH_UCF_ABSENT = (PATCH_UCF_TUMBLE_ABSENT | PATCH_UCF_DASHBACK_ABSENT |
+                    PATCH_UCF_SHIELD_DROP_ABSENT)
 
 
 def slippi_patches(codes: dict[int, bytes]) -> int:
@@ -97,6 +102,16 @@ def slippi_patches(codes: dict[int, bytes]) -> int:
     # Slippi 3.3's SendGamePostFrame injection at the end of Fighter_procMap.
     if 0xC206C5D8 in codes:
         patches |= PATCH_POST_FRAME_AT_MAP
+    # The UCF injections the list lacks (UCF Tumble.asm 0x800908F4, the
+    # dashback 0x800C9A44, the shield drop 0x800998A4). No list at all
+    # reports none.
+    if codes:
+        if 0xC20908F4 not in codes:
+            patches |= PATCH_UCF_TUMBLE_ABSENT
+        if 0xC20C9A44 not in codes:
+            patches |= PATCH_UCF_DASHBACK_ABSENT
+        if 0xC20998A4 not in codes:
+            patches |= PATCH_UCF_SHIELD_DROP_ABSENT
     return patches
 
 

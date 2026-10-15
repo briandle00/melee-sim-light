@@ -174,6 +174,18 @@ enum {
     // recorded post-frame lanes are the fighter as it stood at that point.
     // Local (Slippi 3.3, closed #57): bit 3, after the open PRs' bits 1 and 2.
     MSL_PATCH_POST_FRAME_AT_MAP = 1 << 3,
+    // UCF routines the capture's code list lacks (Local: #69's absent
+    // routines, which its rebuild left out; its recording is Slippi 3.3 and
+    // needs bit 3). The UCF 0.74 toggle set has no tumble fix, and a
+    // console game without UCF has none of the three. Each absent routine
+    // keeps the vanilla behavior; clear, every routine the other UCF flags
+    // select runs.
+    // UCF Tumble.asm (0x800908F4): the tumble wiggle's one-frame swing test.
+    MSL_PATCH_UCF_TUMBLE_ABSENT = 1 << 4,
+    // UCF dashback (0x800C9A44).
+    MSL_PATCH_UCF_DASHBACK_ABSENT = 1 << 5,
+    // UCF shield drop (0x800998A4).
+    MSL_PATCH_UCF_SHIELD_DROP_ABSENT = 1 << 6,
 };
 
 enum {

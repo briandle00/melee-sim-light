@@ -27,14 +27,30 @@ def test_output_row_layout_matches_the_driver():
 
 
 def test_recorded_profile_comes_first_and_fitted_ones_follow():
-    replay = {"ucf_profile": "ucf:00000"}
-    assert rd.candidate_profiles(replay) == ("ucf:00000", "ucf10", "ucf084")
+    replay = {"ucf_profile": "ucf:000000"}
+    assert rd.candidate_profiles(replay) == (
+        "ucf:000000", "ucf10", "ucf084", "ucf074", "vanilla")
     # A recorded profile equal to a fitted one is not tried twice.
-    replay = {"ucf_profile": "ucf:11111"}
-    assert rd.candidate_profiles(replay) == ("ucf:11111", "ucf084", "ucf08")
+    replay = {"ucf_profile": "ucf:111110"}
+    assert rd.candidate_profiles(replay) == (
+        "ucf:111110", "ucf084", "ucf08", "ucf074", "vanilla")
     assert rd.candidate_profiles({}) == rd.PROFILE_ORDER
-    assert rd.profile_bits("ucf:01011") == (0, 1, 0, 1, 1)
-    assert rd.profile_bits("ucf08") == (0, 0, 0, 0, 0)
+    # The sixth field is the absent-code mask; the five-field form has none.
+    assert rd.profile_bits("ucf:010113") == (0, 1, 0, 1, 1, 3)
+    assert rd.profile_bits("ucf:01011") == (0, 1, 0, 1, 1, 0)
+    assert rd.profile_bits("ucf08") == (0, 0, 0, 0, 0, 0)
+    assert rd.profile_bits("vanilla") == (0, 0, 0, 0, 0, 7)
+
+
+def test_recorded_profile_names_the_missing_ucf_codes(monkeypatch):
+    # UCF 0.74's set: no tumble fix, the others present, the 312-byte drop.
+    _codes(monkeypatch, {0xC20C9A44: b"", 0xC20998A4: bytes(312)})
+    assert rd.recorded_profile(b"") == "ucf:000001"
+    # Nothing UCF at all.
+    _codes(monkeypatch, {0xC216E510: b""})
+    assert rd.recorded_profile(b"") == "ucf:000007"
+    _codes(monkeypatch, {})
+    assert rd.recorded_profile(b"") is None
 
 
 def test_fitting_decides_part_of_a_held_gate_run(monkeypatch):
@@ -232,3 +248,45 @@ def test_human_level_byte_reaches_the_tape():
     assert rd.tape_level({"type": "Human", "cpu_level": 0, "human_level": 1}) == 0x81
     assert rd.tape_level({"type": "Human", "cpu_level": 0, "human_level": 0}) == 0
     assert rd.tape_level({"type": "Cpu", "cpu_level": 7, "human_level": 0}) == 7
+
+
+# A public tournament recording (Purdue Weeklies, 6 March 2020), not committed:
+# found by file name under MSL_EXTERNAL_REPLAYS.
+UCF_074_SLIPPI_3_3 = "Game_A45C27B4D631_20200306T215248.slpz"
+
+
+def test_ucf_routines_a_slippi_3_3_list_lacks_stay_vanilla():
+    """The 3.3 console recording behind the absent UCF routines (and the 3.3
+    post-frame bit): UCF 0.74's set, no tumble fix. Exact through the end
+    with the list's own profile and slippi_patches bits."""
+    from pathlib import Path
+    from tools.validation import admission
+    from tools.validation.slpz import replay_path_for_peppi
+    import os
+    path = next((found for root in filter(None, os.environ.get(
+                     "MSL_EXTERNAL_REPLAYS", "").split(os.pathsep))
+                 for found in Path(root).rglob(UCF_074_SLIPPI_3_3)), None)
+    if not rd.DRIVER.is_file():
+        pytest.skip("replay_drive is not built")
+    if not rd.DATA_ROOT.is_dir():
+        pytest.skip("no extracted game data (%s)" % rd.DATA_ROOT)
+    if path is None:
+        pytest.skip("%s not found under MSL_EXTERNAL_REPLAYS" % UCF_074_SLIPPI_3_3)
+    with replay_path_for_peppi(path) as slp:
+        try:
+            replay = rd.read(slp)
+        except BaseException as error:  # peppi_py panics (a BaseException) on 3.3
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                raise
+            pytest.skip("this peppi_py cannot read Slippi 3.3 (%s)" %
+                        type(error).__name__)
+    patches = replay["slippi_patches"]
+    assert patches & admission.PATCH_POST_FRAME_AT_MAP
+    assert patches & admission.PATCH_UCF_TUMBLE_ABSENT
+    assert not patches & (admission.PATCH_UCF_DASHBACK_ABSENT |
+                          admission.PATCH_UCF_SHIELD_DROP_ABSENT)
+    assert replay["ucf_profile"].endswith("1")
+    count = len(replay["ids"])
+    blob, _ = rd.drive_arithmetic(replay, count, replay["ucf_profile"])
+    first = rd.first_difference(replay, blob)
+    assert first is None, rd.frame_diff(replay, blob, first)[:3]

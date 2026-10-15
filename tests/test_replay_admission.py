@@ -99,12 +99,13 @@ def test_legacy_stadium_patch_establishes_frozen_play(properties_only, monkeypat
 
 def test_frozen_fd_background_is_the_nop_at_its_think():
     nop = bytes.fromhex("0421aae460000000")
-    # With NeutralSpawn in the list, so that only this bit can be set
-    # (a list without it sets MSL_PATCH_RETAIL_SPAWNS).
-    neutral = {0xC216E510: b""}
-    assert admission.slippi_patches({**neutral, 0x0421AAE4: nop}) ==         admission.PATCH_FD_BACKGROUND_FROZEN
+    # The same list sets other bits too (a list without NeutralSpawn or the
+    # UCF injections sets MSL_PATCH_RETAIL_SPAWNS and the absent-UCF bits),
+    # so the test reads its own bit.
+    fd = admission.PATCH_FD_BACKGROUND_FROZEN
+    assert admission.slippi_patches({0x0421AAE4: nop}) & fd == fd
     assert admission.slippi_patches(
-        {**neutral, 0x0421AAE4: bytes.fromhex("0421aae448000001")}) == 0
+        {0x0421AAE4: bytes.fromhex("0421aae448000001")}) & fd == 0
     assert admission.slippi_patches({}) == 0
 
 
@@ -221,6 +222,19 @@ def test_supported_rule_values_do_not_become_capture_bans(properties_only):
 def test_human_levels_are_read_from_a_ranked_recording():
     _, raw = read_game("replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz")
     assert admission.raw_player_levels(raw) == [1, 1, 1, 1]
+
+
+def test_absent_ucf_routines_are_read_from_the_list():
+    absent = admission.PATCH_UCF_ABSENT
+    assert admission.slippi_patches({}) & absent == 0
+    # No UCF at all.
+    assert admission.slippi_patches({0xC216E510: b""}) & absent == absent
+    # UCF 0.74: dashback and shield drop, no tumble fix.
+    assert admission.slippi_patches(
+        {0xC20C9A44: b"", 0xC20998A4: b""}) & absent == \
+        admission.PATCH_UCF_TUMBLE_ABSENT
+    assert admission.slippi_patches(
+        {0xC20908F4: b"", 0xC20C9A44: b"", 0xC20998A4: b""}) & absent == 0
 
 
 def test_slippi_3_3_post_frame_record_point_is_read_from_the_list():
