@@ -57,6 +57,9 @@ bool msl_core_has_brawl_offscreen_damage(void);
 // MSL_STADIUM_* for this match; MSL_STADIUM_FROZEN everywhere but an unfrozen
 // Pokemon Stadium.
 int msl_stadium_transformations(void);
+// MSL_PATCH_POST_FRAME_AT_MAP: record this fighter's post-frame lanes at the
+// end of Fighter_procMap.
+void msl_core_capture_post_frame_at_map(HSD_GObj* gobj);
 bool msl_core_freezes_dead_up_fall_physics(void);
 void msl_core_advance_match_frame(void);
 void msl_core_apply_team_stock_steal(void);

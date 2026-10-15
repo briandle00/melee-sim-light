@@ -168,6 +168,12 @@ enum {
     MSL_PATCH_PREVENT_WOBBLING = 1 << 1,
     // No External/NeutralSpawn (0x8016E510): each port at its own spawn point.
     MSL_PATCH_RETAIL_SPAWNS = 1 << 2,
+    // Slippi 3.3's recorder sends the post-frame event from the end of
+    // Fighter_procMap (its injection at 0x8006C5D8), before the damage,
+    // shield and hit procs run; later versions send it at 0x8006DA34. The
+    // recorded post-frame lanes are the fighter as it stood at that point.
+    // Local (Slippi 3.3, closed #57): bit 3, after the open PRs' bits 1 and 2.
+    MSL_PATCH_POST_FRAME_AT_MAP = 1 << 3,
 };
 
 enum {

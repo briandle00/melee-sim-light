@@ -82,6 +82,7 @@ def stadium_is_frozen(start: dict, codes: dict[int, bytes]) -> bool:
 PATCH_FD_BACKGROUND_FROZEN = 1 << 0
 PATCH_PREVENT_WOBBLING = 1 << 1
 PATCH_RETAIL_SPAWNS = 1 << 2
+PATCH_POST_FRAME_AT_MAP = 1 << 3
 
 
 def slippi_patches(codes: dict[int, bytes]) -> int:
@@ -93,6 +94,9 @@ def slippi_patches(codes: dict[int, bytes]) -> int:
         patches |= PATCH_PREVENT_WOBBLING
     if codes and 0xC216E510 not in codes:
         patches |= PATCH_RETAIL_SPAWNS
+    # Slippi 3.3's SendGamePostFrame injection at the end of Fighter_procMap.
+    if 0xC206C5D8 in codes:
+        patches |= PATCH_POST_FRAME_AT_MAP
     return patches
 
 

@@ -221,3 +221,12 @@ def test_supported_rule_values_do_not_become_capture_bans(properties_only):
 def test_human_levels_are_read_from_a_ranked_recording():
     _, raw = read_game("replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz")
     assert admission.raw_player_levels(raw) == [1, 1, 1, 1]
+
+
+def test_slippi_3_3_post_frame_record_point_is_read_from_the_list():
+    # 3.3 sends the post-frame event from the end of Fighter_procMap
+    # (0x8006C5D8); later versions send it at 0x8006DA34.
+    assert admission.slippi_patches({0xC206C5D8: b""}) == \
+        admission.PATCH_POST_FRAME_AT_MAP
+    assert admission.slippi_patches({0xC206DA34: b""}) & \
+        admission.PATCH_POST_FRAME_AT_MAP == 0
