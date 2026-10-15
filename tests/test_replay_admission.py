@@ -97,6 +97,17 @@ def test_legacy_stadium_patch_establishes_frozen_play(properties_only, monkeypat
     assert "unfrozen-stadium" in admission.capture_issues(game, raw)
 
 
+def test_frozen_fd_background_is_the_nop_at_its_think():
+    nop = bytes.fromhex("0421aae460000000")
+    # With NeutralSpawn in the list, so that only this bit can be set
+    # (a list without it sets MSL_PATCH_RETAIL_SPAWNS).
+    neutral = {0xC216E510: b""}
+    assert admission.slippi_patches({**neutral, 0x0421AAE4: nop}) ==         admission.PATCH_FD_BACKGROUND_FROZEN
+    assert admission.slippi_patches(
+        {**neutral, 0x0421AAE4: bytes.fromhex("0421aae448000001")}) == 0
+    assert admission.slippi_patches({}) == 0
+
+
 @pytest.mark.parametrize("codes,expected", [
     ({0xC21D45EC: b""}, admission.STADIUM_PRELOADED),
     ({0xC20165AC: b""}, admission.STADIUM_ONLINE_LOADED),

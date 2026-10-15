@@ -37,6 +37,33 @@ def test_recorded_profile_comes_first_and_fitted_ones_follow():
     assert rd.profile_bits("ucf08") == (0, 0, 0, 0, 0)
 
 
+def test_fitting_decides_part_of_a_held_gate_run(monkeypatch):
+    # A lane holds -0.9875 on x for frames 3..8. The console read a raw 80
+    # (snapped) for 6..8 only. The fake drive diverges at the first frame
+    # whose raw value differs from the console's.
+    console = np.array([0, 0, 0, -79, -79, -79, -80, -80, -80, 0])
+    c_x = np.where(console != 0, -0.9875, 0.0)
+    player = {"raw_cx": None, "c_x": c_x, "c_y": np.zeros(10)}
+    replay = {"players": [player]}
+
+    def drive(replay, count, profile):
+        return player["raw_c_fit"][0].copy()
+
+    def first_difference(replay, blob):
+        wrong = np.nonzero(blob != console)[0]
+        return int(wrong[0]) + 1 if len(wrong) else None
+
+    monkeypatch.setattr(rd, "drive", drive)
+    monkeypatch.setattr(rd, "first_difference", first_difference)
+    blob, flips = rd.drive_fitted(replay, 10, "ucf10")
+    assert blob.tolist() == console.tolist()
+    assert flips >= 1
+    # A recording with raw C-stick bytes has nothing to fit.
+    player["raw_cx"] = np.zeros(10)
+    monkeypatch.setattr(rd, "drive", lambda replay, count, profile: "blob")
+    assert rd.drive_fitted(replay, 10, "ucf10") == ("blob", 0)
+
+
 def _codes(monkeypatch, codes, frozen=False):
     from tools.validation import admission
     monkeypatch.setattr(admission, "gecko_codes", lambda raw: codes)

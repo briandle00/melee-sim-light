@@ -441,13 +441,15 @@ LAST_DRIVES = 0     # drives the last drive_fitted call ran (for timing)
 
 
 def drive_fitted(replay, count, profile, tries=4, rounds=64):
-    """drive(), deciding each ambiguous C-stick gate run against the
+    """drive(), deciding each ambiguous C-stick gate reading against the
     recording.
 
     Only for recordings without raw C-stick bytes, and only where the choice
-    shows: every run starts unsnapped (a raw 79); at each first difference
-    the latest undecided runs before it are tried snapped (a raw 80), one at
-    a time, and a flip is kept when it moves the first difference later.
+    shows. Every reading starts unsnapped (a raw 79). At each first
+    difference, the held runs that reach it are tried: the whole run
+    toggled, then only its frames next to the difference, one at a time,
+    since a stick can sit past the gate for part of a run and on it for the
+    rest. A toggle is kept when it moves the first difference later.
     This is fitting to the recording, like the UCF profile fit, and carries
     the same caveat (module docstring)."""
     global LAST_DRIVES
@@ -462,40 +464,49 @@ def drive_fitted(replay, count, profile, tries=4, rounds=64):
             segments += [(first, last, axis, lane) for first, last, axis
                          in cstick_gate_segments(player)]
     segments.sort()
-    decided = set()
     flips = 0
     blob = drive(replay, count, profile)
     LAST_DRIVES = 1
     first = first_difference(replay, blob)
+    tried = set()
     for _ in range(rounds):
         if first is None:
             break
-        # ASDI reads the C-stick on hitlag's last frame and moves the
-        # fighter on that frame, so the run behind a difference is held on
-        # (or within a frame or two of) the frame it shows. On 252 pre-3.17
-        # games every kept flip met this.
         candidates = [seg for seg in segments
-                      if seg[0] <= first and seg[1] >= first - FIT_REACH
-                      and seg not in decided]
+                      if seg[0] <= first and seg[1] >= first - FIT_REACH]
         improved = False
         for seg in list(reversed(candidates))[:tries]:
-            decided.add(seg)
             player = replay["players"][seg[3]]
             raw_cx, raw_cy = player["raw_c_fit"]
-            saved = raw_cx.copy(), raw_cy.copy()
-            span = slice(seg[0], seg[1] + 1)
-            if abs(seg[2]) == 1:
-                raw_cx[span] = seg[2] * 80
-            else:
-                raw_cy[span] = (seg[2] // 2) * 80
-            trial = drive(replay, count, profile)
-            LAST_DRIVES += 1
-            moved = first_difference(replay, trial)
-            if moved is None or moved > first:
-                blob, first, improved = trial, moved, True
-                flips += 1
+            lane_raw = raw_cx if abs(seg[2]) == 1 else raw_cy
+            gate = seg[2] if abs(seg[2]) == 1 else seg[2] // 2
+            tail = (max(seg[0], first - FIT_REACH), min(seg[1], first))
+            spans = [(seg[0], seg[1])]
+            if tail != spans[0] and tail[0] <= tail[1]:
+                spans.append(tail)
+            spans += [(i, i) for i in range(tail[1], tail[0] - 1, -1)
+                      if (i, i) not in spans]
+            for lo, hi in spans:
+                key = (seg[3], seg[2], lo, hi, first)
+                if key in tried:
+                    continue
+                tried.add(key)
+                saved = lane_raw.copy()
+                span = slice(lo, hi + 1)
+                # Toggle: a span now unsnapped becomes snapped and the
+                # other way round.
+                snapped = abs(int(lane_raw[lo])) >= 80
+                lane_raw[span] = gate * (79 if snapped else 80)
+                trial = drive(replay, count, profile)
+                LAST_DRIVES += 1
+                moved = first_difference(replay, trial)
+                if moved is None or moved > first:
+                    blob, first, improved = trial, moved, True
+                    flips += 1
+                    break
+                lane_raw[:] = saved
+            if improved:
                 break
-            raw_cx[:], raw_cy[:] = saved
         if not improved:
             break
     return blob, flips
