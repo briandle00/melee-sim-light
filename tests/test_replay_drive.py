@@ -146,3 +146,10 @@ def test_stadium_events_are_the_state_after_the_frame():
     assert rd.stadium_diff(replay, blob, 0) is None      # before any event
     assert rd.stadium_diff(replay, blob, 2) is None
     assert rd.stadium_diff(replay, blob, 3) == ((1, 9), (2, 9))
+
+
+def test_neutral_spawn_is_read_from_the_code_list():
+    from tools.validation import admission
+    assert not admission.slippi_patches({0xC216E510: b""}) & admission.PATCH_RETAIL_SPAWNS
+    assert admission.slippi_patches({0xC21D24FC: b""}) & admission.PATCH_RETAIL_SPAWNS
+    assert admission.slippi_patches({}) == 0

@@ -19,7 +19,7 @@ output lock, or claim that the simulator is or is not exact. It answers one
 question for one consumer: may I start something from the position this
 recording reached at this frame?
 
-Three things are per-recording and have to be right or nothing matches:
+Four things are per-recording and have to be right or nothing matches:
 
   * the internal character id, from the post-frame rows - the external id in
     the game-start block picks another character's entry data;
@@ -29,7 +29,9 @@ Three things are per-recording and have to be right or nothing matches:
   * on Pokemon Stadium, which patch set owns the transformations (frozen,
     Slippi's preloaded ones, or Slippi Online's synchronous load), also from
     the gecko list. A recording with neither patch set streamed the stage's
-    archives from the disc, and is refused.
+    archives from the disc, and is refused;
+  * where the fighters enter: Slippi's NeutralSpawn when the gecko list
+    carries it, otherwise each port's own stage spawn point (console setups).
 
 "Matches" means every frame's fighters (both ports' leaders on seven lanes,
 and Nana on the same seven wherever the recording has her) and every item on
@@ -294,6 +296,11 @@ def read(path):
         raw = handle.read()
     stadium = stadium_transformations(start, raw)
     ucf_profile = recorded_profile(raw)
+    from tools.validation.admission import gecko_codes, slippi_patches
+    try:
+        codes = gecko_codes(raw)
+    except ValueError:
+        codes = {}
     # Slippi 3.18+ records each change of the transformation phase.
     stadium_events = None
     if "stadium_transformation" in names:
@@ -315,6 +322,10 @@ def read(path):
         "version": version,
         "stadium": stadium,
         "ucf_profile": ucf_profile,
+        # wire.h MSL_PATCH_* (admission.slippi_patches): among them, a list
+        # without NeutralSpawn's gecko at 0x8016E510 (MSL_PATCH_RETAIL_SPAWNS)
+        # puts the fighters at their own port's stage spawn point.
+        "slippi_patches": slippi_patches(codes),
         "stadium_events": stadium_events,
         "items": items,
         "stage": int(start["stage"]),
@@ -365,7 +376,8 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True):
         max(p["stocks"] for p in players),
         online, online, online, online,
         ucf[0], ucf[1], ucf[2], ucf[3], ucf[4],
-        streams, replay.get("stadium", 0) or 0, 0,
+        streams, replay.get("stadium", 0) or 0,
+        replay.get("slippi_patches", 0),
         *[value
           for index in range(4)
           for value in ((int(players[index]["internal_char"][0]),
