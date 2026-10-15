@@ -10,6 +10,9 @@ EXPORTS
   msl_batch_size
   msl_batch_step
   msl_batch_step_masked
+  msl_game_data_acquire
+  msl_game_data_references
+  msl_game_data_release
   msl_match_config_default
   msl_python_controller_inputs
   msl_result_string
