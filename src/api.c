@@ -10,6 +10,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+/* MinGW has no realpath: _fullpath allocates its result the same way, and the stat
+   keeps realpath's rule that the path must exist. */
+#include <sys/stat.h>
+static char* msl_realpath(const char* path) {
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    return NULL;
+  }
+  return _fullpath(NULL, path, 0);
+}
+#define realpath(path, resolved) msl_realpath(path)
+#endif
+
 enum {
   MSL_BATCH_LIMIT = 16384,
   MSL_SAVE_MAGIC = 0x31564E45,
