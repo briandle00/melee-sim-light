@@ -199,7 +199,12 @@ def read(path):
     frames = game.frames
     names = frames.type.names
     ids = column(frames, "id")
-    frame_seed = column(frames.field("start"), "random_seed")
+    # Slippi 2.2+ records the RNG at the start of each frame. Before that the
+    # first fighter's pre-frame row is the earliest observation: the seed
+    # there is the frame's own unless a stage or item callback drew before
+    # the fighters, which the tape then cannot see.
+    frame_seed = (column(frames.field("start"), "random_seed")
+                  if "start" in names else None)
     ports = frames.field("ports" if "ports" in names else "port")
     players = []
     for index, player in enumerate(start["players"]):
@@ -264,6 +269,8 @@ def read(path):
                 "f_direction": column(fpost, "direction"),
                 "f_shield": column(fpost, "shield"),
             })
+    if frame_seed is None:
+        frame_seed = np.asarray(players[0]["pre_seed"]).copy()
     order = np.argsort(ids, kind="stable")
     keep = [order[i] for i in range(len(order))
             if i + 1 == len(order) or ids[order[i + 1]] != ids[order[i]]]
@@ -332,6 +339,15 @@ def read(path):
         # without NeutralSpawn's gecko at 0x8016E510 (MSL_PATCH_RETAIL_SPAWNS)
         # puts the fighters at their own port's stage spawn point.
         "slippi_patches": slippi_patches(codes),
+        # Gameplay codes that came and went across Slippi versions, read
+        # from the list when there is one: Online/Core/BrawlOffscreenDamage
+        # (0x8006A880), Online/Core/FreezeDeadUpFallPhysics (0x800D4C1C) and
+        # the Whispy blow-direction fix (0x8008653C, online and console).
+        "code_flags": None if not codes else {
+            "brawl_offscreen_damage": 0xC206A880 in codes,
+            "freeze_dead_up_fall_physics": 0xC20D4C1C in codes,
+            "whispy_dead_fighter_fix": 0xC208653C in codes,
+        },
         "stadium_events": stadium_events,
         "items": items,
         "stage": int(start["stage"]),
@@ -342,7 +358,7 @@ def read(path):
         "damage_ratio": float(start["damage_ratio"]),
         "initial_seed": int(start["random_seed"]),
         # Scene major 8 proves the Slippi online code set owns this match.
-        "online": int(start["scene"]["major"]) == 8,
+        "online": int((start.get("scene") or {}).get("major") or 0) == 8,
         "fod": frames.field("fod_platform") if "fod_platform" in names else None,
         "whispy": (frames.field("dreamland_whispy")
                    if "dreamland_whispy" in names else None),
@@ -420,6 +436,10 @@ def first_difference(replay, blob):
     return None
 
 
+FIT_REACH = 2
+LAST_DRIVES = 0     # drives the last drive_fitted call ran (for timing)
+
+
 def drive_fitted(replay, count, profile, tries=4, rounds=64):
     """drive(), deciding each ambiguous C-stick gate run against the
     recording.
@@ -430,8 +450,10 @@ def drive_fitted(replay, count, profile, tries=4, rounds=64):
     a time, and a flip is kept when it moves the first difference later.
     This is fitting to the recording, like the UCF profile fit, and carries
     the same caveat (module docstring)."""
+    global LAST_DRIVES
     lanes = [p for p in replay["players"] if p["raw_cx"] is None]
     if not lanes:
+        LAST_DRIVES = 1
         return drive(replay, count, profile), 0
     segments = []
     for lane, player in enumerate(replay["players"]):
@@ -443,12 +465,18 @@ def drive_fitted(replay, count, profile, tries=4, rounds=64):
     decided = set()
     flips = 0
     blob = drive(replay, count, profile)
+    LAST_DRIVES = 1
     first = first_difference(replay, blob)
     for _ in range(rounds):
         if first is None:
             break
+        # ASDI reads the C-stick on hitlag's last frame and moves the
+        # fighter on that frame, so the run behind a difference is held on
+        # (or within a frame or two of) the frame it shows. On 252 pre-3.17
+        # games every kept flip met this.
         candidates = [seg for seg in segments
-                      if seg[0] <= first and seg not in decided]
+                      if seg[0] <= first and seg[1] >= first - FIT_REACH
+                      and seg not in decided]
         improved = False
         for seg in list(reversed(candidates))[:tries]:
             decided.add(seg)
@@ -461,6 +489,7 @@ def drive_fitted(replay, count, profile, tries=4, rounds=64):
             else:
                 raw_cy[span] = (seg[2] // 2) * 80
             trial = drive(replay, count, profile)
+            LAST_DRIVES += 1
             moved = first_difference(replay, trial)
             if moved is None or moved > first:
                 blob, first, improved = trial, moved, True
@@ -478,6 +507,11 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
     ucf = profile_bits(profile)
     first = int(replay["ids"][0])
     online = 1 if replay["online"] else 0
+    flags = replay.get("code_flags")
+    offscreen = int(flags["brawl_offscreen_damage"]) if flags else online
+    dead_up_fall = (int(flags["freeze_dead_up_fall_physics"]) if flags
+                    else online)
+    whispy_fix = int(flags["whispy_dead_fighter_fix"]) if flags else online
     streams = ((1 if replay["fod"] is not None else 0) |
                (2 if replay["whispy"] is not None else 0))
     header = struct.pack(
@@ -490,7 +524,7 @@ def build_tape(replay, count, profile="ucf10", raw_cstick=True, raw_main=True,
         replay["damage_ratio"],
         len(players), 1 if replay["is_teams"] else 0, 0,
         max(p["stocks"] for p in players),
-        online, online, online, online,
+        online, offscreen, dead_up_fall, whispy_fix,
         ucf[0], ucf[1], ucf[2], ucf[3], ucf[4],
         streams, replay.get("stadium", 0) or 0,
         replay.get("slippi_patches", 0),
