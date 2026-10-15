@@ -305,7 +305,17 @@ void msl_ucf_apply_dashback(Fighter* fp)
     if (msl_slippi_patch(MSL_PATCH_UCF_DASHBACK_ABSENT)) {
         return;
     }
-    float stick_x = fp->input.lstick.x;
+    // UCF 0.84 wants the stick in the new facing direction; UCF 0.8's
+    // Logic/UCF DB.asm tests its magnitude alone (lfs 0x620; fabs), so a
+    // flick back against the turn also qualifies there. The 0.8 code set
+    // ships DB, SD and Tumble together, and its SD is what clears
+    // ucf_shield_drop_084_enabled.
+    // refs/slippi-ssbm-asm/External/UCF 0.8/Logic/UCF DB.asm
+    float stick_x = msl_ucf_shield_drop_084_enabled
+                        ? fp->input.lstick.x
+                        : (fp->input.lstick.x < 0.0F ? -fp->input.lstick.x
+                                                     : fp->input.lstick.x) *
+                              fp->facing_dir;
 
     // Direct C translation of UCF 0.84/UCF/UCF Dashback.asm at the
     // ftCo_Turn_IASA 0x800C9A44 injection. The assembly reads the physical

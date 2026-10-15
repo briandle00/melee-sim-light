@@ -30,6 +30,11 @@
   "sha256": "a51e830fe1b664bbd4e0ef2fdbb71805f9bfe8be35e9ca62e6a4ad2154c5b6db"
  },
  {
+  "fix": "ucf_08_dashback",
+  "path": "master-diamond-bf25cf805e23959b754c2c71.slp",
+  "sha256": "bf132d3abe79a7ee58781a520382fd1023af7459a9f5edcebacd6bf1a2174b87"
+ },
+ {
   "fix": "host_without_fma3",
   "path": "platinum-platinum-ab04b49fc7f3b06be608d3c2.slp",
   "sha256": "58d338524572a3f21d18ce2fdebd768bdd8f3c0c97b4d4283011a82c3c9da7bb"
