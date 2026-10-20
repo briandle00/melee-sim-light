@@ -939,6 +939,9 @@ test: source-check native-smoke python-library validator
 	@$(MAKE) --no-print-directory native ppc MSL_REPLAY_ARITHMETIC=1
 	@"$(PY)" -m pytest -q
 
+# These gates rebuild shared object directories with different arithmetic modes.
+.NOTPARALLEL: test-full
+
 test-full: test ppc-smoke validation-supported-domain validation-release-supported-domain viewer-smoke
 
 format-check:
