@@ -187,3 +187,104 @@ Native checks, Wasm parity and viewer schema pass. The existing Python selection
 passes all 151 tests, with its usual timing-test exclusion; no new synthetic
 gameplay tests.
 Raw logs: `reports/triage/pr43_review/`.
+
+## Stadium display schedule review
+
+PR #60 against main `b8b87dba`, Linux amd64 GCC 13.3, CPU 4 on the V-cache
+CCD, performance governor. Same 515 human input tapes on both versions;
+256 resident matches, 524,288 timed match-frames, eight warmup ticks,
+history 128. Stadium subset: 56 tapes; non-Stadium: 459.
+
+Reuse the existing grStadium display functions with image/text work excluded,
+removing the copied scheduler. Countdown events use their existing source
+functions; positive frames perform one countdown check. No new per-env storage
+or allocations. The optional legacy camera projection was not exercised by
+these tapes and is not covered by these performance conclusions.
+
+| Check | Main FPS | Candidate FPS | Change |
+| --- | ---: | ---: | ---: |
+| Final mixed, two runs each | 121,561 | 123,258.5 | +1.40% |
+| Stadium, two runs each before countdown-only guard | 165,037.5 | 164,322 | −0.43% |
+| Final non-Stadium, two runs each | 120,854 | 119,742 | −0.92% |
+
+Results were variable. An initial candidate mixed run reached only 106,467;
+main also fell to 116,959. A subsequent three-pair mixed check was −1.66%
+before the countdown guard, whereas the final pair above changed direction.
+These short checks do not establish either a speedup or zero overhead; there
+is no consistent multi-percent slowdown. Non-Stadium outputs agree exactly
+(digest `5216865834eaa01a`). Mixed/Stadium digests change with the corrected RNG
+schedule and match the author's version after consolidation.
+
+The supplied replay improves from 4,761/4,802 to exact. Final GNU release gate:
+520/520 replays, 4,800,015 frames, all 519 previous output locks unchanged.
+Native checks, Wasm parity and schema pass; 70 existing tooling tests pass.
+Raw measurements and experiment log: `reports/triage/pr60_review/`.
+
+## Replay-only build-option cost screening (2026-10-19)
+
+Current main `b2eb33d4`, compared separately with PR #60 `600543b2` and
+PR #45 `e4dbf0d0`. Applied each PR's runtime changes unchanged to main in the
+same checkout; excluded suite/docs/ledger changes. This measures the submitted
+#60 implementation, not the earlier local scheduler consolidation above.
+Strict release, GCC 13.3, CPU 4 on the V-cache CCD, performance governor,
+256 resident matches, 524,288 timed match-frames, eight warmup ticks and
+128-frame observation history. Fixed 515-tape corpus; Stadium subset 56 tapes.
+Initialization and staggered preroll are outside timing. Two runs per version
+in main/candidate/candidate/main order for each comparison.
+
+| Workload | Main FPS (runs) | PR FPS (runs) | Mean FPS change |
+| --- | ---: | ---: | ---: |
+| #60 mixed | 123,279 / 125,013 | 124,120 / 124,611 | +0.18% |
+| #60 Stadium | 165,950 / 164,212 | 163,880 / 166,905 | +0.19% |
+| #45 mixed, compatibility off, repeat | 123,526 / 124,381 | 123,916 / 125,071 | +0.44% |
+
+No meaningful slowdown is observed. These small positive differences are not
+claimed speedups; they are below the approximately 1% run variation. This does
+not establish zero overhead or bound other workloads. On this evidence neither
+PR warrants a replay-only build option solely to remove a measured regression.
+
+The first #45 pair was main 124,373 / 115,319 against PR 124,441 / 123,725.
+The unusually slow trailing control prompted the complete bounded repeat above;
+all original samples are retained. The default PR and every main run have the
+same output digest `ddc712b63b811c17`. Its v5 tapes insert only a zero arithmetic
+capability byte and adjust the header; all original config/input bytes were
+verified unchanged. Assembly confirms TLS loads and conditional branches remain
+in collision math, with some checks shared across multiple FMA operations.
+The enabled non-FMA compatibility mode was not timed.
+
+#60 changes random-stream consumption and therefore gameplay workload: mixed
+digests are main `ddc712b63b811c17`, PR `087098f69bccc6f3`; Stadium digests are
+main `1fff7fb6167d5fee`, PR `33492a7db4652c7f`. These are end-to-end measurements,
+not an isolated measurement of the scheduler's instruction cost. This audit
+runs no full replay correctness gate and does not constitute merge approval.
+Hardware performance counters were unavailable under the host's existing
+permissions; host settings were not changed.
+
+Raw logs, exact patches and generated measurements:
+`reports/triage/pr60_pr45_cost_20261019/`. Original branch and uncommitted changes
+were restored exactly before recording these results. No extra worktrees.
+
+## Stadium scheduler integration (2026-10-19)
+
+PR #60 `600543b2` rebased onto `b2eb33d4`; final cleanup removes 196 net
+implementation lines by reusing the decomp display functions and existing
+Ground.u.display state. Rendering/image/text work remains excluded. The author
+removed the unsupported legacy-camera path; this supersedes the earlier review
+blocker. VS countdown calls preserve source order, and normal frames skip the
+countdown cases.
+
+Same host/settings and 515/56-tape mixed/Stadium workloads as the screening
+above. Two paired runs each, submitted implementation versus cleanup:
+
+| Workload | Submitted FPS (runs) | Cleaned FPS (runs) | Mean FPS change |
+| --- | ---: | ---: | ---: |
+| Mixed | 125,369 / 124,898 | 124,490 / 123,884 | -0.76% |
+| Stadium | 166,763 / 165,174 | 166,027 / 165,767 | -0.04% |
+
+Output digests agree on both workloads (`087098f69bccc6f3` mixed,
+`33492a7db4652c7f` Stadium). These short timings do not establish literal zero
+cost; the affected Stadium workload shows no material change.
+GNU release gate: 523/523 recordings, 4,830,487 frames, all 522 old locks
+unchanged and the new 4,802-frame replay locked. Source/native checks,
+Wasm parity/schema and 151 tooling/API tests pass (one existing timing test
+excluded). Raw results: `reports/triage/pr60_merge_20261019/`.
