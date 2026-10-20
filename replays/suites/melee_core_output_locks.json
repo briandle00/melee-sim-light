@@ -2598,6 +2598,15 @@
       }
     },
     {
+      "replay": "replays/validation/luigi/master-master-cbc2979c9def2b8e8168b60c.slpz",
+      "expected": {
+        "native": {
+          "frames": 11127,
+          "actual_output_fingerprint": "fd470cbc861f5e1f"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/luigi/medium-falco_Game_20251031T000610.slpz",
       "expected": {
         "native": {
