@@ -47,3 +47,9 @@
   Enabled validation passes 524 replay locks / 4,844,177 frames, including the
   new native/PPC reproducer. Default native/Wasm/viewer and 152 tests pass.
   [Details and raw samples](BASELINE.md#split-double-fma-replay-compatibility-2026-10-20).
+
+- PR #53: keep Nana from overwriting her leader's vanilla magnifier visibility.
+  Four short pairs show no slowdown (+0.431%, identical default output digests).
+  A full diagnostic recording catches the missed 1% damage; its strict-admission
+  exclusion remains. All 524 aggregate replay locks pass.
+  [Evidence](BASELINE.md#vanilla-magnifier-leader-publication-2026-10-20).

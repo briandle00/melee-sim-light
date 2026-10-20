@@ -77,6 +77,31 @@ def test_item_misc_comparison_preserves_gameplay_lanes(
         set() if ignored else {f"item.misc{lane}"})
 
 
+def test_vanilla_magnifier_uses_leader_visibility() -> None:
+    if not NATIVE.is_file() or not NATIVE_BINARY.is_file():
+        pytest.skip("native core validation artifacts are unavailable")
+    # The recorded code list has UCF 0.8 DB/SD/Tumble, without the newer hooks.
+    # Missing raw C-stick inputs and render timing keep this diagnostic-only.
+    result = validate_one(
+        load_native(),
+        ROOT / "replays/validation/icies/collision2024_ICs_v_DK_FD.slpz",
+        frames=0, start_frame=None, timeout=30.0, backend="native",
+        diagnostic=True,
+        ucf_cardinals_1_0_enabled=False,
+        ucf_shield_sdi_enabled=False,
+        ucf_sdi_enabled=False,
+        ucf_shield_drop_extended_enabled=False,
+        ucf_shield_drop_084_enabled=False,
+    )
+    # Without the leader check Popo misses 1% at frame 2369, then knockback
+    # diverges. Check the whole recording, not just that damage tick.
+    assert result["pass"] is True
+    assert result["matched_frames"] == result["total"] == 7570
+    assert result["render_visibility_mismatch_count"] == 0
+    assert result["diagnostic"] is True
+    assert result["admitted"] is False
+
+
 @pytest.mark.parametrize("backend", ["ppc", "native"])
 def test_validation_streams_starter_replay_from_arrow(backend: str) -> None:
     binary = NATIVE_BINARY if backend == "native" else PPC_BINARY
