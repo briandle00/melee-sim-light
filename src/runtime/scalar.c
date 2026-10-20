@@ -2385,23 +2385,21 @@ int msl_core_match_step_prepare(MslCoreMatch* match,
     // dash flick. The renderer-owned overlay itself is absent headlessly.
     // refs/melee/src/melee/{gm/gm_16AE.c,if/ifstatus.c,if/if_2F72.c}
     // SSBM.iso::IfAll.dat::ScInfCnt_scene_models[3]
-    // The same overlay switches Pokemon Stadium's jumbotron to its "Ready"
-    // screen as the match starts, to "GO" at -39 and to the ordinary screen
-    // at frame 0; the screen schedule draws random numbers from then on.
-    // refs/melee/src/melee/gm/gm_16AE.c::{fn_8016B7B4,fn_8016B7F8,fn_8016B784}
-    if (match->frame_id == -124) {
-        msl_stadium_display_event(10);
-    } else if (match->frame_id == -40) {
-        msl_stadium_display_event(11);
-    } else if (match->frame_id == -1) {
-        msl_stadium_display_event(1);
-    }
-    if (match->frame_id == -40) {
-        StructPairWithStageID stage_pair = {
-            match->stage_data->internal_stage_id, match->config.stage_id
-        };
-        ftLib_800868A4();
-        Ground_801C0FB8(&stage_pair);
+    // The same VS callbacks select Stadium's Ready, GO and ordinary screens.
+    // refs/melee/src/melee/gm/gmvs.c::{fn_8016B7B4,fn_8016B7F8,fn_8016B784}
+    if (match->frame_id < 0) {
+        if (match->frame_id == -40) {
+            StructPairWithStageID stage_pair = {
+                match->stage_data->internal_stage_id, match->config.stage_id
+            };
+            ftLib_800868A4();
+            Ground_801C0FB8(&stage_pair);
+            grStadium_801D4040();
+        } else if (match->frame_id == -124) {
+            grStadium_801D4084();
+        } else if (match->frame_id == -1) {
+            grStadium_801D4150();
+        }
     }
 
     for (i = 0; i < match->config.num_players; ++i) {

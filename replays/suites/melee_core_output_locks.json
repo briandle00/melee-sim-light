@@ -4319,6 +4319,15 @@
       }
     },
     {
+      "replay": "replays/validation/samus/platinum-platinum-2e8c697ee6810b51ee334625.slpz",
+      "expected": {
+        "native": {
+          "frames": 4802,
+          "actual_output_fingerprint": "e1740dda05add93c"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/samus/ranked-marth-2025-09_Game_20250902T190726.slpz",
       "expected": {
         "native": {
