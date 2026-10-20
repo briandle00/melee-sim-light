@@ -37,6 +37,15 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
 void msl_viewer_track_fxend(HSD_GObj* owner);
 // The game's random state now (the seed an "fx" line carries).
 u32 msl_viewer_track_state(void);
+// One piece of the spawn just written (runtime/effect_pieces.c), an "fxp".
+struct MslEffectPiece;
+void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
+                          const struct MslEffectPiece* piece);
+// The frame a hook fires in.
+int msl_viewer_track_hook_frame(void);
+// A queued efAsync spawn's arguments, kept for its pieces until the queue
+// processes it (runtime/effects.c): x, y, z, then the two extra floats.
+float* msl_viewer_track_queued_args(int slot);
 // A fighter's switchable texture (eyes, mouth): ftAnim_800704F0 sets slot
 // `slot` to texture `index`; ftAnim_80070654 puts every slot back, written
 // as slot -1, index 0.

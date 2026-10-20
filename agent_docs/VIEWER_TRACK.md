@@ -86,13 +86,18 @@ for Nana.
 | `hook` | event | port, sub, x, y pairs (`%.2f`) | each frame a hookshot, grapple or yo-yo chain is out: tip first, links not yet out left out |
 | `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
 | `irot` | state | item id, rot x, y, z (`%.4f`) | an item's root joint turn, once it turns |
+| `ij` | state | item id, joint, offset x, y, z (`%.4f`), 3x3 matrix | an item joint a generator was made on: place from the item's and its turn, at the frame's end |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 | `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
 | `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
+| `fxp` | event | effect id, owner kind, owner id, index, `m` or `g`, id, how, joint, t xyz, r xyz, s xyz, callback, lifetime, params xyz, mirrored, at xyz, seed[, item id, item joint] | one per model or generator a spawn's dispatch makes, after its `fx` |
 
 ## Seeds
 
 A seed is the game's random state where the line's thing was made.
+A spawn's pieces are seeded in the game's order: each generator as the
+dispatch makes it, then the models' first animation steps, the last made
+first (`efLib_AnimQueue`).
 
 ## Validation
 
