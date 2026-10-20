@@ -2,6 +2,7 @@
 #include "runtime/context.h"
 
 #include "runtime/scalar.h"
+#include "runtime/viewer_track.h"
 
 #include <stdlib.h>
 
@@ -50,6 +51,7 @@ _Thread_local MslNativeDatContext* msl_core_context_native_dat;
 void msl_core_bind_game_data(MslCoreGameData* game_data)
 {
     msl_core_context_match = NULL;
+    msl_core_context_viewer_track = NULL;
     msl_core_context_game_data = game_data;
     msl_core_context_random = &game_data->bootstrap_random;
     msl_core_context_objalloc = &game_data->bootstrap_objalloc;
@@ -99,6 +101,7 @@ void msl_core_bind_game_data(MslCoreGameData* game_data)
 void msl_core_bind_match(MslCoreMatch* match)
 {
     msl_core_context_match = match;
+    msl_core_context_viewer_track = match->viewer_track;
     msl_core_context_game_data = match->game_data;
     msl_core_context_random = &match->random;
     msl_core_context_objalloc = &match->objalloc;

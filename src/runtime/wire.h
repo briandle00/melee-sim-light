@@ -143,12 +143,19 @@ typedef struct MslCoreMatchConfig {
     uint8_t whispy_dead_fighter_fix;
     // MSL_PATCH_* capabilities from the replay code list.
     uint8_t slippi_patches;
+    // MSL_VISUAL_* state kept for a viewer, never read by gameplay.
+    uint8_t visual_only;
     MslCoreMatchPlayerConfig players[MSL_CORE_MAX_PLAYERS];
 } MslCoreMatchConfig;
 
 enum {
     // External/Frozen All/Core/2.asm: nop the call at 0x8021AAE4.
     MSL_PATCH_FD_BACKGROUND_FROZEN = 1 << 0,
+};
+
+enum {
+    // The viewer track (runtime/viewer_track.h, agent_docs/VIEWER_TRACK.md).
+    MSL_VISUAL_TRACK = 1 << 0,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The
@@ -359,9 +366,9 @@ _Static_assert(sizeof(MslCoreInputPlayer) == 13, "MslCoreInputPlayer wire size")
 _Static_assert(sizeof(MslCoreInput) == 52, "MslCoreInput wire size");
 _Static_assert(sizeof(MslCoreStageEvents) == 132, "stage events wire size");
 _Static_assert(sizeof(MslCoreStreamFrame) == 188, "stream frame wire size");
-_Static_assert(sizeof(MslCoreMatchConfig) == 64,
+_Static_assert(sizeof(MslCoreMatchConfig) == 65,
                "MslCoreMatchConfig wire size");
-_Static_assert(sizeof(MslCoreStreamJobHeader) == 120,
+_Static_assert(sizeof(MslCoreStreamJobHeader) == 121,
                "stream job header wire size");
 _Static_assert(sizeof(MslCoreItem) == 48, "MslCoreItem wire size");
 _Static_assert(sizeof(MslCoreCompare) == 1302, "MslCoreCompare wire size");

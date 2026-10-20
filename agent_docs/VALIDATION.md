@@ -77,6 +77,13 @@ comparison start frames and signed-zero diagnostics cannot be used with a suite
 or to write output locks. Diagnostic successes print `DIAGNOSTIC`, never `PASS`.
 The low-level C replay API also remains available for source investigations.
 
+## Visual-only state
+
+`replays/suites/visual_state.json` and its locks check the viewer track, the
+state a match keeps for a viewer with `visual_only = MSL_VISUAL_TRACK`; see
+[VIEWER_TRACK.md](VIEWER_TRACK.md). Its recordings also pass strict gameplay
+validation with the track on.
+
 ## Recording provenance
 
 - [Yoshi/Bowser](validation/yoshi_bowser_provenance.json): original downloads and

@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "algorithm": "blake2b-64",
+  "window_frames": 3600,
+  "locks": [
+    {
+      "replay": "replays/validation/aggregate_recent/Game_20260515T182447_frozenps.slpz",
+      "frames": 5510,
+      "lines": 12794,
+      "fingerprint": "f5d2428f54c7766e",
+      "kinds": {
+        "anim": {
+          "lines": 9798,
+          "fingerprint": "1e32af3bee6ec6db"
+        },
+        "hide": {
+          "lines": 17,
+          "fingerprint": "68c471e68e9ac696"
+        },
+        "part": {
+          "lines": 2,
+          "fingerprint": "5ad22e0681a5a328"
+        },
+        "pos": {
+          "lines": 342,
+          "fingerprint": "1981d596dc5a8257"
+        },
+        "tint": {
+          "lines": 2635,
+          "fingerprint": "711470a9063e0246"
+        }
+      },
+      "minutes": [
+        "c0101acc3caa73b2",
+        "d16179ce6afda369"
+      ]
+    },
+    {
+      "replay": "replays/validation/dk/slippi-2025-02_Game_20250204T170214.slpz",
+      "frames": 9176,
+      "lines": 21727,
+      "fingerprint": "0b8308e9f8993f7d",
+      "kinds": {
+        "anim": {
+          "lines": 16513,
+          "fingerprint": "a3412ff983b0230f"
+        },
+        "charge": {
+          "lines": 28,
+          "fingerprint": "7597c87a20ca5366"
+        },
+        "hide": {
+          "lines": 33,
+          "fingerprint": "386a1427d00324bf"
+        },
+        "part": {
+          "lines": 2,
+          "fingerprint": "5ad22e0681a5a328"
+        },
+        "pos": {
+          "lines": 796,
+          "fingerprint": "e1d1bff8f264da77"
+        },
+        "tint": {
+          "lines": 4355,
+          "fingerprint": "772bd9dea5c039ad"
+        }
+      },
+      "minutes": [
+        "99c486350c827e79",
+        "b623b7a6192cc54f",
+        "957f24154a9cd97e"
+      ]
+    },
+    {
+      "replay": "replays/validation/icies/master-master-11064a828d78625eda78bbac.slpz",
+      "frames": 8548,
+      "lines": 27805,
+      "fingerprint": "55d3daef4919f0e4",
+      "kinds": {
+        "anim": {
+          "lines": 20843,
+          "fingerprint": "4cece27558e475f8"
+        },
+        "hide": {
+          "lines": 21,
+          "fingerprint": "50c42e4924636aab"
+        },
+        "part": {
+          "lines": 5,
+          "fingerprint": "3f13ee29446810f0"
+        },
+        "pos": {
+          "lines": 3521,
+          "fingerprint": "2e09e49e00057481"
+        },
+        "tint": {
+          "lines": 3415,
+          "fingerprint": "ec2c4a938080fe91"
+        }
+      },
+      "minutes": [
+        "3bf920874bd7b88b",
+        "14f270f24265723f",
+        "4a964526ed504004"
+      ]
+    },
+    {
+      "replay": "replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz",
+      "frames": 6128,
+      "lines": 22647,
+      "fingerprint": "5f35e3fcce17010a",
+      "kinds": {
+        "anim": {
+          "lines": 16465,
+          "fingerprint": "6b72ba513a564ffc"
+        },
+        "hide": {
+          "lines": 37,
+          "fingerprint": "02848c1a8bc77725"
+        },
+        "part": {
+          "lines": 5,
+          "fingerprint": "20c07390a2604207"
+        },
+        "pos": {
+          "lines": 3291,
+          "fingerprint": "35591f1949d967f8"
+        },
+        "tint": {
+          "lines": 2849,
+          "fingerprint": "4940b2d312828a2c"
+        }
+      },
+      "minutes": [
+        "038498292cfdac4d",
+        "9bb280ad519e9d50"
+      ]
+    },
+    {
+      "replay": "replays/validation/marios/platinum-platinum-3d9c7e1486bef415564c4005.slpz",
+      "frames": 13498,
+      "lines": 29629,
+      "fingerprint": "98352788c2f25eda",
+      "kinds": {
+        "anim": {
+          "lines": 24790,
+          "fingerprint": "4fe6272acf944222"
+        },
+        "hide": {
+          "lines": 17,
+          "fingerprint": "afd8c75d7777f073"
+        },
+        "part": {
+          "lines": 2,
+          "fingerprint": "5ad22e0681a5a328"
+        },
+        "pos": {
+          "lines": 533,
+          "fingerprint": "bedcef5fca26b899"
+        },
+        "tint": {
+          "lines": 4287,
+          "fingerprint": "a596df6711d96407"
+        }
+      },
+      "minutes": [
+        "03bad51e852b6603",
+        "030f6e4cbba31141",
+        "36c84223546e5176",
+        "104a8b22e5c70c72"
+      ]
+    },
+    {
+      "replay": "replays/validation/ness/49422_Game_20250130T192133.slpz",
+      "frames": 12422,
+      "lines": 27577,
+      "fingerprint": "f2df9a01c947db24",
+      "kinds": {
+        "anim": {
+          "lines": 21817,
+          "fingerprint": "d09cdba853ec659d"
+        },
+        "hide": {
+          "lines": 17,
+          "fingerprint": "d6b25ccbf23ad09d"
+        },
+        "part": {
+          "lines": 2,
+          "fingerprint": "5ad22e0681a5a328"
+        },
+        "pos": {
+          "lines": 492,
+          "fingerprint": "a46eb923ed68a28b"
+        },
+        "tint": {
+          "lines": 5249,
+          "fingerprint": "712f6a8fc97de4bb"
+        }
+      },
+      "minutes": [
+        "890d3acbeec5e67d",
+        "8083d5e5487adfd4",
+        "5314c80d5a50ae78",
+        "83dc90dd458489f4"
+      ]
+    },
+    {
+      "replay": "replays/validation/pikachu/97280_diamond-platinum-a313b0df5d11e8fb163d6c9b.slpz",
+      "frames": 7903,
+      "lines": 17215,
+      "fingerprint": "60937e58af2b13a0",
+      "kinds": {
+        "anim": {
+          "lines": 14015,
+          "fingerprint": "2f575e0275494a84"
+        },
+        "hide": {
+          "lines": 15,
+          "fingerprint": "8e2f6946446bb7fb"
+        },
+        "part": {
+          "lines": 27,
+          "fingerprint": "08ebd51b9c06eaab"
+        },
+        "pos": {
+          "lines": 266,
+          "fingerprint": "09feadd554738a33"
+        },
+        "tint": {
+          "lines": 2892,
+          "fingerprint": "d80d4dde8487dd83"
+        }
+      },
+      "minutes": [
+        "f4e01627e895c335",
+        "783793974984188a",
+        "99cf0ef4e061d137"
+      ]
+    }
+  ]
+}

@@ -44,6 +44,7 @@ void msl_core_decode_match_config(MslCoreMatchConfig* config,
         wire[offsetof(MslCoreMatchConfig, stage_event_streams)];
     config->slippi_patches =
         wire[offsetof(MslCoreMatchConfig, slippi_patches)];
+    config->visual_only = wire[offsetof(MslCoreMatchConfig, visual_only)];
     memcpy(config->players, wire + offsetof(MslCoreMatchConfig, players),
            sizeof(config->players));
 }

@@ -22,9 +22,9 @@ from tools.validation.admission import gecko_codes, require_admissible, slippi_p
 from tools.validation.slpz import replay_path_for_peppi
 
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 # Export semantics can change without changing the tape layout.
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 DEFAULT_SUITE = ROOT / "replays/suites/melee_core_aggregate.json"
 DEFAULT_OUTPUT = ROOT / "build/melee_core/benchmark/cases.tsv"
 
@@ -60,7 +60,7 @@ def _cached_frame_count(path: Path) -> int | None:
     except (OSError, struct.error):
         return None
     if (
-        magic != b"MSLRPB04"
+        magic != b"MSLRPB05"
         or version != FORMAT_VERSION
         or header_size < 24
         or input_size != 52

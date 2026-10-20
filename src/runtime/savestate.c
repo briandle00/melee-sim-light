@@ -555,6 +555,7 @@ int msl_core_match_restore(MslCoreMatch* match, const void* buffer,
     uint8_t* arena;
     size_t capacity;
     uint8_t arena_owned;
+    struct MslViewerTrack* track;
     if (match == NULL || buffer == NULL || buffer_size < sizeof(header)) {
         return -1;
     }
@@ -566,6 +567,7 @@ int msl_core_match_restore(MslCoreMatch* match, const void* buffer,
     arena = match->memory.arena;
     capacity = match->memory.capacity;
     arena_owned = match->memory.arena_owned;
+    track = match->viewer_track;
     // Capture destination bases before copying the source image. Do not seed
     // destination pointers into that image before relocation: a fresh host
     // allocation may numerically overlap one of the old source ranges and be
@@ -576,8 +578,10 @@ int msl_core_match_restore(MslCoreMatch* match, const void* buffer,
            header.arena_used);
     memcpy(match, (const uint8_t*) buffer + sizeof(header), sizeof(*match));
     if (relocate_match(match, &bases) != 0) {
+        match->viewer_track = track;
         return -1;
     }
+    match->viewer_track = track;
     match->game_data = game_data;
     match->memory.arena = arena;
     match->memory.capacity = capacity;
@@ -593,6 +597,7 @@ int msl_core_match_copy(MslCoreMatch* destination, const MslCoreMatch* source)
     uint8_t* arena;
     size_t capacity;
     uint8_t arena_owned;
+    struct MslViewerTrack* track;
     if (destination == NULL || source == NULL ||
         destination->game_data == NULL || source->game_data == NULL ||
         destination->game_data->fingerprint !=
@@ -608,12 +613,15 @@ int msl_core_match_copy(MslCoreMatch* destination, const MslCoreMatch* source)
     arena = destination->memory.arena;
     capacity = destination->memory.capacity;
     arena_owned = destination->memory.arena_owned;
+    track = destination->viewer_track;
     fill_copy_bases(&bases, source, destination);
     memcpy(arena, source->memory.arena, source->memory.used);
     memcpy(destination, source, sizeof(*destination));
     if (relocate_match(destination, &bases) != 0) {
+        destination->viewer_track = track;
         return -1;
     }
+    destination->viewer_track = track;
     destination->game_data = game_data;
     destination->memory.arena = arena;
     destination->memory.capacity = capacity;

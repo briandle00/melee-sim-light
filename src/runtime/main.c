@@ -1,4 +1,5 @@
 #include "runtime/scalar.h"
+#include "runtime/viewer_track.h"
 #include "runtime/wire.h"
 
 #include <errno.h>
@@ -35,6 +36,31 @@ static int write_compare(FILE* output, const MslCoreCompare* compare)
 {
     if (fwrite(compare, 1, sizeof(*compare), output) != sizeof(*compare)) {
         fprintf(stderr, "failed to write compare output: %s\n",
+                strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+// A match with MSL_VISUAL_TRACK: the lines since the last row, as a
+// little-endian u32 size and the bytes (tools/validation/native.c reads them).
+static int write_viewer_track(FILE* output, MslCoreMatch* match)
+{
+    size_t size;
+    const char* text = msl_core_match_viewer_track(match, &size);
+    uint8_t word[4];
+
+    if (text == NULL) {
+        return 0;
+    }
+    word[0] = (uint8_t) size;
+    word[1] = (uint8_t) (size >> 8);
+    word[2] = (uint8_t) (size >> 16);
+    word[3] = (uint8_t) (size >> 24);
+    if (fwrite(word, 1, sizeof(word), output) != sizeof(word) ||
+        fwrite(text, 1, size, output) != size)
+    {
+        fprintf(stderr, "failed to write the viewer track: %s\n",
                 strerror(errno));
         return -1;
     }
@@ -94,7 +120,8 @@ static int run_stream(const char* data_root)
             &stage_events, (const uint8_t*) &frame.stage_events);
         if (msl_core_match_step(&match, &frame.input, frame_seed,
                                 &stage_events) != 0 ||
-            write_compare(stdout, msl_core_match_output(&match)) != 0)
+            write_compare(stdout, msl_core_match_output(&match)) != 0 ||
+            write_viewer_track(stdout, &match) != 0)
         {
             return 1;
         }
@@ -153,6 +180,10 @@ static int run_server(const char* data_root)
             break;
         }
         msl_core_decode_match_config(&config, (const uint8_t*) &header.config);
+        if (config.visual_only != 0) {
+            fprintf(stderr, "the server runner keeps no viewer track\n");
+            break;
+        }
         if (msl_core_match_reset(&match, &game_data, &config,
                                  &header.previous) != 0)
         {

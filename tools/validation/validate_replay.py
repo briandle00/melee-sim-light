@@ -321,6 +321,7 @@ def validate_one(
     fnmsubs_profile: str | None = None,
     runner: _NativeRunner | None = None,
     diagnostic: bool = False,
+    visual_only: int = 0,
 ) -> dict[str, object]:
     # Python owns only the replay-loading boundary. The native extension consumes
     # Peppi's Arrow buffers through the Arrow C Data Interface without NumPy or
@@ -357,6 +358,10 @@ def validate_one(
             runner_stdin=runner.stdin_fd if runner is not None else -1,
             runner_stdout=runner.stdout_fd if runner is not None else -1,
             slippi_patches=slippi_patches(codes),
+            # MSL_VISUAL_* (runtime/wire.h): with MSL_VISUAL_TRACK the result
+            # carries the viewer track's lines as "visual_track"
+            # (tools/validation/visual_state.py).
+            visual_only=visual_only,
         )
     result["admitted"] = not diagnostic
     result["diagnostic"] = diagnostic or signed_zero_equal or frames != 0 or start_frame is not None
