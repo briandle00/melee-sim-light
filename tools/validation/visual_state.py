@@ -34,6 +34,7 @@ WINDOW_FRAMES = 3600
 # kinds").
 UNLOCKED_KINDS = frozenset({
     "fdrot",
+    "hook",
 })
 
 

@@ -82,6 +82,9 @@ for Nana.
 | `gcolor` | state | stage object, rgba (0 when it stops) | stage material color scripts |
 | `bgcolor` | state | rgba | the camera's background color |
 | `cam` | state | eye x, y, z, interest x, y, z, fov, quake x, y (`%.2f`) | the game camera without its quake, and the quake |
+| `hook` | event | port, sub, x, y pairs (`%.2f`) | each frame a hookshot, grapple or yo-yo chain is out: tip first, links not yet out left out |
+| `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
+| `irot` | state | item id, rot x, y, z (`%.4f`) | an item's root joint turn, once it turns |
 
 ## Validation
 
@@ -111,3 +114,5 @@ Unlocked:
 
 - `fdrot` (Final Destination's background turn): its value is the game's, but
   no recording was compared against the game's own background;
+- `hook` (the grapple and hookshot chain links): no recording of the suite
+  checks the links against the game's;
