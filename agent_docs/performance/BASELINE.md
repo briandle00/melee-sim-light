@@ -266,7 +266,7 @@ were restored exactly before recording these results. No extra worktrees.
 
 ## Stadium scheduler integration (2026-10-19)
 
-PR #60 `600543b2` rebased onto `b2eb33d4`; final cleanup removes 196 net
+PR #60 `600543b2` rebased onto `b2eb33d4`; initial cleanup removes 196 net
 implementation lines by reusing the decomp display functions and existing
 Ground.u.display state. Rendering/image/text work remains excluded. The author
 removed the unsupported legacy-camera path; this supersedes the earlier review
@@ -282,9 +282,77 @@ above. Two paired runs each, submitted implementation versus cleanup:
 | Stadium | 166,763 / 165,174 | 166,027 / 165,767 | -0.04% |
 
 Output digests agree on both workloads (`087098f69bccc6f3` mixed,
-`33492a7db4652c7f` Stadium). These short timings do not establish literal zero
-cost; the affected Stadium workload shows no material change.
+`33492a7db4652c7f` Stadium). The mixed slowdown is a merge blocker: proceeding
+on the first two-run comparison was not justified. A balanced four-run repeat
+measured submitted 125,442 / 125,470 / 124,931 / 123,597 against cleanup
+123,998 / 122,858 / 124,366 / 123,070 (-1.03%). CPU frequencies were similar;
+sibling contention varied. No remote update or merge occurred.
+
+Flattening the countdown checks did not demonstrate recovery and was rejected.
+A non-Stadium control was variable too; this does not clear the regression.
+Strict-O2 and strict-O3 compilation experiments were not retained. The original
+cleanup was not performance-approved; the refinement below supersedes it.
 GNU release gate: 523/523 recordings, 4,830,487 frames, all 522 old locks
 unchanged and the new 4,802-frame replay locked. Source/native checks,
 Wasm parity/schema and 151 tooling/API tests pass (one existing timing test
 excluded). Raw results: `reports/triage/pr60_merge_20261019/`.
+
+### Stadium scheduler refinement (2026-10-20)
+
+Retain the normal compiler profile. In hosted builds, combine display states
+whose remaining work is the same timer transition, and inline
+`grStadium_801D2344` and `grStadium_801D32D0`. This removes the extra helper calls
+without duplicating the state machine or adding state, allocation, or options.
+The final cleanup removes 197 net implementation/ledger lines versus the
+rebased submitted version. Temporary compiler-profile and diagnostic changes
+are absent from the tree.
+
+Current root `make native-release-benchmark` reproduces the validated candidate
+binary SHA256 `b8f7c4fc240b6d7fe6c953fe3a1eb7814e92017bb82c069917699ed93366142f`.
+The exact candidate passed 523/523 replays and 4,830,487 frames with all old output
+locks unchanged, native/Wasm checks and 151 tests (one existing timing exclusion).
+
+Measurements use V-cache CPU7 on the same 9950X3D, 256 resident matches and
+128-frame observation history. No other process affinities or host settings
+were changed. Main is `b2eb33d4`; submitted is rebased `b166d2ac`. All samples
+are retained, including the noisy initial short comparison (-0.64% versus main,
+-0.08% versus submitted; one candidate run had 6.3% sibling activity).
+
+The decisive original-workload repeat uses eight adjacent, balanced pairs,
+524,288 timed frames per run and the same 515-tape corpus:
+
+| Version | FPS, all eight runs in order | Mean FPS |
+| --- | --- | ---: |
+| Main | 122754 / 123294 / 121742 / 123579 / 122068 / 123792 / 123763 / 123215 | 123025.875 |
+| Refinement | 123251 / 123252 / 122980 / 123337 / 122895 / 123929 / 123134 / 124557 | 123416.875 |
+
+Mean change is +0.318%. The paired log-ratio Student-t 95% interval is
+[-0.163%, +0.802%]; the independent-sample Welch interval is
+[-0.274%, +0.915%]. Sibling activity is 0–0.96%. Both estimates exclude the
+previous 0.76–1.03% loss in this workload. They do not prove zero overhead or a
+speedup. Original digests remain main `ddc712b63b811c17` and refinement
+`087098f69bccc6f3`, matching the submitted implementation.
+
+Longer windows are supporting checks, not a substitute for that original case:
+
+| Comparison | Timed frames/run | Runs/version | Control FPS | Refinement FPS | Change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Mixed versus main | 2097152 | 8 | 150098.875 | 150976.875 | +0.585% |
+| Mixed versus submitted | 2097152 | 4 | 150617.5 | 152175.5 | +1.034% |
+| Stadium versus submitted | 2097152 | 2 | 191472.5 | 192356 | +0.461% |
+
+The extended mixed paired interval is [-0.164%, +1.339%]; its unpaired interval
+is wider, [-0.795%, +1.983%], because both versions slowed together during the
+confirmation block. Extended gameplay has a different workload mix and higher
+absolute FPS. Submitted/refinement digests agree: mixed `cff2bc01d3ae1a3e`,
+Stadium `2e85084d4bd21676`. Main's mixed digest is `a1839119d6efabf9`; the PR
+intentionally changes RNG consumption, so comparisons with main are end-to-end
+workload measurements rather than isolated instruction-cost measurements.
+
+Decision: retain the refinement. No measurable regression in the final original
+workload or the supporting comparisons; the earlier cleanup's regression is no
+longer supported by these measurements. This clears the measured performance
+blocker, with the uncertainty bounds above. No remote push/merge was performed
+as part of this retest. Raw samples, contention records and reproducible summary:
+`reports/triage/pr60_merge_20261019/resume-*.{log,json}` and
+`summarize_resume.py` in that directory.

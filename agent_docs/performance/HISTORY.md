@@ -31,9 +31,11 @@
   speedup claims. Default #45 outputs match main. #60 changes RNG/gameplay.
   [Measurement details](BASELINE.md#replay-only-build-option-cost-screening-2026-10-19).
 
-- PR #60 final integration: remove 196 net implementation lines by reusing
-  source display callbacks; preserve the author's removal of legacy camera
-  support. Compared with the submitted version, mixed FPS is -0.76% and
-  Stadium FPS -0.04%, with identical outputs. All 523 replay locks and
-  4,830,487 frames pass, plus native/Wasm and 151 tests.
-  [Measurement details](BASELINE.md#stadium-scheduler-integration-2026-10-19).
+- PR #60 integration: the initial source reuse cleanup regressed mixed FPS by
+  0.76%, then 1.03% on repeat, and was held. Retain a narrower refinement that
+  combines identical timer cases and inlines the two display helpers under the
+  existing compiler profile. Final original-workload eight-pair comparison:
+  123,417 versus main 123,026 FPS (+0.318%), paired 95% interval
+  [-0.163%, +0.802%]. Extended mixed and Stadium checks show no slowdown;
+  523 replay locks / 4,830,487 frames, native/Wasm and 151 tests pass.
+  [Evidence and limits](BASELINE.md#stadium-scheduler-refinement-2026-10-20).
