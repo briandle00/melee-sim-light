@@ -1,3 +1,6 @@
+#ifdef MSL_CORE_HOSTED
+#include "runtime/viewer_track.h"
+#endif
 #include "gr/granime.h"
 
 #include <platform.h>
@@ -1181,6 +1184,11 @@ void grAnime_801C8138(HSD_GObj* gobj, enum_t arg1, bool arg2)
     if (arg2 < 0) {
         return;
     }
+#ifdef MSL_CORE_HOSTED
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_ganim(gobj, arg1, arg2, 0.0F, 1.0F);
+    }
+#endif
     archive = grDatFiles_801C6330(arg1);
     HSD_ASSERT(0x556, archive);
     joint = archive->unk4->unk8[arg1].unk0;

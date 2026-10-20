@@ -34,6 +34,7 @@ extern HSD_Generator* hsd_804D78FC;
 
 #ifdef MSL_CORE_HOSTED
 #include "runtime/context.h"
+#include "runtime/viewer_track.h"
 #define grLib_8049EF58 ((VecMtxPtr) msl_core_ground_stage_positions())
 #else
 static VecMtx grLib_8049EF58;
@@ -50,9 +51,14 @@ bool grLib_801C96E8(HSD_GObj* arg0)
 HSD_Generator* grLib_801C96F8(s32 arg0, s32 arg1, Vec3* arg2)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on()) {
+        // (the ones the stage's code keeps to end later: Final Destination's
+        // 0x7531, the Stadium's 0x7546 and 0x7544)
+        msl_viewer_track_sgen(arg1, arg0, arg2, NULL,
+                              arg0 == 0x7531 || arg0 == 0x7546 || arg0 == 0x7544
+                                  ? "kept"
+                                  : NULL);
+    }
     return NULL;
 #else
     HSD_Generator* temp_r3;
@@ -87,18 +93,18 @@ void grLib_801C97DC(s32 arg0, s32 arg1, HSD_JObj* arg2)
 #ifndef MSL_CORE_HOSTED
     hsd_8039F6CC(0, arg1, arg0, arg2);
 #else
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_sgen(arg1, arg0, NULL, arg2, NULL);
+    }
 #endif
 }
 
 HSD_Generator* grLib_801C9808(s32 arg0, s32 arg1, HSD_JObj* arg2)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) arg0;
-    (void) arg1;
-    (void) arg2;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_sgen(arg1, arg0, NULL, arg2, "on");
+    }
     return NULL;
 #else
     return hsd_8039EFAC(0, arg1, arg0, arg2);
@@ -111,6 +117,9 @@ void grLib_801C9834(HSD_Generator* arg0)
     hsd_8039D4DC(arg0);
 #else
     (void) arg0;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_send("kept", NULL, 0);
+    }
 #endif
 }
 
@@ -119,7 +128,9 @@ void grLib_801C9854(HSD_JObj* jobj)
 #ifndef MSL_CORE_HOSTED
     hsd_8039D5DC(jobj);
 #else
-    (void) jobj;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_send("joints", jobj, 1);
+    }
 #endif
 }
 
@@ -130,13 +141,18 @@ void grLib_801C9874(HSD_Generator* arg0)
     hsd_8039D4DC(arg0);
 #else
     (void) arg0;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_send("kept-now", NULL, 0);
+    }
 #endif
 }
 
 void grLib_801C98A0(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) jobj;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_send("joint-now", jobj, 0);
+    }
 #else
     HSD_Generator *cur, *next;
 
@@ -173,7 +189,9 @@ inline HSD_JObj* jobj_next(HSD_JObj* node)
 void grLib_801C9908(HSD_JObj* jobj)
 {
 #ifdef MSL_CORE_HOSTED
-    (void) jobj;
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_send("joints-now", jobj, 1);
+    }
 #else
     HSD_Generator* cur;
     HSD_Generator* next;

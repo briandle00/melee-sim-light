@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <baselib/gobj.h>
+#include <baselib/gobjproc.h>
 #include <baselib/jobj.h>
 #include <baselib/random.h>
 
@@ -504,6 +505,264 @@ void msl_viewer_track_fxend(HSD_GObj* owner)
     }
     describe_owner(owner, NULL, &kind, &id, &joint);
     put(track, "[%d,\"fxend\",\"%c\",%d]\n", hook_frame(), kind, id);
+}
+
+// A stage joint: its stage object's number (Ground_801C2BA4) and its
+// preorder index in that object's tree, -1, -1 for none. An object the
+// stage's table does not hold is its number plus 1000 for each object of
+// that number made before it and still there, itself counted: the table
+// keeps the last one made (Fountain of Dreams' two water columns are both
+// number 4: 1004 is the left).
+// refs/melee/src/melee/gr/{ground.c::Ground_801C14D0,grizumi.c::grIzumi_801CCBDC}
+static void stage_joint(HSD_JObj* jobj, int* map, int* joint)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    HSD_GObj* gobj;
+    int others[64];
+    int i;
+    *map = -1;
+    *joint = -1;
+    for (i = 0; jobj != NULL && i < 64; ++i) {
+        int at = joint_in(stage_info.x180[i], jobj);
+        if (at >= 0) {
+            *map = i;
+            *joint = at;
+            return;
+        }
+    }
+    if (jobj == NULL || match == NULL || match->gobj.entities == NULL) {
+        return;
+    }
+    memset(others, 0, sizeof(others));
+    for (gobj = (HSD_GObj*) match->gobj.entities->x14; gobj != NULL;
+         gobj = gobj->next)
+    {
+        Ground* gp;
+        int id;
+        int at;
+        if (gobj->classifier != HSD_GOBJ_CLASS_STAGE ||
+            gobj->user_data == NULL)
+        {
+            continue;
+        }
+        gp = GET_GROUND(gobj);
+        id = (int) gp->map_id;
+        if (id < 0 || id >= 64 || stage_info.x180[id] == gobj) {
+            continue;
+        }
+        ++others[id];
+        at = joint_in(gobj, jobj);
+        if (at >= 0) {
+            *map = id + 1000 * others[id];
+            *joint = at;
+            return;
+        }
+    }
+}
+
+// Whose joint it is, a fighter's or an item's (the top of its tree is the
+// owner's model): the owner as describe_owner names it, '-' for neither.
+static void joint_owner(HSD_JObj* jobj, char* kind, int* id)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    HSD_JObj* top = jobj;
+    HSD_GObj* gobj;
+    int joint;
+    int n;
+
+    *kind = '-';
+    *id = -1;
+    if (jobj == NULL || match == NULL || match->gobj.entities == NULL) {
+        return;
+    }
+    for (n = 0; top->parent != NULL && n < 256; ++n) {
+        top = top->parent;
+    }
+    for (gobj = (HSD_GObj*) match->gobj.entities->fighters; gobj != NULL;
+         gobj = gobj->next)
+    {
+        if (gobj->hsd_obj == top) {
+            describe_owner(gobj, NULL, kind, id, &joint);
+            return;
+        }
+    }
+    for (gobj = (HSD_GObj*) match->gobj.entities->items; gobj != NULL;
+         gobj = gobj->next)
+    {
+        if (gobj->hsd_obj == top) {
+            describe_owner(gobj, NULL, kind, id, &joint);
+            return;
+        }
+    }
+}
+
+// [frame,"gen",bank,id,x,y,z,seed,stage object,joint] and, for a joint that is
+// not the stage's, the owner whose joint it is: ,"f"|"i",owner and, for an
+// item's, the joint's preorder index in the item's tree (its "ij" events)
+void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    int map;
+    int joint;
+    char owner_kind;
+    int owner_id;
+    float x = 0.0F;
+    float y = 0.0F;
+    float z = 0.0F;
+
+    if (track == NULL) {
+        return;
+    }
+    if (jobj != NULL) {
+        x = jobj->mtx[0][3];
+        y = jobj->mtx[1][3];
+        z = jobj->mtx[2][3];
+    }
+    stage_joint(jobj, &map, &joint);
+    if (map < 0) {
+        joint_owner(jobj, &owner_kind, &owner_id);
+        if (owner_kind != '-') {
+            int item;
+            int item_at;
+            if (owner_kind == 'i' &&
+                item_joint(track, jobj, &item, &item_at) && item == owner_id)
+            {
+                put(track,
+                    "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d,\"%c\",%d,%d]\n",
+                    hook_frame(), bank, gen_id, x, y, z,
+                    (unsigned) seed_now(track), map, joint, owner_kind,
+                    owner_id, item_at);
+                return;
+            }
+            put(track, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d,\"%c\",%d]\n",
+                hook_frame(), bank, gen_id, x, y, z,
+                (unsigned) seed_now(track), map, joint, owner_kind, owner_id);
+            return;
+        }
+    }
+    put(track, "[%d,\"gen\",%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n", hook_frame(),
+        bank, gen_id, x, y, z, (unsigned) seed_now(track), map, joint);
+}
+
+// [frame,"ganim",stage object,animation set,animation,start frame,rate]
+void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
+                            float start_frame, float rate)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track == NULL || gobj == NULL ||
+        gobj->classifier != HSD_GOBJ_CLASS_STAGE)
+    {
+        return;
+    }
+    put(track, "[%d,\"ganim\",%d,%d,%d,%.6g,%.6g]\n", hook_frame(),
+        (int) GET_GROUND(gobj)->map_id, anim_set, anim_index, start_frame,
+        rate);
+}
+
+void msl_viewer_track_stadscreen(int mode, int player)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track == NULL) {
+        return;
+    }
+    put(track, "[%d,\"stadscreen\",%d,%d]\n", hook_frame(), mode,
+        mode == 8 ? player : -1);
+}
+
+void msl_viewer_track_bird(int kind, int count, const Vec3* pos)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track == NULL) {
+        return;
+    }
+    put(track, "[%d,\"bird\",%d,%d,%.6g,%.6g,%.6g]\n", hook_frame(), kind,
+        count, pos->x, pos->y, pos->z);
+}
+
+// The stage object whose proc is running, or -1 (construction, or a proc
+// that is not a stage's).
+static int running_map_id(void)
+{
+    HSD_GObjProc* proc = HSD_GObj_804D7838;
+    if (proc != NULL && proc->gobj != NULL &&
+        proc->gobj->classifier == HSD_GOBJ_CLASS_STAGE)
+    {
+        return (int) GET_GROUND(proc->gobj)->map_id;
+    }
+    return -1;
+}
+
+// How many joints an end of a joint's tree walks (grLib_801C9854,
+// grLib_801C9908): the joint and what is under it, an instance's children
+// left out - the same joints, in the same order, stage_joint counts.
+static int stage_tree_count(HSD_JObj* jobj)
+{
+    int n = 1;
+    HSD_JObj* child;
+    if (jobj == NULL) {
+        return 0;
+    }
+    if (!(jobj->flags & JOBJ_INSTANCE)) {
+        for (child = jobj->child; child != NULL; child = child->next) {
+            n += stage_tree_count(child);
+        }
+    }
+    return n;
+}
+
+// [frame,"send",how,stage object,joint,joints]: the stage's own code ends
+// generators. how "kept": the placed one its code kept (an "sgen" marked
+// "kept"), "kept-now": and its particles at once (grLib_801C9834,
+// grLib_801C9874; stage object and joint -1, joints 0). "joints": every
+// generator on the joint or under it (grLib_801C9854); "joint-now": on the
+// joint alone, particles at once (grLib_801C98A0); "joints-now": the tree,
+// particles at once (grLib_801C9908). joints: how many the walk covers, from
+// `joint` on in the stage object's preorder.
+void msl_viewer_track_send(const char* how, HSD_JObj* jobj, int tree)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    int map = -1;
+    int joint = -1;
+    if (track == NULL) {
+        return;
+    }
+    stage_joint(jobj, &map, &joint);
+    put(track, "[%d,\"send\",\"%s\",%d,%d,%d]\n", hook_frame(), how, map, joint,
+        jobj == NULL ? 0 : tree ? stage_tree_count(jobj) : 1);
+}
+
+// [frame,"sgen",running stage object,bank,id,x,y,z,seed,stage object,joint
+// (-1, -1 at a place)] and the mark: "on" - made on the joint and going with
+// it (grLib_801C9808), "kept" - placed, and kept by the stage's code to end
+// later.
+void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
+                           HSD_JObj* jobj, const char* mark)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    Vec3 at = { 0.0F, 0.0F, 0.0F };
+    int map;
+    int joint;
+
+    if (track == NULL) {
+        return;
+    }
+    if (pos != NULL) {
+        at = *pos;
+    } else if (jobj != NULL) {
+        at.x = jobj->mtx[0][3];
+        at.y = jobj->mtx[1][3];
+        at.z = jobj->mtx[2][3];
+    }
+    stage_joint(pos == NULL ? jobj : NULL, &map, &joint);
+    if (mark != NULL) {
+        put(track, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d,\"%s\"]\n",
+            hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
+            (unsigned) seed_now(track), map, joint, mark);
+    } else {
+        put(track, "[%d,\"sgen\",%d,%d,%d,%.6g,%.6g,%.6g,%u,%d,%d]\n",
+            hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
+            (unsigned) seed_now(track), map, joint);
+    }
 }
 
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)

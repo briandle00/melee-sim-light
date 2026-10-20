@@ -33,6 +33,7 @@
 #include <platform/slippi.h>
 #include <runtime/context.h>
 #include <runtime/source_state.h>
+#include <runtime/viewer_track.h>
 #endif
 
 typedef struct DreamLandParams {
@@ -71,6 +72,12 @@ static int grOp_804D48D0[1][2] = { { 5, 1 } };
 static int grOp_804D48D8[1][2] = { { 2, 3 } };
 
 static int grOp_804D48E0[1][2] = { { 0, 0 } };
+#ifdef MSL_CORE_HOSTED
+// GALE01 0x804D48E0 holds { 1, 0 }: Whispy's blow effect (object 6) plays
+// animation 1. Gameplay keeps the table above; a viewer track plays the
+// game's.
+static int grOp_804D48E0_visual[1][2] = { { 1, 0 } };
+#endif
 
 typedef struct grOldPupupuSpawnDesc {
     s8 x0;
@@ -263,6 +270,13 @@ static void msl_oldpupupu_load_particle_tracks(HSD_JObj* joint,
 static void msl_oldpupupu_particle_animation(Ground_GObj* gobj, int map_id,
                                              int animation_id)
 {
+    // With a viewer track the background animation is the game's whole one
+    // (grAnime_801C8138), so its joints move and the track's stage events
+    // are the game's; its particle tracks, and so its draws, are the same.
+    if (msl_viewer_track_on()) {
+        grAnime_801C8138(gobj, map_id, animation_id);
+        return;
+    }
     UnkArchiveStruct* archive = grDatFiles_801C6330(map_id);
     HSD_JObj* joint = GET_JOBJ(gobj);
     HSD_AnimJoint** animations = archive->unk4->unk8[map_id].unk4;
@@ -453,6 +467,15 @@ void grOldPupupu_80210D10(Ground_GObj* gobj)
             y = direction *
                 (((f32) grOp_804D6A98->x4 * ((2.0F * rand) - 1.0F)) + 20.0F);
         }
+#ifdef MSL_CORE_HOSTED
+        if (msl_viewer_track_on()) {
+            Vec3 first;
+            first.x = direction * x;
+            first.y = y;
+            first.z = -150.0F * direction;
+            msl_viewer_track_bird(index, count, &first);
+        }
+#endif
         for (i = 0; i < count; i++) {
             HSD_GObj* spawn;
             spawn = grOldPupupu_802108B4_noinline(2);
@@ -854,9 +877,17 @@ void grOldPupupu_80211C1C(Ground_GObj* gobj)
     PAD_STACK(8);
 
     if (other_gp->gv.oldpupupu.xC8 == 2 && other_gp->gv.oldpupupu.xD4 != 0) {
+#ifdef MSL_CORE_HOSTED
+        grAnime_801C8138(gobj, gp->map_id,
+                         (msl_viewer_track_on() ? grOp_804D48E0_visual
+                                                : grOp_804D48E0)
+                             [other_gp->gv.oldpupupu.xCC]
+                             [other_gp->gv.oldpupupu.xD8]);
+#else
         grAnime_801C8138(gobj, gp->map_id,
                          grOp_804D48E0[other_gp->gv.oldpupupu.xCC]
                                       [other_gp->gv.oldpupupu.xD8]);
+#endif
     }
 }
 

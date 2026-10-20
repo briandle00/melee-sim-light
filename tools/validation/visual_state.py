@@ -35,6 +35,8 @@ WINDOW_FRAMES = 3600
 UNLOCKED_KINDS = frozenset({
     "fdrot",
     "hook",
+    "send",
+    "stadscreen",
 })
 
 
