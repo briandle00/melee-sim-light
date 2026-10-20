@@ -743,7 +743,8 @@ static int validate_config(MslCoreMatchConfig* config)
     return 0;
 }
 
-int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
+static int game_data_init(MslCoreGameData* game_data, const char* data_root,
+                          int visual)
 {
     size_t length;
 
@@ -847,7 +848,19 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     msl_host_set_data_root(game_data->root);
     msl_core_fighter_animation_data_init();
     init_hsd();
+#ifdef MSL_CORE_NATIVE
+    if (visual) {
+        if (msl_effect_game_data_init_visual(&game_data->effects) != 0) {
+            fprintf(stderr, "viewer track effect data failed to load\n");
+            return -1;
+        }
+    } else {
+        msl_effect_game_data_init(&game_data->effects);
+    }
+#else
+    (void) visual;
     msl_effect_game_data_init(&game_data->effects);
+#endif
 #ifdef MSL_CORE_NATIVE
     // These source loaders publish immutable GameData, not Match state.
     // Run them once before constructing the preload matches.
@@ -874,11 +887,23 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     return 0;
 }
 
+int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
+{
+    return game_data_init(game_data, data_root, 0);
+}
+
+int msl_core_game_data_init_visual(MslCoreGameData* game_data,
+                                   const char* data_root)
+{
+    return game_data_init(game_data, data_root, 1);
+}
+
 void msl_core_game_data_deinit(MslCoreGameData* game_data)
 {
     if (game_data == NULL) {
         return;
     }
+    msl_effect_game_data_visual_deinit(&game_data->effects);
 #ifdef MSL_CORE_NATIVE
     msl_fighter_pose_programs_deinit(&game_data->fighter_pose_programs);
     msl_native_dat_context_destroy(&game_data->native_dat);
@@ -1055,6 +1080,11 @@ static int match_construct(MslCoreMatch* match,
         return -1;
     }
     if (match->config.visual_only & MSL_VISUAL_TRACK) {
+        if (game_data->effects.visual == NULL) {
+            fprintf(stderr, "visual_only needs game data loaded by "
+                            "msl_core_game_data_init_visual\n");
+            return -1;
+        }
         match->viewer_track = msl_viewer_track_create();
         if (match->viewer_track == NULL) {
             fprintf(stderr, "viewer track: out of memory\n");

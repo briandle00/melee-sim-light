@@ -74,7 +74,10 @@ static int init_match(MslCoreGameData* game_data, MslCoreMatch* match,
     MslCoreMatchConfig config;
 
     msl_core_decode_match_config(&config, config_wire);
-    if (msl_core_game_data_init(game_data, data_root) != 0) {
+    if (((config.visual_only & MSL_VISUAL_TRACK)
+             ? msl_core_game_data_init_visual(game_data, data_root)
+             : msl_core_game_data_init(game_data, data_root)) != 0)
+    {
         return -1;
     }
     return msl_core_match_init(match, game_data, &config, previous_input);

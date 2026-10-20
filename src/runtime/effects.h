@@ -20,7 +20,13 @@ enum {
     MSL_CORE_EFFECT_QUEUE_CAPACITY = 256,
     MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY = 0x28,
     MSL_CORE_EFFECT_MODEL_START_CAPACITY = 4,
+    // Every slot of efAsync_DatEntries a match can load (the viewer track's).
+    MSL_CORE_EFFECT_VISUAL_BANKS = 50,
 };
+
+// The viewer track's effect data (runtime/effects.c), NULL unless the game
+// data was loaded by msl_core_game_data_init_visual.
+typedef struct MslCoreEffectVisual MslCoreEffectVisual;
 
 typedef struct MslCoreEffectModelStart {
     s32 generator_ids[MSL_CORE_EFFECT_MODEL_START_CAPACITY];
@@ -55,6 +61,7 @@ typedef struct MslCoreEffectData {
     MslCoreEffectModelStart
         common_model_start[MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY];
     s8 recording_common_model;
+    MslCoreEffectVisual* visual;
 } MslCoreEffectData;
 
 typedef struct MslCoreEffectState {
@@ -63,6 +70,20 @@ typedef struct MslCoreEffectState {
 } MslCoreEffectState;
 
 void msl_effect_game_data_init(MslCoreEffectData* data);
+#ifdef MSL_CORE_NATIVE
+// msl_effect_game_data_init, and the viewer track's effect data.
+int msl_effect_game_data_init_visual(MslCoreEffectData* data);
+#endif
+void msl_effect_game_data_visual_deinit(MslCoreEffectData* data);
+// Whether making this generator draws a random number in the game
+// (hsd_8039F05C: its command counts at random).
+int msl_effect_generator_draws(int bank, int generator_id);
+// Whether an effect file is one gameplay does not load.
+int msl_effect_view_only(int bank);
+// An effect model (file * 1000 + its place in the file's table) outside the
+// common file's first 0x28: how many random numbers its animation's first
+// step draws in the game.
+int msl_effect_model_first_draws(int model_id);
 #ifdef MSL_CORE_NATIVE
 // Load immutable map_ptcl commands before GameData seals.
 int msl_effect_load_stage_bank(MslCoreEffectData* data,

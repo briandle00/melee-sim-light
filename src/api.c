@@ -590,7 +590,7 @@ MslResult msl_viewer_create(const char* data_root, const void* config_wire,
   msl_core_decode_match_config(&config, config_wire);
   config.visual_only |= MSL_VISUAL_TRACK;
   memcpy(&previous, previous_input, sizeof(previous));
-  loaded = msl_core_game_data_init(&viewer->game_data, data_root) == 0;
+  loaded = msl_core_game_data_init_visual(&viewer->game_data, data_root) == 0;
   if (!loaded) {
     free(viewer);
     return MSL_INVALID_STATE;

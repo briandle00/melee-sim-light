@@ -66,6 +66,8 @@ struct MslViewerTrack {
     int ij_count;
     // A queued efAsync spawn's arguments, by queue node (runtime/effects.c).
     float queued[MSL_CORE_EFFECT_QUEUE_CAPACITY][5];
+    // Draws the game made this frame that the simulator leaves out.
+    int skipped;
 };
 
 _Thread_local MslViewerTrack* msl_core_context_viewer_track;
@@ -225,6 +227,10 @@ static uint32_t rgba(GXColor c)
 static uint32_t seed_now(const MslViewerTrack* track)
 {
     uint32_t state = *seed_ptr;
+    int i;
+    for (i = 0; track != NULL && i < track->skipped; ++i) {
+        state = state * 214013 + 2531011;
+    }
     (void) track;
     return state;
 }
@@ -232,6 +238,22 @@ static uint32_t seed_now(const MslViewerTrack* track)
 u32 msl_viewer_track_state(void)
 {
     return seed_now(msl_core_context_viewer_track);
+}
+
+void msl_viewer_track_skipped_n(int n)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track != NULL && n > 0) {
+        track->skipped += n;
+    }
+}
+
+void msl_viewer_track_skipped(int bank, int generator_id)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track != NULL && msl_effect_generator_draws(bank, generator_id)) {
+        track->skipped++;
+    }
 }
 
 // Owner of an effect: kind letter, id, and the JObj's index in it (-1 when
@@ -763,6 +785,7 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
             hook_frame(), running_map_id(), bank, gen_id, at.x, at.y, at.z,
             (unsigned) seed_now(track), map, joint);
     }
+    msl_viewer_track_skipped(bank, gen_id);
 }
 
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)
@@ -1242,4 +1265,9 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     track_stage(track, frame, match);
     track_items(track, frame, match);
     track_item_joints(track, frame, match);
+    // The random state after the frame's gameplay: what the particles'
+    // update (the last to draw in a frame) starts from. The replay gives
+    // each frame a fresh seed, so this is not the next frame's.
+    put(track, "[%d,\"rng\",%u]\n", frame, (unsigned) seed_now(track));
+    track->skipped = 0;
 }

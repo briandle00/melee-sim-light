@@ -67,5 +67,9 @@ void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
                            HSD_JObj* jobj, const char* mark);
 // The stage's code ending generators (grLib_801C9834 .. grLib_801C9908).
 void msl_viewer_track_send(const char* how, HSD_JObj* jobj, int tree);
+// A random draw the game makes here and the simulator does not: a
+// generator's making when its command counts at random, or `n` at once.
+void msl_viewer_track_skipped(int bank, int generator_id);
+void msl_viewer_track_skipped_n(int n);
 
 #endif

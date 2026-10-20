@@ -126,6 +126,10 @@ typedef struct MslCoreMatch {
 } MslCoreMatch;
 
 int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root);
+// The same, with the effect data a viewer track's random state needs
+// (runtime/effects.c); a match with MSL_VISUAL_TRACK requires it.
+int msl_core_game_data_init_visual(MslCoreGameData* game_data,
+                                   const char* data_root);
 void msl_core_game_data_deinit(MslCoreGameData* game_data);
 int msl_core_match_init(MslCoreMatch* match, const MslCoreGameData* game_data,
                         const MslCoreMatchConfig* config,
