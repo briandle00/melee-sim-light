@@ -258,6 +258,24 @@
       }
     },
     {
+      "replay": "replays/validation/bowser/diamond-platinum-540a552e00244ab564885561.slpz",
+      "expected": {
+        "native": {
+          "frames": 11096,
+          "actual_output_fingerprint": "2f077221e01b8c03"
+        }
+      }
+    },
+    {
+      "replay": "replays/validation/bowser/master-platinum-fc8b52d1589bdae714c2901c.slpz",
+      "expected": {
+        "native": {
+          "frames": 8249,
+          "actual_output_fingerprint": "48b8784f86d6a718"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/cardinal_1.0_recent/AttachedGoodNaturedGuanaco.slpz",
       "expected": {
         "native": {
