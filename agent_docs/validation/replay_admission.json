@@ -179,7 +179,7 @@
         "missing-recorded-inputs",
         "vanilla-magnifier"
       ],
-      "evidence": "Console capture without the stage-bounds offscreen patch, kept as the recording behind the vanilla magnifier leader-bit fix. Before the fix a fighter's percent first differs at frame 2369 (731 frames), then positions; with the bit published for each port's leader only, all 7,571 frames are equal. Slippi 3.15 records no raw C-stick bytes. Measured with a Windows build and a replay driver comparing fighter and item gameplay lanes with the recording's own code list; the C-stick bytes this Slippi version does not record come from the driver's fixed reading of the processed C-stick, not from a fit. Not run with tools/validation.",
+      "evidence": "Console capture without the stage-bounds offscreen patch. Linux native diagnostic validation matches all 7,570 compared frames (plus the -123 seed) with the recorded UCF 0.8 profile. Removing only the leader check first misses Popo's 1% damage at frame 2369 and mismatches 731 frames. tests/test_melee_core_validation.py::test_vanilla_magnifier_uses_leader_visibility runs the full recording. It remains excluded: Slippi 3.15 lacks raw C-stick inputs, and vanilla damage depends on render timing. Diagnostic reconstruction is regression evidence, not strict capture admission.",
       "sources": [
         "refs/melee/src/melee/if/ifmagnify.c::ifMagnify_802FC998",
         "refs/melee/src/melee/ft/fighter.c::Fighter_8006A360",

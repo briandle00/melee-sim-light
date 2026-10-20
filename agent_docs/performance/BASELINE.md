@@ -407,3 +407,27 @@ Nana's first writer at frame209 is retained with operands, PPC instructions,
 fused/split results and JIT source references in
 `agent_docs/validation/arithmetic_provenance.json`. The record establishes
 arithmetic semantics, not the unavailable recording CPU/build identity.
+
+## Vanilla magnifier leader publication (2026-10-20)
+
+PR #53 against main `fd3bac02`: only leaders publish each port's vanilla
+magnifier bit. Nana no longer overwrites Popo's visibility. No new state or
+allocation; the default stage-bounds damage rule ignores this publication.
+The follower check still executes in default games.
+
+Four alternating pairs, strict production build (`MSL_REPLAY_ARITHMETIC=0`),
+Ryzen 9950X3D V-cache CPU7, 519 input tapes, 256 resident matches, 524,288 timed
+frames, history128, warmup8; no concurrent builds/tests. Control removes only
+the added condition and otherwise has main's runtime source. Main mean
+124,439.25 FPS, candidate 124,975.50 FPS (+0.431%); all four pairs favor the
+candidate. Paired log-ratio 95% interval [+0.125%, +0.739%], sibling activity
+0–1.95%. No observed slowdown; this short check is not a general speedup claim.
+All eight output digests are `c4faccdbd5171957`.
+[Raw samples](magnifier_leader.csv).
+
+The Collision ICs/DK capture matches 7,570/7,570 compared frames with its recorded
+UCF 0.8 profile. Removing only the leader check makes its regression test fail:
+Popo misses 1% at frame2369, with 731 mismatching frames. The test runs the full
+capture diagnostically; missing raw C-stick inputs and render-dependent damage
+still exclude it from strict admission. The aggregate remains 524 replay locks /
+4,844,177 frames, all passing.
