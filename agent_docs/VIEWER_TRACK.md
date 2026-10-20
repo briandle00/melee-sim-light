@@ -87,6 +87,12 @@ for Nana.
 | `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
 | `irot` | state | item id, rot x, y, z (`%.4f`) | an item's root joint turn, once it turns |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
+| `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
+| `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
+
+## Seeds
+
+A seed is the game's random state where the line's thing was made.
 
 ## Validation
 
