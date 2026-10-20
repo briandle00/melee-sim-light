@@ -6,8 +6,8 @@
     {
       "replay": "replays/validation/aggregate_recent/Game_20260515T182447_frozenps.slpz",
       "frames": 5510,
-      "lines": 27355,
-      "fingerprint": "5d728fb0bd56b792",
+      "lines": 27360,
+      "fingerprint": "a00dfa9dc8879a4a",
       "kinds": {
         "anim": {
           "lines": 9798,
@@ -40,6 +40,10 @@
         "ganim": {
           "lines": 2,
           "fingerprint": "a24173451c6bb9a7"
+        },
+        "hgen": {
+          "lines": 5,
+          "fingerprint": "9c046770a6f611fd"
         },
         "hide": {
           "lines": 17,
@@ -79,15 +83,15 @@
         }
       },
       "minutes": [
-        "d5525eb9a323be31",
-        "c7e6638c8557f81f"
+        "a48f16a71ec0cbc1",
+        "054a00f5f80b9209"
       ]
     },
     {
       "replay": "replays/validation/dk/slippi-2025-02_Game_20250204T170214.slpz",
       "frames": 9176,
-      "lines": 45087,
-      "fingerprint": "7fa97a52226f5914",
+      "lines": 45093,
+      "fingerprint": "b0e75d9f8d304b73",
       "kinds": {
         "anim": {
           "lines": 16513,
@@ -133,6 +137,10 @@
           "lines": 104,
           "fingerprint": "4be10ed318082e03"
         },
+        "hgen": {
+          "lines": 6,
+          "fingerprint": "85af7e071b8e50c4"
+        },
         "hide": {
           "lines": 33,
           "fingerprint": "386a1427d00324bf"
@@ -167,16 +175,16 @@
         }
       },
       "minutes": [
-        "3444799535af6c0f",
-        "faf098ac06432ffb",
-        "3972a6868cf7eaeb"
+        "8453abfb6c0e82be",
+        "b68792e6b3a21ebd",
+        "e987206ee107c4c1"
       ]
     },
     {
       "replay": "replays/validation/icies/master-master-11064a828d78625eda78bbac.slpz",
       "frames": 8548,
-      "lines": 51990,
-      "fingerprint": "ee434987eadfa714",
+      "lines": 51996,
+      "fingerprint": "079ec46d746c438b",
       "kinds": {
         "anim": {
           "lines": 20843,
@@ -218,6 +226,10 @@
           "lines": 3,
           "fingerprint": "906c8e08a1a360cb"
         },
+        "hgen": {
+          "lines": 6,
+          "fingerprint": "8a41d1431de5af10"
+        },
         "hide": {
           "lines": 21,
           "fingerprint": "50c42e4924636aab"
@@ -256,16 +268,16 @@
         }
       },
       "minutes": [
-        "cde8d39559d30f4f",
-        "bd1c1ed1e696b5de",
-        "57aa47b5a4afee84"
+        "dd18228773ba1d1a",
+        "04a5f2a0246089d1",
+        "6a23b12b7ac34903"
       ]
     },
     {
       "replay": "replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz",
       "frames": 6128,
-      "lines": 42413,
-      "fingerprint": "4177197e0f250706",
+      "lines": 42418,
+      "fingerprint": "d02b780c78ba3020",
       "kinds": {
         "anim": {
           "lines": 16465,
@@ -307,6 +319,10 @@
           "lines": 15,
           "fingerprint": "6fe806799e3d89f6"
         },
+        "hgen": {
+          "lines": 5,
+          "fingerprint": "949e137a94dde698"
+        },
         "hide": {
           "lines": 37,
           "fingerprint": "02848c1a8bc77725"
@@ -345,15 +361,15 @@
         }
       },
       "minutes": [
-        "ef929c0efb07cca6",
-        "e327f7d2f81335cd"
+        "dd66d05d4f4c7b1f",
+        "905a38b43e67a804"
       ]
     },
     {
       "replay": "replays/validation/marios/platinum-platinum-3d9c7e1486bef415564c4005.slpz",
       "frames": 13498,
-      "lines": 66526,
-      "fingerprint": "a0303c12230c3e77",
+      "lines": 66533,
+      "fingerprint": "ab0360a1759e1ae9",
       "kinds": {
         "anim": {
           "lines": 24790,
@@ -386,6 +402,10 @@
         "ganim": {
           "lines": 2,
           "fingerprint": "5865954af9336f84"
+        },
+        "hgen": {
+          "lines": 7,
+          "fingerprint": "c15f45b81fb25f31"
         },
         "hide": {
           "lines": 17,
@@ -429,17 +449,17 @@
         }
       },
       "minutes": [
-        "91917de74fe19614",
-        "d75471888fea00cc",
-        "8c412d0e2e307238",
-        "7219bffab5186bac"
+        "9cc70a6137a7668b",
+        "ce058054ecc39dec",
+        "96ad2924c871540b",
+        "253d53e5553ae61c"
       ]
     },
     {
       "replay": "replays/validation/ness/49422_Game_20250130T192133.slpz",
       "frames": 12422,
-      "lines": 63099,
-      "fingerprint": "90dbc57e4a5e07cc",
+      "lines": 63106,
+      "fingerprint": "5ccdedf5bac18740",
       "kinds": {
         "anim": {
           "lines": 21817,
@@ -481,6 +501,10 @@
           "lines": 154,
           "fingerprint": "3e2bc83e56bdeaa7"
         },
+        "hgen": {
+          "lines": 7,
+          "fingerprint": "b8a3710e4cc9a4ec"
+        },
         "hide": {
           "lines": 17,
           "fingerprint": "d6b25ccbf23ad09d"
@@ -519,17 +543,17 @@
         }
       },
       "minutes": [
-        "ab5bd2b71d148119",
-        "435dab0513c3c2bc",
-        "4f43a105bec67f75",
-        "bc4e702c9a9a86bf"
+        "7dc2e2b927556200",
+        "3740fbeceb5e4417",
+        "9e5c8deb9b240b95",
+        "6dbc615aa641b279"
       ]
     },
     {
       "replay": "replays/validation/pikachu/97280_diamond-platinum-a313b0df5d11e8fb163d6c9b.slpz",
       "frames": 7903,
-      "lines": 45105,
-      "fingerprint": "085985cb9b0bb0c6",
+      "lines": 45111,
+      "fingerprint": "329c58cfa123a19b",
       "kinds": {
         "anim": {
           "lines": 14015,
@@ -570,6 +594,10 @@
         "gen": {
           "lines": 6106,
           "fingerprint": "32aca02ac37883f1"
+        },
+        "hgen": {
+          "lines": 6,
+          "fingerprint": "383ae85f77fdf3dd"
         },
         "hide": {
           "lines": 15,
@@ -613,9 +641,9 @@
         }
       },
       "minutes": [
-        "a1523d12fb02ae2d",
-        "d69c5fcd8693c52c",
-        "5de644eb8d5448e9"
+        "dc3b730be4c359e7",
+        "2604e24b80dc1ef0",
+        "90e58a8ca9d8e1c2"
       ]
     }
   ]
