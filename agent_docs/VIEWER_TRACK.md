@@ -86,6 +86,7 @@ for Nana.
 | `hook` | event | port, sub, x, y pairs (`%.2f`) | each frame a hookshot, grapple or yo-yo chain is out: tip first, links not yet out left out |
 | `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
 | `irot` | state | item id, rot x, y, z (`%.4f`) | an item's root joint turn, once it turns |
+| `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 
 ## Validation
 

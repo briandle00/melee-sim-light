@@ -26,6 +26,7 @@
 
 #ifdef MSL_CORE_HOSTED
 #include "runtime/context.h"
+#include "runtime/viewer_track.h"
 #include "runtime/fighter_pose.h"
 #include "runtime/source_state.h"
 #include "runtime/subsystem_profile.h"
@@ -1302,6 +1303,11 @@ void ftAnim_800704F0(Fighter_GObj* gobj, int tobj_idx, float frame)
         ftData_UnkCallbackPairs0[fp->kind].x4(gobj, tobj_idx, frame);
     }
     fp->x221E_b7 = true;
+#ifdef MSL_CORE_HOSTED
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_tex(gobj, tobj_idx, frame);
+    }
+#endif
 }
 
 void ftAnim_800705E0(CostumeTObjList* tobj_list)
@@ -1330,6 +1336,11 @@ void ftAnim_80070654(Fighter_GObj* fighter_gobj)
         ftData_UnkCallbackPairs0[fp->kind].x0(fighter_gobj);
     }
     fp->x221E_b7 = false;
+#ifdef MSL_CORE_HOSTED
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_tex(fighter_gobj, -1, 0.0F);
+    }
+#endif
 }
 
 void ftAnim_80070710(HSD_JObj* jobj, float frame)
