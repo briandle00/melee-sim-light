@@ -1,12 +1,17 @@
 #include "runtime/viewer_track.h"
 
+#include "cm/camera.h"
 #include "ft/fighter.h"
 #include "ft/ftlib.h"
 #include "ft/types.h"
+#include "gr/ground.h"
+#include "gr/inlines.h"
+#include "gr/types.h"
 #include "lb/types.h"
 #include "runtime/context.h"
 #include "runtime/scalar.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,6 +19,18 @@
 #include <string.h>
 #include <baselib/gobj.h>
 #include <baselib/jobj.h>
+
+// The game camera's render transform and extras (cm/camera.c), read only.
+void msl_camera_get_render_transform(Vec3* position, Vec3* interest,
+                                     float* fov);
+void msl_camera_track_extras(Vec2* translation, u8* background_rgb);
+
+// scalar.c's external stage ids.
+enum {
+    TRACK_STAGE_BATTLEFIELD = 31,
+    TRACK_STAGE_FINAL_DESTINATION = 32,
+    TRACK_STAGE_FOUNTAIN = 2,
+};
 
 // A state is written only when it changes: the last value of each key (its
 // kind and identity fields) is kept.
@@ -286,6 +303,134 @@ static void track_fighter(MslViewerTrack* track, int frame,
     }
 }
 
+static float round2(float v)
+{
+    return roundf(v * 100.0F) / 100.0F;
+}
+
+static void track_stage(MslViewerTrack* track, int frame,
+                        const MslCoreMatch* match)
+{
+    char key[TRACK_KEY_LEN];
+    char value[TRACK_VALUE_LEN];
+    Vec3 eye;
+    Vec3 interest;
+    float fov;
+    Vec2 translation;
+    u8 bg[3];
+    int i;
+
+    // Battlefield / Final Destination map part 3.
+    if (match->config.stage_id == TRACK_STAGE_BATTLEFIELD ||
+        match->config.stage_id == TRACK_STAGE_FINAL_DESTINATION)
+    {
+        HSD_GObj* gobj = Ground_801C2BA4(3);
+        if (gobj != NULL) {
+            Ground* gp = GET_GROUND(gobj);
+            if (match->config.stage_id == TRACK_STAGE_BATTLEFIELD) {
+                snprintf(value, sizeof(value), ",%d,%d,%d",
+                         gp->u.battle.bg_state, gp->u.battle.curr_bg,
+                         gp->u.battle.prev_bg);
+                emit_state(track, frame, "\"bg\"", value);
+            } else {
+                float frames = gp->u.map.xC4_b27 ? 0.0F : gp->u.map.x104;
+                snprintf(value, sizeof(value), ",%d,%.6g,%.6g,%.6g,%.6g",
+                         (int) gp->u.map.xC4_b2_25, gp->u.map.xE4,
+                         gp->u.map.xE8, gp->u.map.xEC,
+                         frames > 0.0F ? frames : 0.0F);
+                emit_state(track, frame, "\"fd\"", value);
+                // Part 7's root turns while the background is in phases 9
+                // and 10 (grLast_8021C40C and its animation).
+                if (gp->u.map.xC4_b2_25 == 9 || gp->u.map.xC4_b2_25 == 10) {
+                    HSD_GObj* part = Ground_801C2BA4(7);
+                    HSD_JObj* root = part != NULL ? part->hsd_obj : NULL;
+                    if (root != NULL) {
+                        snprintf(value, sizeof(value), ",%.6g,%.6g,%.6g",
+                                 root->rotate.x, root->rotate.y,
+                                 root->rotate.z);
+                        emit_state(track, frame, "\"fdrot\"", value);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fountain of Dreams: how high each platform stands, left then right -
+    // each water column's own height (grIzumi_801CC358's xD0: the file's
+    // units, what its joint is stretched by and the platform's joint set to).
+    // A replay says it from Slippi 3.18 on; the game's own is here for all.
+    // refs/melee/src/melee/gr/grizumi.c::{grIzumi_801CCBDC,grIzumi_801CC358}
+    if (match->config.stage_id == TRACK_STAGE_FOUNTAIN &&
+        match->gobj.entities != NULL)
+    {
+        float h[2] = { 0.0F, 0.0F };
+        int have = 0;
+        HSD_GObj* gobj;
+        for (gobj = (HSD_GObj*) match->gobj.entities->x14; gobj != NULL;
+             gobj = gobj->next)
+        {
+            Ground* gp;
+            if (gobj->classifier != HSD_GOBJ_CLASS_STAGE ||
+                gobj->user_data == NULL)
+            {
+                continue;
+            }
+            gp = GET_GROUND(gobj);
+            if ((int) gp->map_id == 4 &&
+                (gp->gv.izumi3.xC8 == 0 || gp->gv.izumi3.xC8 == 1))
+            {
+                h[gp->gv.izumi3.xC8] = gp->gv.izumi3.xD0;
+                have |= 1 << gp->gv.izumi3.xC8;
+            }
+        }
+        if (have == 3) {
+            snprintf(value, sizeof(value), ",%.6g,%.6g", h[0], h[1]);
+            emit_state(track, frame, "\"fod\"", value);
+        }
+    }
+
+    // Stage material color scripts (grMaterial_801C9604) while they run.
+    for (i = 0; i < 64; ++i) {
+        HSD_GObj* gobj = Ground_801C2BA4(i);
+        Ground* gp;
+        uint32_t color = 0;
+        if (gobj == NULL) {
+            continue;
+        }
+        gp = GET_GROUND(gobj);
+        if (gp->x10_flags.b4 && gp->color_overlay.x7C_color_enable) {
+            ColorOverlay* co = &gp->color_overlay;
+            GXColor c;
+            c.r = (u8) co->x30_color_red;
+            c.g = (u8) co->x34_color_green;
+            c.b = (u8) co->x38_color_blue;
+            c.a = (u8) co->x3C_color_alpha;
+            color = rgba(c);
+        }
+        snprintf(key, sizeof(key), "\"gcolor\",%d", (int) gp->map_id);
+        snprintf(value, sizeof(value), ",%u", (unsigned) color);
+        if (color != 0 || last_state(track, key) != NULL) {
+            emit_state(track, frame, key, value);
+        }
+    }
+
+    msl_camera_get_render_transform(&eye, &interest, &fov);
+    msl_camera_track_extras(&translation, bg);
+    snprintf(value, sizeof(value), ",%u",
+             ((unsigned) bg[0] << 24) | ((unsigned) bg[1] << 16) |
+                 ((unsigned) bg[2] << 8) | 0xFFU);
+    emit_state(track, frame, "\"bgcolor\"", value);
+    // The render transform includes the quake translation; the unshaken
+    // place and the translation are written apart.
+    snprintf(value, sizeof(value),
+             ",%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+             round2(eye.x - translation.x), round2(eye.y - translation.y),
+             round2(eye.z), round2(interest.x - translation.x),
+             round2(interest.y - translation.y), round2(interest.z),
+             round2(fov), round2(translation.x), round2(translation.y));
+    emit_state(track, frame, "\"cam\"", value);
+}
+
 void msl_viewer_track_frame(MslCoreMatch* match)
 {
     MslViewerTrack* track = match->viewer_track;
@@ -306,4 +451,5 @@ void msl_viewer_track_frame(MslCoreMatch* match)
             track_fighter(track, frame, match->follower_fighters[i]);
         }
     }
+    track_stage(track, frame, match);
 }

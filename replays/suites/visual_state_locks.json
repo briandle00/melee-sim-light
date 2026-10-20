@@ -6,12 +6,20 @@
     {
       "replay": "replays/validation/aggregate_recent/Game_20260515T182447_frozenps.slpz",
       "frames": 5510,
-      "lines": 12794,
-      "fingerprint": "f5d2428f54c7766e",
+      "lines": 18301,
+      "fingerprint": "4723784d5dd47353",
       "kinds": {
         "anim": {
           "lines": 9798,
           "fingerprint": "1e32af3bee6ec6db"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 5506,
+          "fingerprint": "c5ccbe6b38a74333"
         },
         "hide": {
           "lines": 17,
@@ -31,19 +39,31 @@
         }
       },
       "minutes": [
-        "c0101acc3caa73b2",
-        "d16179ce6afda369"
+        "21be272ee7cabf35",
+        "778a16058d52a9bd"
       ]
     },
     {
       "replay": "replays/validation/dk/slippi-2025-02_Game_20250204T170214.slpz",
       "frames": 9176,
-      "lines": 21727,
-      "fingerprint": "0b8308e9f8993f7d",
+      "lines": 30856,
+      "fingerprint": "33ec36b5f54a84a6",
       "kinds": {
         "anim": {
           "lines": 16513,
           "fingerprint": "a3412ff983b0230f"
+        },
+        "bg": {
+          "lines": 7,
+          "fingerprint": "243b11e013620105"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 9121,
+          "fingerprint": "a2923070f0d0a75f"
         },
         "charge": {
           "lines": 28,
@@ -67,20 +87,32 @@
         }
       },
       "minutes": [
-        "99c486350c827e79",
-        "b623b7a6192cc54f",
-        "957f24154a9cd97e"
+        "7bcc0805da6df69f",
+        "b51013f5437e5f0d",
+        "03f4a76c4f62f7da"
       ]
     },
     {
       "replay": "replays/validation/icies/master-master-11064a828d78625eda78bbac.slpz",
       "frames": 8548,
-      "lines": 27805,
-      "fingerprint": "55d3daef4919f0e4",
+      "lines": 36289,
+      "fingerprint": "6a9f5818d3403bf9",
       "kinds": {
         "anim": {
           "lines": 20843,
           "fingerprint": "4cece27558e475f8"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 8482,
+          "fingerprint": "c5daad47274418e0"
+        },
+        "fd": {
+          "lines": 1,
+          "fingerprint": "098e5f3c8126b39a"
         },
         "hide": {
           "lines": 21,
@@ -100,20 +132,28 @@
         }
       },
       "minutes": [
-        "3bf920874bd7b88b",
-        "14f270f24265723f",
-        "4a964526ed504004"
+        "5866b03acc430c29",
+        "736ee4939a636c7a",
+        "3c0e077a206eaeeb"
       ]
     },
     {
       "replay": "replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz",
       "frames": 6128,
-      "lines": 22647,
-      "fingerprint": "5f35e3fcce17010a",
+      "lines": 28759,
+      "fingerprint": "f75238af74d40e26",
       "kinds": {
         "anim": {
           "lines": 16465,
           "fingerprint": "6b72ba513a564ffc"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 6111,
+          "fingerprint": "b9bcebd482012300"
         },
         "hide": {
           "lines": 37,
@@ -133,19 +173,27 @@
         }
       },
       "minutes": [
-        "038498292cfdac4d",
-        "9bb280ad519e9d50"
+        "f7f7b2b766509982",
+        "f0be8123a5b98362"
       ]
     },
     {
       "replay": "replays/validation/marios/platinum-platinum-3d9c7e1486bef415564c4005.slpz",
       "frames": 13498,
-      "lines": 29629,
-      "fingerprint": "98352788c2f25eda",
+      "lines": 43129,
+      "fingerprint": "0cdfea6058bf4607",
       "kinds": {
         "anim": {
           "lines": 24790,
           "fingerprint": "4fe6272acf944222"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 13499,
+          "fingerprint": "412ba010302b939a"
         },
         "hide": {
           "lines": 17,
@@ -165,21 +213,33 @@
         }
       },
       "minutes": [
-        "03bad51e852b6603",
-        "030f6e4cbba31141",
-        "36c84223546e5176",
-        "104a8b22e5c70c72"
+        "ba37cdc3fe10fcf3",
+        "10cd72ff1c57a480",
+        "6adfba065a867aaf",
+        "3bd5f4a1e3cfebae"
       ]
     },
     {
       "replay": "replays/validation/ness/49422_Game_20250130T192133.slpz",
       "frames": 12422,
-      "lines": 27577,
-      "fingerprint": "f2df9a01c947db24",
+      "lines": 40003,
+      "fingerprint": "37b617537e056ef3",
       "kinds": {
         "anim": {
           "lines": 21817,
           "fingerprint": "d09cdba853ec659d"
+        },
+        "bg": {
+          "lines": 10,
+          "fingerprint": "17d92b9d443dfdf6"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 12415,
+          "fingerprint": "c6dc3a0c2dcbd617"
         },
         "hide": {
           "lines": 17,
@@ -199,21 +259,33 @@
         }
       },
       "minutes": [
-        "890d3acbeec5e67d",
-        "8083d5e5487adfd4",
-        "5314c80d5a50ae78",
-        "83dc90dd458489f4"
+        "38774a2aa51eca86",
+        "a5778984fea580e2",
+        "aae5630546429f7e",
+        "7aef6bc3367b7a1d"
       ]
     },
     {
       "replay": "replays/validation/pikachu/97280_diamond-platinum-a313b0df5d11e8fb163d6c9b.slpz",
       "frames": 7903,
-      "lines": 17215,
-      "fingerprint": "60937e58af2b13a0",
+      "lines": 26531,
+      "fingerprint": "9ac4031ce3537905",
       "kinds": {
         "anim": {
           "lines": 14015,
           "fingerprint": "2f575e0275494a84"
+        },
+        "bgcolor": {
+          "lines": 1,
+          "fingerprint": "68ca3254fe63e429"
+        },
+        "cam": {
+          "lines": 7889,
+          "fingerprint": "f9893a5847eff356"
+        },
+        "fod": {
+          "lines": 1426,
+          "fingerprint": "0f5f298f8b7bd5ac"
         },
         "hide": {
           "lines": 15,
@@ -233,9 +305,9 @@
         }
       },
       "minutes": [
-        "f4e01627e895c335",
-        "783793974984188a",
-        "99cf0ef4e061d137"
+        "0ad8bdee3324d7ad",
+        "b41fd90196f6109a",
+        "7dd79fcd44019107"
       ]
     }
   ]
