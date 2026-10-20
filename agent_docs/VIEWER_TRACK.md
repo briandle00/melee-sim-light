@@ -74,6 +74,7 @@ for Nana.
 | `part` | state | port, sub, model part, variant | `Fighter.x5F4_arr[i].idx` |
 | `anim` | state | port, sub, animation index, source kind, frame, rate, blend frames, blend frame | the animation the game plays, and whose table it is |
 | `pos` | state | port, sub, x, y, z, rot x, y, z, scale | the top joint, while in DeadUp states (4-10) or off the plane |
+| `shake` | state | port, sub, x, y, z (0 when it stops) | the draw offset `ftCommon_8008021C` sums: hit shake, the held-mash wobble, the smash-charge shake |
 | `hide` | state | port, sub, bits (1 invisible, 2 `x221E_b5`, 4 `x2226_b5`) | written once something is hidden |
 | `bg` | state | state, current, previous | Battlefield's background (map part 3) |
 | `fd` | state | phase, x, y, z, frames | Final Destination's background (map part 3) |

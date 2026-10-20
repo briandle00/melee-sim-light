@@ -2,6 +2,8 @@
 
 #include "cm/camera.h"
 #include "ft/fighter.h"
+#include "ft/chara/ftCommon/ftCo_DamageFall.h"
+#include "ft/ft_0DF0.h"
 #include "ft/ftlib.h"
 #include "ft/types.h"
 #include "gr/ground.h"
@@ -221,6 +223,33 @@ static void track_charge(MslViewerTrack* track, int frame, int port, int sub,
     emit_state(track, frame, key, text);
 }
 
+// The draw offset ftCommon_8008021C stores for ftLib_80087074 (hit shake,
+// the x2224_b5 wobble, and the smash-charge shake). The hosted build skips
+// that render-side function, so the same sum is taken here into locals.
+static bool track_shake(Fighter* fp, Vec3* out)
+{
+    Vec2 shift;
+    float x = 0.0F;
+    float y = 0.0F;
+
+    if (Fighter_804D6530 != NULL && ftCo_80090690(fp, &shift) != NULL) {
+        x += shift.x;
+        y += shift.y;
+    }
+    if (fp->x2224_b5 && Fighter_804D652C != NULL) {
+        x += Fighter_804D652C->x0[fp->x1A52].x;
+        y += Fighter_804D652C->x0[fp->x1A52].y;
+    }
+    if (Fighter_804D6528 != NULL && ftCo_800DEEE8(fp, &shift) != NULL) {
+        x += shift.x;
+        y += shift.y;
+    }
+    out->x = x;
+    out->y = y;
+    out->z = 0.0F;
+    return x != 0.0F || y != 0.0F;
+}
+
 static void track_fighter(MslViewerTrack* track, int frame,
                           Fighter_GObj* gobj)
 {
@@ -229,6 +258,7 @@ static void track_fighter(MslViewerTrack* track, int frame,
     int sub = fp->x221F_b4 ? 1 : 0;
     char key[TRACK_KEY_LEN];
     char value[TRACK_VALUE_LEN];
+    Vec3 shake;
     int i;
 
     track_overlay(track, frame, port, sub, 0, &fp->x408);
@@ -295,6 +325,15 @@ static void track_fighter(MslViewerTrack* track, int frame,
                      top->rotate.y, top->rotate.z, top->scale.x);
             emit_state(track, frame, key, value);
         }
+    }
+
+    snprintf(key, sizeof(key), "\"shake\",%d,%d", port, sub);
+    if (track_shake(fp, &shake)) {
+        snprintf(value, sizeof(value), ",%.6g,%.6g,%.6g", shake.x, shake.y,
+                 shake.z);
+        emit_state(track, frame, key, value);
+    } else if (last_state(track, key) != NULL) {
+        emit_state(track, frame, key, ",0,0,0");
     }
 
     snprintf(key, sizeof(key), "\"hide\",%d,%d", port, sub);
