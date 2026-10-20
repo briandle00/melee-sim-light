@@ -22,8 +22,8 @@ void msl_core_decode_match_config(MslCoreMatchConfig* config,
     config->friendly_fire = wire[offsetof(MslCoreMatchConfig, friendly_fire)];
     config->stock_count = wire[offsetof(MslCoreMatchConfig, stock_count)];
     config->camera_mode = wire[offsetof(MslCoreMatchConfig, camera_mode)];
-    config->online_fnmsubs_zero =
-        wire[offsetof(MslCoreMatchConfig, online_fnmsubs_zero)];
+    config->arithmetic_flags =
+        wire[offsetof(MslCoreMatchConfig, arithmetic_flags)];
     config->brawl_offscreen_damage =
         wire[offsetof(MslCoreMatchConfig, brawl_offscreen_damage)];
     config->freeze_dead_up_fall_physics =
@@ -44,8 +44,6 @@ void msl_core_decode_match_config(MslCoreMatchConfig* config,
         wire[offsetof(MslCoreMatchConfig, stage_event_streams)];
     config->slippi_patches =
         wire[offsetof(MslCoreMatchConfig, slippi_patches)];
-    config->jit_arithmetic =
-        wire[offsetof(MslCoreMatchConfig, jit_arithmetic)];
     memcpy(config->players, wire + offsetof(MslCoreMatchConfig, players),
            sizeof(config->players));
 }

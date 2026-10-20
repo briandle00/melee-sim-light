@@ -1538,6 +1538,15 @@
       }
     },
     {
+      "replay": "replays/validation/icies/master-diamond-52318ed052aa47b823e4d641.slpz",
+      "expected": {
+        "native": {
+          "frames": 13690,
+          "actual_output_fingerprint": "8e4967f9b77e2104"
+        }
+      }
+    },
+    {
       "replay": "replays/validation/icies/master-fox-2026-03_Game_20260315T195912.slpz",
       "expected": {
         "native": {

@@ -7695,7 +7695,7 @@ void ftCo_800B0AF4(Fighter* fp)
         data->ltrigger = data->x448->x4;
         data->rtrigger = data->x448->x5;
         if (fp->x2225_b3) {
-            // 800B0C34: fmul rounds 0.05*recorded once, then a single fmadd
+            // 800B0C48..58: fmul rounds 0.05*recorded once, then a single fmadd
             // fuses 0.95*cur with that product before frsp. Two rounded
             // products plus an add drifts 1 ulp against retail.
             fp->cur_pos.x = (f32) msl_ppc_fma(

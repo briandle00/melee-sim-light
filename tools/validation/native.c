@@ -160,7 +160,7 @@ typedef struct ReplayView {
   uint8_t freeze_dead_up_fall_physics;
   // MSL_PATCH_*, from the capture's gecko list (admission.py).
   uint8_t slippi_patches;
-  // MSL_JIT_*: the capturing Dolphin's host arithmetic (arithmetic
+  // The recording's double-FMA semantics (arithmetic
   // provenance, like the fnmsubs profile).
   uint8_t jit_arithmetic;
   uint8_t whispy_dead_fighter_fix;
@@ -1113,11 +1113,12 @@ static int build_match_config(const ReplayView* replay, const FrameRows* rows,
   config->num_players = (uint8_t)replay->num_players;
   config->is_teams = replay->is_teams;
   config->friendly_fire = replay->friendly_fire;
-  config->online_fnmsubs_zero = replay->online_fnmsubs_zero;
+  config->arithmetic_flags =
+      (replay->online_fnmsubs_zero ? MSL_ARITHMETIC_LEGACY_FNMSUBS : 0) |
+      (replay->jit_arithmetic ? MSL_ARITHMETIC_SPLIT_FMA : 0);
   config->brawl_offscreen_damage = replay->brawl_offscreen_damage;
   config->freeze_dead_up_fall_physics = replay->freeze_dead_up_fall_physics;
   config->slippi_patches = replay->slippi_patches;
-  config->jit_arithmetic = replay->jit_arithmetic;
   config->whispy_dead_fighter_fix = replay->whispy_dead_fighter_fix;
   config->ucf_cardinals_1_0_enabled = (uint8_t)ucf_cardinals_1_0_enabled;
   config->ucf_shield_sdi_enabled = (uint8_t)ucf_shield_sdi_enabled;

@@ -125,7 +125,9 @@ jobs:
       - name: Build the native core and validator
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: make native validator python-library -j4 PY=python3
+        run: |
+          make native validator -j4 PY=python3 MSL_REPLAY_ARITHMETIC=1
+          make python-library -j4 PY=python3
 
       - name: Check source inventory
         run: make source-check

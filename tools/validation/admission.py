@@ -141,12 +141,11 @@ def capture_issues(game, raw: bytes, *, played_on: str | None = None,
         issues.append("unestablished-arithmetic")
     if fnmsubs_profile is not None:
         profiles = json.loads((ROOT / "agent_docs/validation/arithmetic_provenance.json").read_text())
-        if not any(r["sha256_slp"] == identity and r["fnmsubs_profile"] == fnmsubs_profile
+        if not any(r["sha256_slp"] == identity and r.get("fnmsubs_profile") == fnmsubs_profile
                    for r in profiles["captures"]):
             issues.append("unestablished-arithmetic")
-    # A capture made without host FMA3 is a claim about the recording machine
-    # that the file cannot carry; like the fnmsubs profile, it needs a
-    # reviewed provenance record.
+    # The recording does not encode its double-FMA semantics. An override
+    # needs reviewed arithmetic evidence, not an inferred CPU identity.
     if jit_arithmetic not in (None, "fma"):
         profiles = json.loads((ROOT / "agent_docs/validation/arithmetic_provenance.json").read_text())
         if not any(r["sha256_slp"] == identity and r.get("jit_arithmetic") == jit_arithmetic

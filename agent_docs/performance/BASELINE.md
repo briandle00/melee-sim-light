@@ -356,3 +356,54 @@ blocker, with the uncertainty bounds above. No remote push/merge was performed
 as part of this retest. Raw samples, contention records and reproducible summary:
 `reports/triage/pr60_merge_20261019/resume-*.{log,json}` and
 `summarize_resume.py` in that directory.
+
+## Split double-FMA replay compatibility (2026-10-20)
+
+PR #45 on main `898216ef` supersedes the earlier negligible-cost screening.
+The always-compiled helper regressed the default path in all four paired runs,
+with minimal sibling activity. Forcing it inline was worse and was rejected.
+Compiling the mode out removes its TLS state, binding updates and arithmetic
+branches; packing the options into the existing arithmetic byte also retains
+the original 64-byte match config and 63,848-byte MslCoreMatch.
+
+`MSL_REPLAY_ARITHMETIC=0` is the normal native/Python/Wasm build: source calls
+expand directly to `__builtin_fma`. Validation runners explicitly build with
+`MSL_REPLAY_ARITHMETIC=1`; only a reviewed recording selects split operations.
+The default binary rejects that request instead of silently using fused math.
+Build stamps track mode changes. Default benchmark exports omit recordings
+requiring the compatibility build; an explicit option includes them. The
+canonical 524-recording validation suite includes the new capture.
+
+Same Ryzen9950X3D, V-cache CPU7, 515 input tapes, 256 resident matches,
+524,288 timed frames/run, history128 and warmup8. No other builds/tests ran
+during timing. For the final candidate, v4-to-v5 tape conversion changes only
+the version header; config and input bytes are identical. Every timing run
+has digest `087098f69bccc6f3`, identical to main. No samples were discarded.
+
+| Candidate | Main mean FPS | Candidate mean FPS | Change | Pairs |
+| --- | ---: | ---: | ---: | ---: |
+| Always-compiled helper, 65-byte config | 124269.25 | 123404.75 | -0.696% | 4 |
+| Forced-inline helper, 65-byte config (rejected) | 123297 | 120788.5 | -2.035% | 4 |
+| Compiled out, 65-byte config (not accepted) | 122791.75 | 122215.75 | -0.469% | 4 |
+| Compiled out, original 64-byte config (retained) | 123807.417 | 124134.667 | +0.264% | 12 |
+
+The retained candidate's paired log-ratio Student-t 95% interval is
+[-0.323%, +0.854%]. Removing the entire pair with the highest sibling load
+(2.76%) as a sensitivity check gives +0.062%, interval [-0.363%, +0.489%].
+This supports parity, not a speedup or a claim of zero timing variance; the
+previous 0.70% loss is no longer supported. The earlier 65-byte compiled-out
+sample included a 5.3% sibling-load candidate, so it does not establish how
+much of that sample's loss came from layout versus contention.
+[All raw samples](split_fma.csv) retain the initial negative results too.
+Production benchmark SHA256:
+`59a4aaa167f40767dcdfb2dbbf515f7a07df896aad88e905de575862da5a7d6c`.
+
+Final enabled build: 524/524 replays, 4,844,177 frames, all 523 old locks
+unchanged. The new recording passes 13,690/13,690 on native and PPC; native
+lock `8e4967f9b77e2104`. Default production native/Wasm/viewer checks and 152
+Python/tooling/API tests pass (one existing timing exclusion). An actual
+recording verifies production rejection and default/opt-in benchmark exports.
+Nana's first writer at frame209 is retained with operands, PPC instructions,
+fused/split results and JIT source references in
+`agent_docs/validation/arithmetic_provenance.json`. The record establishes
+arithmetic semantics, not the unavailable recording CPU/build identity.

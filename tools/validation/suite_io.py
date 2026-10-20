@@ -142,7 +142,7 @@ def _load_suite(path: Path, stack: tuple[Path, ...]) -> ReplaySuite:
         if fnmsubs_profile not in (None, "retail", "dolphin-legacy"):
             raise ValueError(f"invalid fnmsubs_profile for {replay}: {fnmsubs_profile!r}")
         jit_arithmetic = r.get("jit_arithmetic")
-        if jit_arithmetic not in (None, "fma", "no-host-fma"):
+        if jit_arithmetic not in (None, "fma", "split-fma"):
             raise ValueError(f"invalid jit_arithmetic for {replay}: {jit_arithmetic!r}")
         ports = tuple(int(x) for x in r.get("ports", []))
         if not ports:

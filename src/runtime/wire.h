@@ -104,7 +104,7 @@ typedef struct MslCoreMatchConfig {
     uint8_t camera_mode;
     // Runtime capabilities are explicit because scene major alone does not
     // distinguish Slippi's offline Dolphin patch set from Nintendont retail.
-    uint8_t online_fnmsubs_zero;
+    uint8_t arithmetic_flags; // MSL_ARITHMETIC_* recording semantics.
     uint8_t brawl_offscreen_damage;
     uint8_t freeze_dead_up_fall_physics;
     // UCF 0.84 and its 1.0 cardinal-coordinate patch are independently
@@ -143,10 +143,6 @@ typedef struct MslCoreMatchConfig {
     uint8_t whispy_dead_fighter_fix;
     // MSL_PATCH_* capabilities from the replay code list.
     uint8_t slippi_patches;
-    // How the capturing Dolphin's JIT computed floating point where hosts
-    // differ (MSL_JIT_*). Zero is a host with FMA3, like the retail CPU's
-    // fused multiply-adds.
-    uint8_t jit_arithmetic;
     MslCoreMatchPlayerConfig players[MSL_CORE_MAX_PLAYERS];
 } MslCoreMatchConfig;
 
@@ -156,11 +152,9 @@ enum {
 };
 
 enum {
-    // Jit64 on a host without FMA3 (older x86 CPUs, and x86 Dolphin under
-    // Rosetta on Apple silicon) runs the double-precision fmadd family as a
-    // rounded multiply and then a rounded add. Single-precision operands give
-    // an exact product either way, so only double-precision sites move.
-    MSL_JIT_NO_HOST_FMA = 1 << 0,
+    MSL_ARITHMETIC_LEGACY_FNMSUBS = 1 << 0,
+    // Round the double product before adding, as Slippi Jit64 can do.
+    MSL_ARITHMETIC_SPLIT_FMA = 1 << 1,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The
@@ -371,9 +365,9 @@ _Static_assert(sizeof(MslCoreInputPlayer) == 13, "MslCoreInputPlayer wire size")
 _Static_assert(sizeof(MslCoreInput) == 52, "MslCoreInput wire size");
 _Static_assert(sizeof(MslCoreStageEvents) == 132, "stage events wire size");
 _Static_assert(sizeof(MslCoreStreamFrame) == 188, "stream frame wire size");
-_Static_assert(sizeof(MslCoreMatchConfig) == 65,
+_Static_assert(sizeof(MslCoreMatchConfig) == 64,
                "MslCoreMatchConfig wire size");
-_Static_assert(sizeof(MslCoreStreamJobHeader) == 121,
+_Static_assert(sizeof(MslCoreStreamJobHeader) == 120,
                "stream job header wire size");
 _Static_assert(sizeof(MslCoreItem) == 48, "MslCoreItem wire size");
 _Static_assert(sizeof(MslCoreCompare) == 1302, "MslCoreCompare wire size");

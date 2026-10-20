@@ -126,14 +126,29 @@
       "source": "public anonymized ranked set: ranked_anonymized_6/master-diamond-52318ed052aa47b823e4d641.slpz",
       "replay": "replays/validation/icies/master-diamond-52318ed052aa47b823e4d641.slpz",
       "sha256_slp": "74cfea696c1612561f0231e1a4af4d7aa85c7cce8b6e86f724cf3ed2cf8591cc",
-      "jit_arithmetic": "no-host-fma",
-      "profile_evidence": "Strict full-game arithmetic differential on a Slippi 3.17 ranked capture; the recording host is unknown. With fused double-precision sites (a host with FMA3) Nana's x first differs in its last bits at frame 209; with no-host-fma every frame is equal. Three more public 3.17 ranked captures on frozen Stadium behave the same way (master-master-0f04ca1bf0d9309028a4e92f, platinum-platinum-256e268c3fa54fd2d68ac021, platinum-platinum-78d2d3d1e310e161dab4bea8). No first-writer trace yet. Measured with a Windows build and a replay driver comparing fighters', Nana's and items' gameplay lanes, not with tools/validation.",
+      "jit_arithmetic": "split-fma",
+      "profile_evidence": "Linux/amd64 GNU release validation and a first-writer trace of Nana position smoothing before replay resynchronization. At frame 209 both modes reach identical operands; fused arithmetic writes 0x424e2c66, while split multiplication/addition writes the recorded 0x424e2c65. The full split run is exact. This establishes arithmetic semantics, not the unknown recording CPU or Dolphin build.",
       "profile_differential": {
-        "transitions": 13691,
+        "transitions": 13690,
         "fma_first_mismatch": 209,
         "fma_mismatched_frames": 770,
-        "no_host_fma_mismatched_frames": 0
-      }
+        "split_fma_mismatched_frames": 0
+      },
+      "first_writer": {
+        "owner": "ftCo_800B0AF4",
+        "instruction": "GALE01 0x800B0C48 fmul; 0x800B0C50 fmadd; 0x800B0C54 frsp; 0x800B0C58 stfs",
+        "frame": 209,
+        "current_x_f32_hex": "424f2c76",
+        "mimic_x_f32_hex": "423b2b2c",
+        "expression": "float(fma(0.95, double(current_x), 0.05 * double(mimic_x)))",
+        "fused_x_hex": "424e2c66",
+        "split_x_hex": "424e2c65",
+        "recorded_x_hex": "424e2c65"
+      },
+      "source_evidence": [
+        "https://github.com/project-slippi/Ishiiruka/blob/dd88b80e231f79e2f257dfe793adfe5a4431ec8d/Source/Core/Core/PowerPC/Jit64/Jit_FloatingPoint.cpp#L269-L339",
+        "https://github.com/project-slippi/dolphin/blob/9d13b39188c97d9cccc4d566bef15448edb043cc/Source/Core/Core/PowerPC/Jit64/Jit_FloatingPoint.cpp#L355-L369"
+      ]
     }
   ]
 }

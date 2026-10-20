@@ -39,3 +39,11 @@
   [-0.163%, +0.802%]. Extended mixed and Stadium checks show no slowdown;
   523 replay locks / 4,830,487 frames, native/Wasm and 151 tests pass.
   [Evidence and limits](BASELINE.md#stadium-scheduler-refinement-2026-10-20).
+
+- PR #45: the always-compiled double-FMA helper regressed default throughput
+  0.70%; forced inlining regressed 2.03%. Compile replay arithmetic out of normal
+  builds and retain the original match layout. Final twelve-pair timing is
+  +0.264% versus main, paired 95% interval [-0.323%, +0.854%]; no speedup claim.
+  Enabled validation passes 524 replay locks / 4,844,177 frames, including the
+  new native/PPC reproducer. Default native/Wasm/viewer and 152 tests pass.
+  [Details and raw samples](BASELINE.md#split-double-fma-replay-compatibility-2026-10-20).

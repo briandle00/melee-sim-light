@@ -657,6 +657,18 @@ static int validate_config(MslCoreMatchConfig* config)
 {
     int i;
 
+    if (config->arithmetic_flags &
+        ~(MSL_ARITHMETIC_LEGACY_FNMSUBS | MSL_ARITHMETIC_SPLIT_FMA)) {
+        fprintf(stderr, "unsupported replay arithmetic mode\n");
+        return -1;
+    }
+#if !MSL_REPLAY_ARITHMETIC
+    if (config->arithmetic_flags & MSL_ARITHMETIC_SPLIT_FMA) {
+        fprintf(stderr, "split-FMA replay requires MSL_REPLAY_ARITHMETIC=1\n");
+        return -1;
+    }
+#endif
+
     if (stage_spec(config->stage_id) == NULL) {
         fprintf(stderr,
                 "current core supports the six legal stage ids "
@@ -1041,8 +1053,8 @@ static int match_construct(MslCoreMatch* match,
     match->random.value = 1;
     match->random.active = &match->random.value;
     match->game_data = game_data;
-    msl_core_bind_match(match);
     match->config = *config;
+    msl_core_bind_match(match);
     if (validate_config(&match->config) != 0) {
         return -1;
     }
@@ -1132,7 +1144,8 @@ static int match_construct(MslCoreMatch* match,
     msl_core_match_rules_init(&match->rules, match->config.is_teams,
                               match->config.friendly_fire,
                               match->config.match_damage_ratio,
-                              match->config.online_fnmsubs_zero,
+                              (match->config.arithmetic_flags &
+                               MSL_ARITHMETIC_LEGACY_FNMSUBS) != 0,
                               match->config.brawl_offscreen_damage,
                               match->config.freeze_dead_up_fall_physics,
                               match->config.ucf_cardinals_1_0_enabled,

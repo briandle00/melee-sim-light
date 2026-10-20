@@ -195,7 +195,7 @@
         "missing-recorded-inputs",
         "unestablished-arithmetic"
       ],
-      "evidence": "Kept as a recording behind the no-host-FMA3 arithmetic mode. With the mode off Nana's x position first differs at frame -18 (387 frames), then an item's and Popo's; with the mode on all 5,792 frames are equal. The recording does not say what processor made it, and no reviewed arithmetic record is claimed for it: that the mode makes it equal is not evidence of the capturing host. Slippi 3.16 records no raw C-stick bytes. Measured with a Windows build and a replay driver comparing fighter and item gameplay lanes with the recording's own code list; the C-stick bytes this Slippi version does not record come from the driver's fixed reading of the processed C-stick, not from a fit. Not run with tools/validation.",
+      "evidence": "Contributor-supplied diagnostic for split-FMA arithmetic. With the mode off Nana's x position first differs at frame -18 (387 frames), then an item's and Popo's; with the mode on all 5,792 frames are equal. The recording does not say what processor made it, and no reviewed arithmetic record is claimed for it: that the mode makes it equal is not evidence of the capturing host. Slippi 3.16 records no raw C-stick bytes. Measured with a Windows build and a replay driver comparing fighter and item gameplay lanes with the recording's own code list; the C-stick bytes this Slippi version does not record come from the driver's fixed reading of the processed C-stick, not from a fit. Not run with tools/validation.",
       "sources": [
         "agent_docs/validation/arithmetic_provenance.json",
         "src/runtime/context.c"

@@ -130,7 +130,7 @@ def test_unreviewed_host_arithmetic_is_rejected(properties_only):
     game, raw = read_game(VALID)
     assert admission.capture_issues(game, raw, jit_arithmetic="fma") == []
     assert "unestablished-arithmetic" in admission.capture_issues(
-        game, raw, jit_arithmetic="no-host-fma")
+        game, raw, jit_arithmetic="split-fma")
 
 
 def test_excluded_captures_are_absent_from_every_suite():

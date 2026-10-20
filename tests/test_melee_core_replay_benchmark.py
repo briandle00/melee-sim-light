@@ -101,7 +101,7 @@ def test_preparation_serializes_recording_capabilities(
     output = tmp_path / "cases.tsv"
     args = argparse.Namespace(
         suite=suite, output=output, characters=DEFAULT_CHARACTERS,
-        stages=DEFAULT_STAGES, force=False,
+        stages=DEFAULT_STAGES, force=False, replay_arithmetic=False,
     )
     prepare(args)
     tape = Path(output.read_text().splitlines()[1].split("\t")[0]).read_bytes()
@@ -134,7 +134,7 @@ def test_benchmark_preparation_reports_cpu_exclusions(
     output = tmp_path / "cases.tsv"
     args = argparse.Namespace(
         suite=suite, output=output, characters=DEFAULT_CHARACTERS,
-        stages=DEFAULT_STAGES, force=False,
+        stages=DEFAULT_STAGES, force=False, replay_arithmetic=False,
     )
     if not include_human:
         with pytest.raises(ValueError, match="no controller-only replays"):
@@ -168,7 +168,7 @@ def test_cached_benchmark_cannot_bypass_admission(tmp_path, monkeypatch):
     suite.write_text(json.dumps({"name": "cache", "ucf_enabled": True,
                                 "ucf_cardinals_1_0_enabled": True, "replays": [entry]}))
     args = argparse.Namespace(suite=suite, output=tmp_path / "cases.tsv",
-                              characters=DEFAULT_CHARACTERS, stages=DEFAULT_STAGES, force=False)
+                              characters=DEFAULT_CHARACTERS, stages=DEFAULT_STAGES, force=False, replay_arithmetic=False)
     prepare(args)
     assert list((tmp_path / "cases").glob("*.mslrpb"))
 

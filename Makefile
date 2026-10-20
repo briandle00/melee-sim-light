@@ -289,7 +289,10 @@ VIEWER_SCHEMA_JS := $(ROOT)/tools/viewer/live/schema.generated.js
 VALIDATION_NATIVE_SRC := $(ROOT)/tools/validation/native.c
 VALIDATION_NATIVE := $(VALIDATION_BUILD)/_msl_replay_validate.so
 
+MSL_REPLAY_ARITHMETIC ?= 0
+
 CPPFLAGS := \
+	-DMSL_REPLAY_ARITHMETIC=$(MSL_REPLAY_ARITHMETIC) \
 	-DBUGFIX \
 	-include $(CORE)/platform/compat.h \
 	-I$(CORE) \
@@ -490,6 +493,15 @@ $(NATIVE_FLAGS_STAMP): FORCE
 	@cmp -s "$@.tmp" "$@" && rm "$@.tmp" || mv "$@.tmp" "$@"
 
 $(NATIVE_COMPILE_OBJS): $(NATIVE_FLAGS_STAMP)
+
+$(PPC_BUILD)/replay-arithmetic.stamp $(PYTHON_BUILD)/replay-arithmetic.stamp $(WASM_BUILD)/replay-arithmetic.stamp: FORCE
+	@mkdir -p "$(@D)"
+	@printf '%s\n' '$(MSL_REPLAY_ARITHMETIC)' > "$@.tmp"
+	@cmp -s "$@.tmp" "$@" && rm "$@.tmp" || mv "$@.tmp" "$@"
+
+$(PPC_OBJS) $(PPC_SMOKE_OBJS): $(PPC_BUILD)/replay-arithmetic.stamp
+$(PYTHON_CORE_OBJS): $(PYTHON_BUILD)/replay-arithmetic.stamp
+$(WASM_CORE_OBJS): $(WASM_BUILD)/replay-arithmetic.stamp
 
 $(VIEWER_SCHEMA_TOOL): $(ROOT)/tools/viewer/schema.c $(CORE)/runtime/wire.h
 	@mkdir -p "$(@D)"
@@ -859,7 +871,8 @@ lifecycle-benchmark: data-check $(NATIVE_LIFECYCLE_BENCH)
 benchmark-prepare: validator
 	@"$(PY)" -m tools.validation.prepare_replay_benchmark \
 		--suite "$(VALIDATION_SUITE)" --output "$(BENCHMARK_MANIFEST)" \
-		--characters "$(VALIDATION_CHARACTERS)" --stages "$(VALIDATION_STAGES)"
+		--characters "$(VALIDATION_CHARACTERS)" --stages "$(VALIDATION_STAGES)" \
+		$(if $(filter 1,$(MSL_REPLAY_ARITHMETIC)),--replay-arithmetic,)
 
 benchmark-native: data-check benchmark-prepare native-release-benchmark
 	@taskset -c "$(BENCHMARK_CPU)" "$(NATIVE_RELEASE_REPLAY_BENCH)" \
@@ -914,14 +927,16 @@ validation-supported-domain:
 	@$(MAKE) --no-print-directory -f "$(ROOT)/Makefile" validation-suite \
 		VALIDATION_SUITE=replays/suites/melee_core_aggregate.json
 
-validation-release-supported-domain: validator native-release
+validation-release-supported-domain: validator
+	@$(MAKE) --no-print-directory native-release MSL_REPLAY_ARITHMETIC=1
 	@MSL_DATA_DIR="$(abspath $(MSL_DATA_DIR))" \
 		MSL_CORE_NATIVE_BINARY="$(NATIVE_RELEASE_BUILD)/melee-core-native" \
 		"$(PY)" -m tools.validation.validate_replay \
 		--suite replays/suites/melee_core_aggregate.json --backend native \
 		--workers "$(VALIDATION_WORKERS)" --no-build
 
-test: source-check native-smoke python-library validator native ppc
+test: source-check native-smoke python-library validator
+	@$(MAKE) --no-print-directory native ppc MSL_REPLAY_ARITHMETIC=1
 	@"$(PY)" -m pytest -q
 
 test-full: test ppc-smoke validation-supported-domain validation-release-supported-domain viewer-smoke

@@ -378,7 +378,7 @@
    },
    "played_on": "network"
   },
-    {
+  {
    "replay": "replays/validation/icies/master-diamond-52318ed052aa47b823e4d641.slpz",
    "ports": [
     1,
@@ -390,7 +390,7 @@
     "2": "Sheik"
    },
    "played_on": "network",
-   "jit_arithmetic": "no-host-fma"
+   "jit_arithmetic": "split-fma"
   }
   ]
 }

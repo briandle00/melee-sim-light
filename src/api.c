@@ -101,7 +101,7 @@ static int translate_config(const MslMatchConfig* source, MslCoreMatchConfig* ta
   target->is_teams = source->is_teams;
   target->friendly_fire = source->friendly_fire;
   target->stock_count = source->stocks;
-  target->online_fnmsubs_zero = 1;
+  target->arithmetic_flags = MSL_ARITHMETIC_LEGACY_FNMSUBS;
   target->brawl_offscreen_damage = 1;
   target->freeze_dead_up_fall_physics = 1;
   target->whispy_dead_fighter_fix = 1;

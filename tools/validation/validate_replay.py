@@ -126,22 +126,27 @@ class _NativeRunnerPool:
     def release(self, runner: _NativeRunner) -> None:
         self._available.put(runner)
 
-    def discard(self, runner: _NativeRunner) -> None:
+    def discard(self, runner: _NativeRunner) -> str:
         # A case that failed mid-session leaves the runner's streams at an
         # undefined position (a partially written job, unread output), so the
         # next job's header would be read as frame payload. Retire the process
         # and hand the pool a fresh one instead of poisoning later cases.
         with self._lock:
             self._runners.remove(runner)
-        for stream in (runner.process.stdin, runner.process.stdout, runner.process.stderr):
+        for stream in (runner.process.stdin, runner.process.stdout):
             if stream is not None and not stream.closed:
                 stream.close()
         runner.process.kill()
         runner.process.wait()
+        detail = ""
+        if runner.process.stderr is not None:
+            detail = runner.process.stderr.read().decode(errors="replace").strip()
+            runner.process.stderr.close()
         replacement = self._spawn()
         with self._lock:
             self._runners.append(replacement)
         self._available.put(replacement)
+        return detail
 
     def close(self) -> list[str]:
         """Return shutdown warnings without masking per-case validation errors."""
@@ -285,6 +290,7 @@ def build_validation(*, backend: str, jobs: int = 4) -> None:
             "-f",
             "Makefile",
             f"-j{max(1, jobs)}",
+            "MSL_REPLAY_ARITHMETIC=1",
             *targets,
         ],
         cwd=ROOT,
@@ -360,7 +366,7 @@ def validate_one(
             runner_stdin=runner.stdin_fd if runner is not None else -1,
             runner_stdout=runner.stdout_fd if runner is not None else -1,
             slippi_patches=slippi_patches(codes),
-            jit_arithmetic=1 if jit_arithmetic == "no-host-fma" else 0,
+            jit_arithmetic=1 if jit_arithmetic == "split-fma" else 0,
         )
     result["admitted"] = not diagnostic
     result["diagnostic"] = diagnostic or signed_zero_equal or frames != 0 or start_frame is not None
@@ -542,10 +548,12 @@ def _validate_case(
                 runner=runner,
                 diagnostic=diagnostic,
             )
-        except Exception:
+        except Exception as exc:
             if runner is not None and runner_pool is not None:
-                runner_pool.discard(runner)
+                detail = runner_pool.discard(runner)
                 runner = None
+                if detail:
+                    raise RuntimeError(f"{exc}: {detail}") from exc
             raise
         finally:
             if runner is not None and runner_pool is not None:
@@ -772,8 +780,8 @@ def main() -> int:
         help="Explicit recording arithmetic profile; omission uses replay metadata defaults.",
     )
     parser.add_argument(
-        "--jit-arithmetic", choices=("fma", "no-host-fma"),
-        help="The capturing Dolphin's host arithmetic; omission is a host with FMA3.",
+        "--jit-arithmetic", choices=("fma", "split-fma"),
+        help="Recording double-FMA semantics; omission preserves fused arithmetic.",
     )
     parser.add_argument("--backend", choices=("ppc", "native", "both"), default="native")
     parser.add_argument(

@@ -24,21 +24,20 @@ float __fmadds(float a, float b, float c);
 float __fmsubs(float a, float b, float c);
 float __fnmsubs(float a, float b, float c);
 
-// A double-precision PPC fmadd (and, with negated operands, fmsub/fnmadd/
-// fnmsub) as the capturing JIT computed it: fused on a host with FMA3, a
-// rounded product and then a rounded add without it (MSL_JIT_NO_HOST_FMA).
-// For single-precision operands the product is exact and both agree.
-// The flag is the bound match's, cached when the match is bound
-// (context.c::msl_core_bind_match), so the default path is one predictable
-// branch.
-extern _Thread_local int msl_jit_no_host_fma;
+#if MSL_REPLAY_ARITHMETIC
+// Slippi Jit64 can split double fmadd into rounded multiply/add according
+// to its arithmetic setting. The default keeps retail's fused operation.
+extern _Thread_local int msl_jit_split_fma;
 static inline double msl_ppc_fma(double a, double b, double c)
 {
-    if (msl_jit_no_host_fma) {
+    if (msl_jit_split_fma) {
         volatile double product = a * b;
         return product + c;
     }
     return __builtin_fma(a, b, c);
 }
+#else
+#define msl_ppc_fma __builtin_fma
+#endif
 
 #endif
