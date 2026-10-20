@@ -878,6 +878,9 @@ void grStadium_801D2278(Ground_GObj* gobj)
     grStadium_801D2528(gobj, 0, 0);
 }
 
+#ifdef MSL_CORE_HOSTED
+__attribute__((always_inline)) inline
+#endif
 void grStadium_801D2344(Ground_GObj* g)
 {
     Ground_GObj* gobj = g;
@@ -896,30 +899,6 @@ void grStadium_801D2344(Ground_GObj* g)
         grStadium_801D4194(gobj);
 #endif
         break;
-    case 1:
-#ifndef MSL_CORE_HOSTED
-        grStadium_801D39A0(gobj);
-#endif
-        if (gp->u.display.xE0-- < 0) {
-            grStadium_801D2A60(gobj);
-        }
-        break;
-    case 9:
-#ifndef MSL_CORE_HOSTED
-        grStadium_801D3A0C(gobj);
-#endif
-        if (gp->u.display.xE0-- < 0) {
-            grStadium_801D2A60(gobj);
-        }
-        break;
-    case 14:
-#ifndef MSL_CORE_HOSTED
-        grStadium_801D3BBC(gobj);
-#endif
-        if (gp->u.display.xE0-- < 0) {
-            grStadium_801D2A60(gobj);
-        }
-        break;
     case 10:
     case 11:
     case 12:
@@ -928,6 +907,33 @@ void grStadium_801D2344(Ground_GObj* g)
         grStadium_801D3F40(gobj, gp->u.display.xE4);
 #endif
         break;
+    case 1:
+#ifndef MSL_CORE_HOSTED
+        grStadium_801D39A0(gobj);
+        if (gp->u.display.xE0-- < 0) {
+            grStadium_801D2A60(gobj);
+        }
+        break;
+#endif
+    case 9:
+#ifndef MSL_CORE_HOSTED
+        grStadium_801D3A0C(gobj);
+        if (gp->u.display.xE0-- < 0) {
+            grStadium_801D2A60(gobj);
+        }
+        break;
+#endif
+    case 14:
+#ifndef MSL_CORE_HOSTED
+        grStadium_801D3BBC(gobj);
+        if (gp->u.display.xE0-- < 0) {
+            grStadium_801D2A60(gobj);
+        }
+        break;
+#endif
+#ifdef MSL_CORE_HOSTED
+    case 7:
+#endif
     case 2:
     case 3:
     case 4:
@@ -939,16 +945,16 @@ void grStadium_801D2344(Ground_GObj* g)
             grStadium_801D2A60(gobj);
         }
         break;
+#ifndef MSL_CORE_HOSTED
     case 7:
         if (gp->u.display.xE0-- < 0) {
             grStadium_801D2A60(gobj);
             break;
         }
-#ifndef MSL_CORE_HOSTED
         temp_r3_6 = GET_WRAPPER(gp->u.display.xD8);
         temp_r3_6->flag = false;
-#endif
         break;
+#endif
     case 8:
         if (gp->u.display.xE0-- < 0 ||
             Player_GetEntity(gp->u.display.xEE) == NULL ||
@@ -1449,6 +1455,9 @@ HSD_TObj* grStadium_801D3138(Ground_GObj* gobj, HSD_ImageDesc* desc,
     return NULL;
 }
 
+#ifdef MSL_CORE_HOSTED
+__attribute__((always_inline)) inline
+#endif
 bool grStadium_801D32D0(Ground_GObj* gobj)
 {
 #ifdef MSL_CORE_HOSTED
