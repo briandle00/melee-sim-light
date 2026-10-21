@@ -110,6 +110,7 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `lm` | event | item id, link count, then per link that changed: link, out, mask, values | a chain's links (hookshots, Samus's grapple, Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's matrix as the item's code set it (rows 0-2 of the 3x4, mask bits 0-11); link 0 is the end with no `prev`; out is `x2C_b0` (a link is drawn only then); a link that comes out or goes back is written whole |
 | `ij` | state | item id, joint, offset x, y, z, 3x3 matrix | an item joint a generator was made on: place from the item's and its turn, at the frame's end |
 | `rng` | state-like, every frame | random state | the state after the frame's gameplay, where the game's particle update starts |
+| `hgen` | event | bank 0, generator 0xF7, x, y, z, seed, port, icon | the HUD's burst at a lost stock (`ifStock_802F8298`) |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 | `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
 | `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
