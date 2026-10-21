@@ -490,8 +490,24 @@ static u32 drawn(const Piece* p, u32 state)
     *seed_ptr = state;
     if (p->kind == 'g') {
         msl_effect_pieces_consume_generator(p->id);
+        // (a generator of a file gameplay does not load: the simulator draws
+        // nothing for it; the game does when its command counts at random)
+        if (msl_effect_view_only(p->id / 1000) &&
+            msl_effect_generator_draws(p->id / 1000, p->id))
+        {
+            (void) HSD_Randf();
+        }
     } else if (p->id >= 0 && p->id < 0x28) {
         msl_effect_pieces_consume_model((int) (p->id % 1000));
+    }
+    else {
+        // (a fighter's file's model: the simulator draws nothing for its
+        // first step; the game does, once per generator that counts at
+        // random)
+        int n = msl_effect_model_first_draws(p->id);
+        while (n-- > 0) {
+            (void) HSD_Randf();
+        }
     }
     out = *seed_ptr;
     *seed_ptr = keep;
@@ -512,6 +528,11 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
         if (p->kind == 'g') {
             p->rng_at = state;
             state = drawn(p, state);
+            if (msl_effect_view_only(p->id / 1000) &&
+                msl_effect_generator_draws(p->id / 1000, p->id))
+            {
+                msl_viewer_track_skipped_n(1);
+            }
         }
     }
     for (i = piece_count - 1; i >= 0; --i) {
@@ -519,6 +540,9 @@ static void emit(HSD_GObj* owner, s32 gfx_id, u32 state)
         if (p->kind == 'm') {
             p->rng_at = state;
             state = drawn(p, state);
+            if (p->id >= 0x28) {
+                msl_viewer_track_skipped_n(msl_effect_model_first_draws(p->id));
+            }
         }
     }
 

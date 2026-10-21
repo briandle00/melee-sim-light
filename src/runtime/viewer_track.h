@@ -61,6 +61,10 @@ float* msl_viewer_track_queued_args(int slot);
 // `slot` to texture `index`; ftAnim_80070654 puts every slot back, written
 // as slot -1, index 0.
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index);
+// A random draw the game makes here and the simulator does not: a
+// generator's making when its command counts at random, or `n` at once.
+void msl_viewer_track_skipped(int bank, int generator_id);
+void msl_viewer_track_skipped_n(int n);
 
 #endif
 #endif // MSL_VISUAL_TRACK_BUILD

@@ -31,6 +31,14 @@ returns the lines written since the last call. The track reads simulation
 state; it does not change gameplay (the locks below check the strict gameplay
 pass and the same output fingerprint with the track off).
 
+The random state lines and seeds need effect data gameplay does not load
+(runtime/effects.c): load the game data with `msl_core_game_data_init_visual`
+for a match with the bit set; `msl_core_match_init` refuses the bit without
+it. That load adds every effect file of the game's list that gameplay leaves
+out, every file's model table, and one counted animation step per effect
+model. `msl_core_game_data_init` does none of it. `msl_viewer_create`
+(below) loads it.
+
 Limits: one track per match. A savestate restore or match copy keeps the
 destination's own track (or none); a track is not part of a savestate. The
 batch API has no way to turn it on. The validation runner writes it only in
@@ -101,6 +109,7 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `fp` | event | port, sub, character, then per part that changed: part, mask, values | a fighter's swinging joints (`ftdynamics.c`), the same nine values: the chains a hurtbox sits on, which gameplay solves, and, with the track, the capes, caps and hair the gameplay build drops, kept as copies the game's solver goes on with (`msl_viewer_track_keep_dynamics`; not yet Peach's, Zelda's and Donkey Kong's); a fighter's first line (and its first as another character) has all of them |
 | `lm` | event | item id, link count, then per link that changed: link, out, mask, values | a chain's links (hookshots, Samus's grapple, Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's matrix as the item's code set it (rows 0-2 of the 3x4, mask bits 0-11); link 0 is the end with no `prev`; out is `x2C_b0` (a link is drawn only then); a link that comes out or goes back is written whole |
 | `ij` | state | item id, joint, offset x, y, z, 3x3 matrix | an item joint a generator was made on: place from the item's and its turn, at the frame's end |
+| `rng` | state-like, every frame | random state | the state after the frame's gameplay, where the game's particle update starts |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 | `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
 | `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
@@ -112,6 +121,10 @@ A seed is the game's random state where the line's thing was made.
 A spawn's pieces are seeded in the game's order: each generator as the
 dispatch makes it, then the models' first animation steps, the last made
 first (`efLib_AnimQueue`).
+The simulator leaves out some draws the game makes (a generator of a file
+gameplay does not load, a fighter file model's first animation step, the
+stage's own generators): the track counts them, so a seed and `rng` are the
+game's state, not only the simulator's.
 
 ## Validation
 

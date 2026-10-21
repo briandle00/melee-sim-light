@@ -758,7 +758,12 @@ static int validate_config(MslCoreMatchConfig* config)
     return 0;
 }
 
+#if MSL_VISUAL_TRACK_BUILD
+static int game_data_init(MslCoreGameData* game_data, const char* data_root,
+                          int visual)
+#else // !MSL_VISUAL_TRACK_BUILD
 int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
+#endif // MSL_VISUAL_TRACK_BUILD
 {
     size_t length;
 
@@ -862,7 +867,23 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     msl_host_set_data_root(game_data->root);
     msl_core_fighter_animation_data_init();
     init_hsd();
+#if MSL_VISUAL_TRACK_BUILD
+#ifdef MSL_CORE_NATIVE
+    if (visual) {
+        if (msl_effect_game_data_init_visual(&game_data->effects) != 0) {
+            fprintf(stderr, "viewer track effect data failed to load\n");
+            return -1;
+        }
+    } else {
+        msl_effect_game_data_init(&game_data->effects);
+    }
+#else
+    (void) visual;
     msl_effect_game_data_init(&game_data->effects);
+#endif
+#else // !MSL_VISUAL_TRACK_BUILD
+    msl_effect_game_data_init(&game_data->effects);
+#endif // MSL_VISUAL_TRACK_BUILD
 #ifdef MSL_CORE_NATIVE
     // These source loaders publish immutable GameData, not Match state.
     // Run them once before constructing the preload matches.
@@ -888,12 +909,28 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     msl_effect_install_match_callbacks();
     return 0;
 }
+#if MSL_VISUAL_TRACK_BUILD
+
+int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
+{
+    return game_data_init(game_data, data_root, 0);
+}
+
+int msl_core_game_data_init_visual(MslCoreGameData* game_data,
+                                   const char* data_root)
+{
+    return game_data_init(game_data, data_root, 1);
+}
+#endif // MSL_VISUAL_TRACK_BUILD
 
 void msl_core_game_data_deinit(MslCoreGameData* game_data)
 {
     if (game_data == NULL) {
         return;
     }
+#if MSL_VISUAL_TRACK_BUILD
+    msl_effect_game_data_visual_deinit(&game_data->effects);
+#endif // MSL_VISUAL_TRACK_BUILD
 #ifdef MSL_CORE_NATIVE
     msl_fighter_pose_programs_deinit(&game_data->fighter_pose_programs);
     msl_native_dat_context_destroy(&game_data->native_dat);
@@ -1077,6 +1114,11 @@ static int match_construct(MslCoreMatch* match,
     }
 #if MSL_VISUAL_TRACK_BUILD
     if (match->config.camera_mode & MSL_VISUAL_TRACK) {
+        if (game_data->effects.visual == NULL) {
+            fprintf(stderr, "a viewer track needs game data loaded by "
+                            "msl_core_game_data_init_visual\n");
+            return -1;
+        }
         match->viewer_track = msl_viewer_track_create();
         if (match->viewer_track == NULL) {
             fprintf(stderr, "viewer track: out of memory\n");

@@ -76,9 +76,18 @@ static int init_match(MslCoreGameData* game_data, MslCoreMatch* match,
     MslCoreMatchConfig config;
 
     msl_core_decode_match_config(&config, config_wire);
+#if MSL_VISUAL_TRACK_BUILD
+    if (((config.camera_mode & MSL_VISUAL_TRACK)
+             ? msl_core_game_data_init_visual(game_data, data_root)
+             : msl_core_game_data_init(game_data, data_root)) != 0)
+    {
+        return -1;
+    }
+#else // !MSL_VISUAL_TRACK_BUILD
     if (msl_core_game_data_init(game_data, data_root) != 0) {
         return -1;
     }
+#endif // MSL_VISUAL_TRACK_BUILD
     return msl_core_match_init(match, game_data, &config, previous_input);
 }
 

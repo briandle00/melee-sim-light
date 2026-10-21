@@ -34,6 +34,63 @@ static _Thread_local MslCoreEffectState* msl_bound_effect_state;
 
 static void msl_effect_consume_bank_command(
     const MslCoreEffectGeneratorBank* data, int index);
+#if MSL_VISUAL_TRACK_BUILD
+
+// The viewer track's random state counts the draws the game makes that the
+// simulator leaves out (runtime/viewer_track.c): for those it needs every
+// file of the game's own effect list (efAsync_DatEntries: slot, file, table),
+// the ones gameplay's list leaves out loaded beside it, and each model's
+// first animation step's draws. Loaded only by msl_core_game_data_init_visual;
+// gameplay's banks and draws are untouched. (The menu's file, slot 31, is not
+// a match's.)
+// refs/melee/src/melee/ef/efasync.c::efAsync_DatEntries
+enum { MSL_EFFECT_MODELS_PER_FILE = 16 };
+// psInitDataBankLoad's slot for the stage archive's map_ptcl.
+// refs/melee/src/melee/gr/ground.c::Ground_801C0800
+enum { MSL_EFFECT_STAGE_BANK = 0x1E };
+struct MslCoreEffectVisual {
+    MslCoreEffectGeneratorBank view_banks[MSL_CORE_EFFECT_VISUAL_BANKS];
+    EF_EffectDesc* models[MSL_CORE_EFFECT_VISUAL_BANKS];
+    u8 model_draws[MSL_CORE_EFFECT_VISUAL_BANKS][MSL_EFFECT_MODELS_PER_FILE];
+};
+static const struct {
+    int slot;
+    const char* file;
+    const char* table;
+} msl_effect_game_files[] = {
+    { 0, "/EfCoData.dat", "effCommonDataTable" }, { 1, "/EfMrData.dat", "effMarioDataTable" },
+    { 2, "/EfSsData.dat", "effSamusDataTable" }, { 3, "/EfFxData.dat", "effFoxDataTable" },
+    { 4, "/EfCaData.dat", "effCaptainDataTable" }, { 5, "/EfKbData.dat", "effKirbyDataTable" },
+    { 6, "/EfLkData.dat", "effLinkDataTable" }, { 7, "/EfPkData.dat", "effPikachuDataTable" },
+    { 8, "/EfDkData.dat", "effDonkeyDataTable" }, { 9, "/EfYsData.dat", "effYoshiDataTable" },
+    { 10, "/EfNsData.dat", "effNessDataTable" }, { 11, "/EfPrData.dat", "effPurinDataTable" },
+    { 12, "/EfKpData.dat", "effKoopaDataTable" }, { 13, "/EfMtData.dat", "effMewtwoDataTable" },
+    { 14, "/EfIcData.dat", "effIceclimberDataTable" }, { 15, "/EfPeData.dat", "effPeachDataTable" },
+    { 16, "/EfMsData.dat", "effMarsDataTable" }, { 17, "/EfZdData.dat", "effZeldaDataTable" },
+    { 18, "/EfLgData.dat", "effLuigiDataTable" }, { 19, "/EfGnData.dat", "effGanonDataTable" },
+    { 20, "/EfKbMs.dat", "effKirbyMarsDataTable" }, { 21, "/EfKbZd.dat", "effKirbyZeldaDataTable" },
+    { 32, "/EfKbMr.dat", "effKirbyMarioDataTable" }, { 33, "/EfKbFx.dat", "effKirbyFoxDataTable" },
+    { 34, "/EfKbSs.dat", "effKirbySamusDataTable" }, { 36, "/EfKbPk.dat", "effKirbyPikachuDataTable" },
+    { 37, "/EfKbLg.dat", "effKirbyLuigiDataTable" }, { 38, "/EfKbCa.dat", "effKirbyCaptainDataTable" },
+    { 39, "/EfKbDk.dat", "effKirbyDonkeyDataTable" }, { 41, "/EfKbKp.dat", "effKirbyKoopaDataTable" },
+    { 46, "/EfKbIc.dat", "effKirbyIceDataTable" }, { 47, "/EfKbGn.dat", "effKirbyGanonDataTable" },
+    { 48, "/EfKbFe.dat", "effKirbyEmblemDataTable" }, { 49, "/EfFeData.dat", "effEmblemDataTable" },
+};
+// How many entries each file's model table has (an audit of the files: 36,
+// 41 and 46 have one entry with no model in it).
+static const u8 msl_effect_model_counts[MSL_CORE_EFFECT_VISUAL_BANKS] = {
+    [0] = 47, [1] = 2, [2] = 3, [3] = 6, [4] = 6, [5] = 9, [6] = 4, [7] = 5, [8] = 7,
+    [9] = 1, [10] = 3, [11] = 1, [12] = 3, [13] = 4, [14] = 1, [15] = 1,
+    [16] = 2, [17] = 7, [18] = 2, [19] = 6, [20] = 2, [21] = 2, [32] = 1,
+    [33] = 1, [34] = 1, [36] = 1, [37] = 1, [38] = 2, [39] = 2, [41] = 1,
+    [46] = 1, [47] = 2, [48] = 2, [49] = 2,
+};
+// Set while a model's first step is counted (msl_effect_game_data_init_visual).
+static _Thread_local u8* msl_effect_recording_draws;
+// Set while msl_effect_game_data_init_visual loads: the common file's table
+// is translated whole (a table is translated once, at the first count asked).
+static _Thread_local int msl_effect_loading_visual;
+#endif // MSL_VISUAL_TRACK_BUILD
 
 static void msl_effect_record_model_generator(int link_no, int bank,
                                               int gfx_id, HSD_JObj* jobj)
@@ -44,6 +101,14 @@ static void msl_effect_record_model_generator(int link_no, int bank,
 
     (void) link_no;
     (void) jobj;
+#if MSL_VISUAL_TRACK_BUILD
+    if (msl_effect_recording_draws != NULL) {
+        if (msl_effect_generator_draws(bank, gfx_id)) {
+            ++*msl_effect_recording_draws;
+        }
+        return;
+    }
+#endif // MSL_VISUAL_TRACK_BUILD
     if (data == NULL || data->recording_common_model < 0 ||
         data->recording_common_model >= MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY)
     {
@@ -102,7 +167,12 @@ static void msl_effect_load_bank(MslCoreEffectData* data, int bank,
         effect_bank->models =
             msl_native_effect_models(
                 effect_bank->archive, symbol,
+#if MSL_VISUAL_TRACK_BUILD
+                msl_effect_loading_visual ? msl_effect_model_counts[0]
+                                          : MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY);
+#else // !MSL_VISUAL_TRACK_BUILD
                 MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY);
+#endif // MSL_VISUAL_TRACK_BUILD
         if (effect_bank->models == NULL) {
             fprintf(stderr, "%s has invalid common effect model data\n",
                     filename);
@@ -257,6 +327,154 @@ void msl_effect_game_data_init(MslCoreEffectData* data)
     }
     HSD_JObjSetDPtclCallback(NULL);
 }
+#if MSL_VISUAL_TRACK_BUILD
+
+#ifdef MSL_CORE_NATIVE
+int msl_effect_game_data_init_visual(MslCoreEffectData* data)
+{
+    MslCoreEffectVisual* visual;
+    size_t k;
+
+    msl_effect_loading_visual = 1;
+    msl_effect_game_data_init(data);
+    msl_effect_loading_visual = 0;
+    visual = calloc(1, sizeof(*visual));
+    if (visual == NULL) {
+        return -1;
+    }
+    data->visual = visual;
+    for (k = 0; k < sizeof(msl_effect_game_files) / sizeof(msl_effect_game_files[0]); ++k) {
+        int slot = msl_effect_game_files[k].slot;
+        HSD_Archive* archive;
+        if (slot < MSL_CORE_EFFECT_BANK_CAPACITY && data->banks[slot].archive != NULL) {
+            archive = data->banks[slot].archive;
+        } else {
+            MslCoreEffectGeneratorBank* view = &visual->view_banks[slot];
+            view->archive = archive = lbArchive_LoadArchive(msl_effect_game_files[k].file);
+            if (archive == NULL) {
+                continue;
+            }
+            if (msl_native_effect_bank(archive, msl_effect_game_files[k].table, &view->count,
+                                       &view->id_base, &view->commands) != 0)
+            {
+                view->count = 0;
+                view->commands = NULL;
+            }
+        }
+        if (msl_effect_model_counts[slot] != 0) {
+            visual->models[slot] = msl_native_effect_models(
+                archive, msl_effect_game_files[k].table, msl_effect_model_counts[slot]);
+        }
+    }
+    msl_effect_projection_bind(data, NULL);
+    HSD_JObjSetDPtclCallback(msl_effect_record_model_generator);
+    for (int bank = 0; bank < MSL_CORE_EFFECT_VISUAL_BANKS; ++bank) {
+        const EF_EffectDesc* table = visual->models[bank];
+        // (the common file's first 0x28 are the simulator's own)
+        int first = bank == 0 ? MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY : 0;
+        for (int model = first; table != NULL && model < msl_effect_model_counts[bank] &&
+                                model - first < MSL_EFFECT_MODELS_PER_FILE;
+             ++model)
+        {
+            const EF_EffectDesc* desc = &table[model];
+            HSD_JObj* jobj;
+            if (desc->model_desc.joint == NULL ||
+                (jobj = HSD_JObjLoadJoint(desc->model_desc.joint)) == NULL)
+            {
+                continue;
+            }
+            HSD_JObjAddAnimAll(jobj, desc->model_desc.animjoint, desc->model_desc.matanim_joint,
+                               desc->model_desc.shapeanim_joint);
+            HSD_JObjReqAnimAll(jobj, 0.0F);
+            msl_effect_recording_draws = &visual->model_draws[bank][model - first];
+            HSD_JObjAnimAll(jobj);
+            msl_effect_recording_draws = NULL;
+            HSD_JObjRemoveAll(jobj);
+        }
+    }
+    HSD_JObjSetDPtclCallback(NULL);
+    return 0;
+}
+#endif
+
+void msl_effect_game_data_visual_deinit(MslCoreEffectData* data)
+{
+    free(data->visual);
+    data->visual = NULL;
+}
+
+// A bank as the game's particle code finds it: the running stage's map_ptcl,
+// a file gameplay does not load, or gameplay's own.
+static const MslCoreEffectGeneratorBank* msl_effect_visual_bank(int bank)
+{
+    const MslCoreEffectVisual* visual =
+        msl_bound_effect_data != NULL ? msl_bound_effect_data->visual : NULL;
+    if (bank == MSL_EFFECT_STAGE_BANK) {
+#ifdef MSL_CORE_NATIVE
+        if (msl_bound_effect_data == NULL ||
+            (u32) stage_info.internal_stage_id >=
+                sizeof(msl_bound_effect_data->stage_banks) /
+                    sizeof(msl_bound_effect_data->stage_banks[0]))
+        {
+            return NULL;
+        }
+        return &msl_bound_effect_data->stage_banks[stage_info.internal_stage_id];
+#else
+        return NULL;
+#endif
+    }
+    if (visual != NULL && bank > 0 && bank < MSL_CORE_EFFECT_VISUAL_BANKS &&
+        visual->view_banks[bank].archive != NULL)
+    {
+        return &visual->view_banks[bank];
+    }
+    if (msl_bound_effect_data == NULL || bank < 0 || bank >= MSL_CORE_EFFECT_BANK_CAPACITY) {
+        return NULL;
+    }
+    return &msl_effect_banks[bank];
+}
+
+int msl_effect_view_only(int bank)
+{
+    const MslCoreEffectVisual* visual =
+        msl_bound_effect_data != NULL ? msl_bound_effect_data->visual : NULL;
+    return visual != NULL && bank > 0 && bank < MSL_CORE_EFFECT_VISUAL_BANKS &&
+           visual->view_banks[bank].archive != NULL;
+}
+
+int msl_effect_generator_draws(int bank, int generator_id)
+{
+    const MslCoreEffectGeneratorBank* data = msl_effect_visual_bank(bank);
+    const HSD_PSCmdList* command;
+
+    // (indexed by the full generator id: hsd_8039F05C)
+    if (data == NULL || data->commands == NULL || generator_id < data->id_base ||
+        generator_id >= data->count)
+    {
+        return 0;
+    }
+    command = data->commands[generator_id - data->id_base];
+    return command != NULL && !(command->kind & 0x100) && command->random >= 0.0F;
+}
+
+int msl_effect_model_first_draws(int model_id)
+{
+    const MslCoreEffectVisual* visual =
+        msl_bound_effect_data != NULL ? msl_bound_effect_data->visual : NULL;
+    int bank = model_id / 1000;
+    int index = model_id % 1000;
+    // (the common file's from 0x28 on, kept from 0)
+    if (bank == 0) {
+        index -= MSL_CORE_EFFECT_COMMON_MODEL_CAPACITY;
+    }
+    if (visual == NULL || model_id < 0 || index < 0 || bank >= MSL_CORE_EFFECT_VISUAL_BANKS ||
+        index >= MSL_EFFECT_MODELS_PER_FILE)
+    {
+        return 0;
+    }
+    return visual->model_draws[bank][index];
+}
+#endif // MSL_VISUAL_TRACK_BUILD
 
 #ifndef MSL_CORE_NATIVE
 // psInitDataBankLoad's header parse for an in-place command bank; entries
@@ -310,6 +528,13 @@ int msl_effect_load_stage_bank(MslCoreEffectData* data,
 static void msl_effect_match_dptcl(int link_no, int bank, int gfx_id,
                                    HSD_JObj* jobj)
 {
+#if MSL_VISUAL_TRACK_BUILD
+        // (a stage's key is drawn for below; another file's is a draw the
+        // simulator leaves out)
+        if (bank != 0x1E) {
+            msl_viewer_track_skipped(bank, gfx_id);
+        }
+#endif // MSL_VISUAL_TRACK_BUILD
     if (bank != 0x1E || msl_bound_effect_state == NULL) {
         return;
     }
