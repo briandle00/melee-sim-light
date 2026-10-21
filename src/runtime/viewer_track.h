@@ -32,6 +32,10 @@ void msl_viewer_track_frame(struct MslCoreMatch* match);
 // NULL when the match keeps no track. Valid until the match steps again.
 const char* msl_core_match_viewer_track(struct MslCoreMatch* match,
                                         size_t* size);
+// A fighter's switchable texture (eyes, mouth): ftAnim_800704F0 sets slot
+// `slot` to texture `index`; ftAnim_80070654 puts every slot back, written
+// as slot -1, index 0.
+void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index);
 
 #endif
 #endif // MSL_VISUAL_TRACK_BUILD

@@ -106,6 +106,14 @@ static void put(MslViewerTrack* track, const char* format, ...)
     }
 }
 
+// The frame a hook fires in: the match advances frame_id after the gameplay
+// procs, so a hook inside a step (or construction) belongs to frame_id + 1.
+static int hook_frame(void)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    return match != NULL ? match->frame_id + 1 : -123;
+}
+
 static unsigned hash_key(const char* key)
 {
     unsigned h = 2166136261U;
@@ -171,6 +179,19 @@ static uint32_t rgba(GXColor c)
 {
     return ((uint32_t) c.r << 24) | ((uint32_t) c.g << 16) |
            ((uint32_t) c.b << 8) | (uint32_t) c.a;
+}
+
+void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    Fighter* fp;
+
+    if (track == NULL || fighter == NULL) {
+        return;
+    }
+    fp = GET_FIGHTER(fighter);
+    put(track, "[%d,\"tex\",%d,%d,%d,\"0x%08x\"]\n", hook_frame(),
+        (int) fp->player_id, fp->x221F_b4 ? 1 : 0, slot, vt_f32(index));
 }
 
 // [frame,"tint",port,sub,slot,index,rgba,flags,light rgba,light x,light yz]
