@@ -61,6 +61,23 @@ float* msl_viewer_track_queued_args(int slot);
 // `slot` to texture `index`; ftAnim_80070654 puts every slot back, written
 // as slot -1, index 0.
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index);
+// A joint-animation particle event (efLib_Cb_DPtcl): bank, generator id,
+// and the joint it fires on.
+void msl_viewer_track_gen(int bank, int gen_id, HSD_JObj* jobj);
+void msl_viewer_track_ganim(HSD_GObj* gobj, int anim_set, int anim_index,
+                            float start_frame, float rate);
+// A Pokemon Stadium screen change (grStadium_801D2528): the screen shown
+// and, for a close-up (8), the followed player; -1 otherwise.
+void msl_viewer_track_stadscreen(int mode, int player);
+// Dream Land's background birds (grOldPupupu_80210D10): the row of the bird
+// table, how many fly, and where the first starts.
+void msl_viewer_track_bird(int kind, int count, const Vec3* pos);
+// A generator the stage's code makes (grLib_801C96F8 at `pos`, grLib_801C97DC
+// or grLib_801C9808 on `jobj`); mark "on", "kept" or NULL.
+void msl_viewer_track_sgen(int bank, int gen_id, const Vec3* pos,
+                           HSD_JObj* jobj, const char* mark);
+// The stage's code ending generators (grLib_801C9834 .. grLib_801C9908).
+void msl_viewer_track_send(const char* how, HSD_JObj* jobj, int tree);
 // A random draw the game makes here and the simulator does not: a
 // generator's making when its command counts at random, or `n` at once.
 void msl_viewer_track_skipped(int bank, int generator_id);

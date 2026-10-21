@@ -529,11 +529,18 @@ static void msl_effect_match_dptcl(int link_no, int bank, int gfx_id,
                                    HSD_JObj* jobj)
 {
 #if MSL_VISUAL_TRACK_BUILD
+    if (msl_viewer_track_on()) {
+        msl_viewer_track_gen(bank, gfx_id, jobj);
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
         // (a stage's key is drawn for below; another file's is a draw the
         // simulator leaves out)
         if (bank != 0x1E) {
             msl_viewer_track_skipped(bank, gfx_id);
         }
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
+    }
 #endif // MSL_VISUAL_TRACK_BUILD
     if (bank != 0x1E || msl_bound_effect_state == NULL) {
         return;

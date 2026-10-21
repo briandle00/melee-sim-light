@@ -114,6 +114,22 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
 | `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
 | `fxp` | event | effect id, owner kind, owner id, index, `m` or `g`, id, how, joint, t xyz, r xyz, s xyz, callback, lifetime, params xyz, mirrored, at xyz, seed[, item id, item joint] | one per model or generator a spawn's dispatch makes, after its `fx` |
+| `gen` | event | bank, generator, x, y, z, seed, stage object, joint[, owner kind, owner id[, item joint]] | a joint animation's particle key (`efLib_Cb_DPtcl`) |
+| `sgen` | event | running stage object, bank, generator, x, y, z, seed, stage object, joint[, mark] | a generator the stage's code makes (`grLib_801C96F8`, `801C97DC`, `801C9808`); mark `on` (made on the joint) or `kept` (kept to end later) |
+| `send` | event | how, stage object, joint, joints | the stage's code ending generators (`grLib_801C9834` .. `801C9908`) |
+| `ganim` | event | stage object, animation set, animation, start frame, rate | a stage animation's start (`grAnime_801C8138`) |
+| `stadscreen` | event | screen, followed player (-1 but for a close-up, 8) | Pokemon Stadium's screen changes |
+| `bird` | event | row, count, x, y, z of the first | Dream Land's background birds |
+
+A stage joint is named by its stage object's number (`Ground_801C2BA4`) and
+its preorder index in that object's tree (root 0, an instance's children left
+out). An object the stage's table does not hold is its number plus 1000 for
+each object of that number made before it: Fountain of Dreams' left column is
+1004.
+
+With the track on, Dream Land's background runs the game's whole animation
+(gameplay runs only its particle tracks, which draw the same), and Whispy's
+blow effect plays the animation of GALE01's table (`0x804D48E0`, `{ 1, 0 }`).
 
 ## Seeds
 
@@ -169,3 +185,5 @@ no gameplay value; the locks' test checks the output fingerprint is the same
 with the track on. Their copies are in the match's memory, typed as the
 dynamics pool's entries, and never on the pool's free list: the pool is as
 the prune leaves it.
+- `send` (the stage's own code ending generators) and `stadscreen` (Pokemon
+  Stadium's screen): no recording of the suite checks them.
