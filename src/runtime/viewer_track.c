@@ -16,6 +16,7 @@
 #include "it/types.h"
 #include "lb/types.h"
 #include "runtime/context.h"
+#include "runtime/effects.h"
 #include "runtime/scalar.h"
 
 #include <stdarg.h>
@@ -25,6 +26,7 @@
 #include <string.h>
 #include <baselib/gobj.h>
 #include <baselib/jobj.h>
+#include <baselib/random.h>
 
 // The game camera's render transform and extras (cm/camera.c), read only.
 void msl_camera_get_render_transform(Vec3* position, Vec3* interest,
@@ -218,6 +220,115 @@ static uint32_t rgba(GXColor c)
 {
     return ((uint32_t) c.r << 24) | ((uint32_t) c.g << 16) |
            ((uint32_t) c.b << 8) | (uint32_t) c.a;
+}
+
+// The game's random state: the simulator's, stepped once for each draw the
+// game has made this frame that the simulator leaves out.
+static uint32_t seed_now(const MslViewerTrack* track)
+{
+    uint32_t state = *seed_ptr;
+    (void) track;
+    return state;
+}
+
+u32 msl_viewer_track_state(void)
+{
+    return seed_now(msl_core_context_viewer_track);
+}
+
+// Owner of an effect: kind letter, id, and the JObj's index in it (-1 when
+// the JObj is not one of its joints or there is none).
+static void describe_owner(HSD_GObj* gobj, HSD_JObj* jobj, char* kind,
+                           int* id, int* joint)
+{
+    *kind = '-';
+    *id = -1;
+    *joint = -1;
+    if (gobj == NULL) {
+        return;
+    }
+    switch (gobj->classifier) {
+    case HSD_GOBJ_CLASS_FIGHTER: {
+        Fighter* fp = GET_FIGHTER(gobj);
+        u32 i;
+        *kind = 'f';
+        *id = fp->player_id * 2 + (fp->x221F_b4 ? 1 : 0);
+        if (jobj != NULL && fp->parts != NULL) {
+            for (i = 0; i < ftPartsTable[fp->kind]->parts_num; ++i) {
+                if (fp->parts[i].joint == jobj) {
+                    *joint = (int) i;
+                    break;
+                }
+            }
+        }
+        break;
+    }
+    case HSD_GOBJ_CLASS_ITEM: {
+        Item* ip = GET_ITEM(gobj);
+        int i;
+        *kind = 'i';
+        *id = (int) ip->x1C;
+        if (jobj != NULL && ip->xBBC_dynamicBoneTable != NULL) {
+            for (i = 0; i < (int) (sizeof(ip->xBBC_dynamicBoneTable->bones) /
+                                   sizeof(ip->xBBC_dynamicBoneTable->bones[0]));
+                 ++i)
+            {
+                if (ip->xBBC_dynamicBoneTable->bones[i] == jobj) {
+                    *joint = i;
+                    break;
+                }
+            }
+        }
+        break;
+    }
+    case HSD_GOBJ_CLASS_STAGE: {
+        Ground* gp = GET_GROUND(gobj);
+        *kind = 's';
+        *id = (int) gp->map_id;
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+// [frame,"fx",gfx_id,owner kind,owner id,joint,x,y,z,a0,a1,seed]
+void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
+                         const Vec3* pos, float a0, float a1)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    char kind;
+    int id;
+    int joint;
+    Vec3 at = { 0.0F, 0.0F, 0.0F };
+
+    if (track == NULL) {
+        return;
+    }
+    if (pos != NULL) {
+        at = *pos;
+    }
+    describe_owner(owner, jobj, &kind, &id, &joint);
+    put(track,
+        "[%d,\"fx\",%d,\"%c\",%d,%d,\"0x%08x\",\"0x%08x\",\"0x%08x\","
+        "\"0x%08x\",\"0x%08x\",%u]\n",
+        hook_frame(), (int) gfx_id, kind, id, joint, vt_f32(at.x), vt_f32(at.y),
+        vt_f32(at.z), vt_f32(a0), vt_f32(a1), (unsigned) seed_now(track));
+}
+
+// [frame,"fxend",owner kind,owner id]: efLib_DestroyAll on the owner.
+void msl_viewer_track_fxend(HSD_GObj* owner)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    char kind;
+    int id;
+    int joint;
+
+    if (track == NULL) {
+        return;
+    }
+    describe_owner(owner, NULL, &kind, &id, &joint);
+    put(track, "[%d,\"fxend\",\"%c\",%d]\n", hook_frame(), kind, id);
 }
 
 void msl_viewer_track_tex(HSD_GObj* fighter, int slot, float index)

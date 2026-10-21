@@ -41,6 +41,13 @@ void msl_viewer_track_frame(struct MslCoreMatch* match);
 // NULL when the match keeps no track. Valid until the match steps again.
 const char* msl_core_match_viewer_track(struct MslCoreMatch* match,
                                         size_t* size);
+
+// Event hooks, called only when msl_viewer_track_on().
+void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
+                         const Vec3* pos, float a0, float a1);
+void msl_viewer_track_fxend(HSD_GObj* owner);
+// The game's random state now (the seed an "fx" line carries).
+u32 msl_viewer_track_state(void);
 // A fighter's switchable texture (eyes, mouth): ftAnim_800704F0 sets slot
 // `slot` to texture `index`; ftAnim_80070654 puts every slot back, written
 // as slot -1, index 0.

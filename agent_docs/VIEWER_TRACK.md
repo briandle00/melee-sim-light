@@ -101,6 +101,12 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `fp` | event | port, sub, character, then per part that changed: part, mask, values | a fighter's swinging joints (`ftdynamics.c`), the same nine values: the chains a hurtbox sits on, which gameplay solves, and, with the track, the capes, caps and hair the gameplay build drops, kept as copies the game's solver goes on with (`msl_viewer_track_keep_dynamics`; not yet Peach's, Zelda's and Donkey Kong's); a fighter's first line (and its first as another character) has all of them |
 | `lm` | event | item id, link count, then per link that changed: link, out, mask, values | a chain's links (hookshots, Samus's grapple, Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's matrix as the item's code set it (rows 0-2 of the 3x4, mask bits 0-11); link 0 is the end with no `prev`; out is `x2C_b0` (a link is drawn only then); a link that comes out or goes back is written whole |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
+| `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
+| `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
+
+## Seeds
+
+A seed is the game's random state where the line's thing was made.
 
 ## Validation
 
