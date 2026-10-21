@@ -7,6 +7,7 @@
 #include "gr/ground.h"
 #include "lb/lb_00B0.h"
 #include "lb/lbarchive.h"
+#include "runtime/effect_pieces.h"
 #include "runtime/viewer_track.h"
 
 #include <stdarg.h>
@@ -582,6 +583,20 @@ static void msl_effect_consume_common_dispatch_generator(s32 gfx_id)
 }
 
 #if MSL_VISUAL_TRACK_BUILD
+// The random numbers a real creation of this generator, or of this common
+// model, draws (runtime/effect_pieces.c).
+void msl_effect_pieces_consume_generator(s32 generator_id)
+{
+    msl_effect_consume_generator_rng(generator_id);
+}
+
+void msl_effect_pieces_consume_model(int model_id)
+{
+    msl_effect_consume_common_model_start(model_id);
+}
+
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
 // A vararg that should be a pointer, or NULL when it cannot be one. A float
 // passed by value arrives as a double whose bits are far above user-space
 // addresses; NULL and misaligned values are out.
@@ -672,6 +687,11 @@ void* efSync_Spawn(s32 gfx_id, HSD_GObj* gobj, ...)
         }
 #else // !MSL_VISUAL_TRACK_BUILD
     (void) gobj;
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
+        va_start(args, gobj);
+        msl_effect_pieces(gfx_id, gobj, args);
+        va_end(args);
 #endif // MSL_VISUAL_TRACK_BUILD
 #if MSL_VISUAL_TRACK_BUILD
     }
@@ -855,6 +875,15 @@ static void msl_effect_process(HSD_GObj* gobj, MslCoreEffectQueueNode* node)
     }
 #endif // MSL_VISUAL_TRACK_BUILD
 #if MSL_VISUAL_TRACK_BUILD
+        const float* args =
+            msl_viewer_track_queued_args((int) (node - msl_effect_nodes));
+        if (args != NULL) {
+            Vec3 params = { args[0], args[1], args[2] };
+            msl_effect_pieces_deferred(gobj, node->gfx_id, node->spawn_kind,
+                                       node->jobj, &params, args[3], args[4]);
+        }
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
         msl_effect_processing_queued = 1;
         efSync_Spawn(node->gfx_id, gobj);
         msl_effect_processing_queued = 0;
@@ -930,6 +959,25 @@ void efAsync_Spawn(HSD_GObj* gobj, void* queue_head, u32 spawn_kind,
         }
         va_end(args);
         msl_viewer_track_fx(gobj, (s32) gfx_id, jobj, at, a0, a1);
+#endif // MSL_VISUAL_TRACK_BUILD
+#if MSL_VISUAL_TRACK_BUILD
+        {
+            // (kept for the pieces the spawn makes when it is processed)
+            float* kept =
+                msl_viewer_track_queued_args((int) (node - msl_effect_nodes));
+            if (kept != NULL) {
+                kept[0] = at != NULL ? at->x : 0.0F;
+                kept[1] = at != NULL ? at->y : 0.0F;
+                kept[2] = at != NULL ? at->z : 0.0F;
+                if (spawn_kind == EF_SPAWN_ATTACH_PARAM ||
+                    spawn_kind == EF_SPAWN_POS_PARAM)
+                {
+                    kept[0] = a0;
+                }
+                kept[3] = a0;
+                kept[4] = a1;
+            }
+        }
 #endif // MSL_VISUAL_TRACK_BUILD
 #if MSL_VISUAL_TRACK_BUILD
     }

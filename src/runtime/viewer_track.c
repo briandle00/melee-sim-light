@@ -16,6 +16,7 @@
 #include "it/types.h"
 #include "lb/types.h"
 #include "runtime/context.h"
+#include "runtime/effect_pieces.h"
 #include "runtime/effects.h"
 #include "runtime/scalar.h"
 
@@ -43,6 +44,7 @@ enum {
 // A state is written only when it changes: the last value of each key (its
 // kind and identity fields) is kept.
 enum { TRACK_KEYS = 2048, TRACK_KEY_LEN = 48, TRACK_VALUE_LEN = 200 };
+enum { TRACK_ITEM_JOINTS = 128 };
 
 enum { TRACK_POSE_OWNERS = 64, TRACK_POSE_JOINTS = 128 };
 
@@ -68,6 +70,17 @@ struct MslViewerTrack {
         char key[TRACK_KEY_LEN];
         char value[TRACK_VALUE_LEN];
     } state[TRACK_KEYS];
+    // Item joints something was made on (a piece on an item's joint, a
+    // generator of its animation): the item, the joint's preorder index in
+    // its tree, the last "ij" written. Dropped with the item.
+    struct {
+        int item;
+        int joint;
+        char value[TRACK_VALUE_LEN];
+    } ij[TRACK_ITEM_JOINTS];
+    int ij_count;
+    // A queued efAsync spawn's arguments, by queue node (runtime/effects.c).
+    float queued[MSL_CORE_EFFECT_QUEUE_CAPACITY][5];
     // The poses last written, per owner (track_poses), and the line being
     // made.
     MslTrackPose pose[TRACK_POSE_OWNERS];
@@ -153,6 +166,20 @@ static int hook_frame(void)
 {
     MslCoreMatch* match = msl_core_try_active_match();
     return match != NULL ? match->frame_id + 1 : -123;
+}
+
+int msl_viewer_track_hook_frame(void)
+{
+    return hook_frame();
+}
+
+float* msl_viewer_track_queued_args(int slot)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    if (track == NULL || slot < 0 || slot >= MSL_CORE_EFFECT_QUEUE_CAPACITY) {
+        return NULL;
+    }
+    return track->queued[slot];
 }
 
 static unsigned hash_key(const char* key)
@@ -314,6 +341,193 @@ void msl_viewer_track_fx(HSD_GObj* owner, s32 gfx_id, HSD_JObj* jobj,
         "\"0x%08x\",\"0x%08x\",%u]\n",
         hook_frame(), (int) gfx_id, kind, id, joint, vt_f32(at.x), vt_f32(at.y),
         vt_f32(at.z), vt_f32(a0), vt_f32(a1), (unsigned) seed_now(track));
+}
+
+// Where a joint is in a tree: its preorder index (the root 0, a child before
+// the next), an instance's children left out; -1 when it is not there.
+static int joint_walk(HSD_JObj* at, HSD_JObj* want, int* count)
+{
+    for (; at != NULL; at = at->next) {
+        if (at == want) {
+            return 1;
+        }
+        ++*count;
+        if (!(at->flags & JOBJ_INSTANCE) && joint_walk(at->child, want, count)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int joint_in(HSD_GObj* gobj, HSD_JObj* jobj)
+{
+    HSD_JObj* root = gobj != NULL ? gobj->hsd_obj : NULL;
+    int count = 1;
+    if (root == NULL) {
+        return -1;
+    }
+    if (root == jobj) {
+        return 0;
+    }
+    return joint_walk(root->child, jobj, &count) ? count : -1;
+}
+
+// The item whose joint it is and the joint's preorder index in the item's
+// tree, noted for "ij": 1 when it is an item's. The joint is only named
+// here; its matrix is read at the frame's end (track_item_joints).
+static int item_joint(MslViewerTrack* track, HSD_JObj* jobj, int* item,
+                      int* joint)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    HSD_JObj* top = jobj;
+    HSD_GObj* gobj;
+    int n;
+    int i;
+
+    if (jobj == NULL || match == NULL || match->gobj.entities == NULL) {
+        return 0;
+    }
+    for (n = 0; top->parent != NULL && n < 256; ++n) {
+        top = top->parent;
+    }
+    for (gobj = (HSD_GObj*) match->gobj.entities->items; gobj != NULL;
+         gobj = gobj->next)
+    {
+        if (gobj->hsd_obj == top && gobj->user_data != NULL) {
+            int at = joint_in(gobj, jobj);
+            if (at < 0) {
+                return 0;
+            }
+            *item = (int) GET_ITEM(gobj)->x1C;
+            *joint = at;
+            for (i = 0; i < track->ij_count; ++i) {
+                if (track->ij[i].item == *item && track->ij[i].joint == at) {
+                    return 1;
+                }
+            }
+            if (track->ij_count < TRACK_ITEM_JOINTS) {
+                track->ij[track->ij_count].item = *item;
+                track->ij[track->ij_count].joint = at;
+                track->ij[track->ij_count].value[0] = '\0';
+                ++track->ij_count;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// The joint at a preorder index of a tree (joint_walk's count).
+static HSD_JObj* joint_at_walk(HSD_JObj* at, int want, int* count)
+{
+    for (; at != NULL; at = at->next) {
+        HSD_JObj* found;
+        if (*count == want) {
+            return at;
+        }
+        ++*count;
+        if (!(at->flags & JOBJ_INSTANCE) &&
+            (found = joint_at_walk(at->child, want, count)) != NULL)
+        {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+// [frame,"ij",item,joint,ox,oy,oz,m00,m01,m02,m10,m11,m12,m20,m21,m22]: a
+// noted item joint's place from the item's own (ip->pos) and its matrix's
+// turn and size, at the frame's end, written when it changes. A generator on
+// the joint goes to its place each frame and its emission is turned by it
+// (hsd_8039EFAC; generator.c's update). The matrix is set up here as the
+// game's draw would have.
+static void track_item_joints(MslViewerTrack* track, int frame,
+                              const MslCoreMatch* match)
+{
+    int i = 0;
+    while (i < track->ij_count) {
+        HSD_GObj* gobj;
+        HSD_JObj* jobj = NULL;
+        Item* ip = NULL;
+        char value[TRACK_VALUE_LEN];
+        for (gobj = (HSD_GObj*) match->gobj.entities->items; gobj != NULL;
+             gobj = gobj->next)
+        {
+            if (gobj->user_data != NULL &&
+                (int) GET_ITEM(gobj)->x1C == track->ij[i].item)
+            {
+                HSD_JObj* root = gobj->hsd_obj;
+                int count = 1;
+                ip = GET_ITEM(gobj);
+                jobj = root == NULL                ? NULL
+                       : track->ij[i].joint == 0 ? root
+                                                 : joint_at_walk(root->child,
+                                                                 track->ij[i].joint,
+                                                                 &count);
+                break;
+            }
+        }
+        if (jobj == NULL) {
+            track->ij[i] = track->ij[--track->ij_count];
+            continue;
+        }
+        HSD_JObjSetupMatrix(jobj);
+        snprintf(value, sizeof(value),
+                 ",\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\","
+                 "\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\","
+                 "\"0x%08x\",\"0x%08x\"",
+                 vt_f32(jobj->mtx[0][3] - ip->pos.x),
+                 vt_f32(jobj->mtx[1][3] - ip->pos.y),
+                 vt_f32(jobj->mtx[2][3] - ip->pos.z), vt_f32(jobj->mtx[0][0]),
+                 vt_f32(jobj->mtx[0][1]), vt_f32(jobj->mtx[0][2]),
+                 vt_f32(jobj->mtx[1][0]), vt_f32(jobj->mtx[1][1]),
+                 vt_f32(jobj->mtx[1][2]), vt_f32(jobj->mtx[2][0]),
+                 vt_f32(jobj->mtx[2][1]), vt_f32(jobj->mtx[2][2]));
+        if (strcmp(track->ij[i].value, value) != 0) {
+            snprintf(track->ij[i].value, TRACK_VALUE_LEN, "%s", value);
+            put(track, "[%d,\"ij\",%d,%d%s]\n", frame, track->ij[i].item,
+                track->ij[i].joint, value);
+        }
+        ++i;
+    }
+}
+
+// [frame,"fxp",gfx_id,owner kind,owner id,index,"m"|"g",id,how,joint,
+//  tx,ty,tz,rx,ry,rz,sx,sy,sz,callback,lifetime,p0,p1,p2,mirrored,
+//  ax,ay,az,seed] and, for a generator made on an item's joint, the item and
+//  the joint's preorder index in its tree (its "ij" events)
+void msl_viewer_track_fxp(HSD_GObj* owner, s32 gfx_id,
+                          const MslEffectPiece* p)
+{
+    MslViewerTrack* track = msl_core_context_viewer_track;
+    char kind;
+    int id;
+    int joint;
+    int item;
+    int item_at;
+    char more[32] = "";
+
+    if (track == NULL) {
+        return;
+    }
+    describe_owner(owner, p->joint, &kind, &id, &joint);
+    if (p->kind == 'g' && p->joint != NULL &&
+        item_joint(track, p->joint, &item, &item_at))
+    {
+        snprintf(more, sizeof(more), ",%d,%d", item, item_at);
+    }
+    put(track,
+        "[%d,\"fxp\",%d,\"%c\",%d,%d,\"%c\",%d,\"%s\",%d,\"0x%08x\","
+        "\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\",\"0x%08x\","
+        "\"0x%08x\",\"0x%08x\",\"%s\",%d,\"0x%08x\",\"0x%08x\",\"0x%08x\","
+        "%d,\"0x%08x\",\"0x%08x\",\"0x%08x\",%u%s]\n",
+        hook_frame(), (int) gfx_id, kind, id, p->index, p->kind, (int) p->id,
+        p->how, joint, vt_f32(p->t.x), vt_f32(p->t.y), vt_f32(p->t.z),
+        vt_f32(p->r.x), vt_f32(p->r.y), vt_f32(p->r.z), vt_f32(p->s.x),
+        vt_f32(p->s.y), vt_f32(p->s.z), p->callback, p->lifetime,
+        vt_f32(p->params.x), vt_f32(p->params.y), vt_f32(p->params.z),
+        p->mirrored, vt_f32(p->at.x), vt_f32(p->at.y), vt_f32(p->at.z),
+        (unsigned) p->rng_at, more);
 }
 
 // [frame,"fxend",owner kind,owner id]: efLib_DestroyAll on the owner.
@@ -1169,5 +1383,6 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     track_stage(track, frame, match);
     track_items(track, frame, match);
     track_poses(track, frame, match);
+    track_item_joints(track, frame, match);
 }
 #endif // MSL_VISUAL_TRACK_BUILD

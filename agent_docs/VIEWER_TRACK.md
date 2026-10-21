@@ -100,13 +100,18 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `jp` | event | item id, then per joint that changed: joint, mask, values | an item's joints below its root as its code and animation left them (rot x, y, z, scale x, y, z, translate x, y, z; mask bit k says value k follows); joint = preorder index in the item's model file; a joint is written once it leaves the file's rest pose, then on change |
 | `fp` | event | port, sub, character, then per part that changed: part, mask, values | a fighter's swinging joints (`ftdynamics.c`), the same nine values: the chains a hurtbox sits on, which gameplay solves, and, with the track, the capes, caps and hair the gameplay build drops, kept as copies the game's solver goes on with (`msl_viewer_track_keep_dynamics`; not yet Peach's, Zelda's and Donkey Kong's); a fighter's first line (and its first as another character) has all of them |
 | `lm` | event | item id, link count, then per link that changed: link, out, mask, values | a chain's links (hookshots, Samus's grapple, Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's matrix as the item's code set it (rows 0-2 of the 3x4, mask bits 0-11); link 0 is the end with no `prev`; out is `x2C_b0` (a link is drawn only then); a link that comes out or goes back is written whole |
+| `ij` | state | item id, joint, offset x, y, z, 3x3 matrix | an item joint a generator was made on: place from the item's and its turn, at the frame's end |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 | `fx` | event | effect id, owner kind (`f` fighter, `i` item, `s` stage, `-`), owner id, joint, x, y, z, a0, a1, seed | each effect spawn (`efSync_Spawn`, `efAsync_Spawn`) with its arguments |
 | `fxend` | event | owner kind, owner id | `efLib_DestroyAll` |
+| `fxp` | event | effect id, owner kind, owner id, index, `m` or `g`, id, how, joint, t xyz, r xyz, s xyz, callback, lifetime, params xyz, mirrored, at xyz, seed[, item id, item joint] | one per model or generator a spawn's dispatch makes, after its `fx` |
 
 ## Seeds
 
 A seed is the game's random state where the line's thing was made.
+A spawn's pieces are seeded in the game's order: each generator as the
+dispatch makes it, then the models' first animation steps, the last made
+first (`efLib_AnimQueue`).
 
 ## Validation
 
