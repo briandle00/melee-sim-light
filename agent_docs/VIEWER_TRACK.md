@@ -97,6 +97,9 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `hook` | event | port, sub, x, y pairs | each frame a hookshot, grapple or yo-yo chain is out: tip first, links not yet out left out |
 | `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
 | `irot` | state | item id, rot x, y, z | an item's root joint turn, once it turns |
+| `jp` | event | item id, then per joint that changed: joint, mask, values | an item's joints below its root as its code and animation left them (rot x, y, z, scale x, y, z, translate x, y, z; mask bit k says value k follows); joint = preorder index in the item's model file; a joint is written once it leaves the file's rest pose, then on change |
+| `fp` | event | port, sub, character, then per part that changed: part, mask, values | a fighter's swinging joints (`ftdynamics.c`), the same nine values: the chains a hurtbox sits on, which gameplay solves, and, with the track, the capes, caps and hair the gameplay build drops, kept as copies the game's solver goes on with (`msl_viewer_track_keep_dynamics`; not yet Peach's, Zelda's and Donkey Kong's); a fighter's first line (and its first as another character) has all of them |
+| `lm` | event | item id, link count, then per link that changed: link, out, mask, values | a chain's links (hookshots, Samus's grapple, Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's matrix as the item's code set it (rows 0-2 of the 3x4, mask bits 0-11); link 0 is the end with no `prev`; out is `x2C_b0` (a link is drawn only then); a link that comes out or goes back is written whole |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 
 ## Validation
@@ -127,5 +130,18 @@ Unlocked:
 
 - `fdrot` (Final Destination's background turn): its value is the game's, but
   no recording was compared against the game's own background;
-- `hook` (the grapple and hookshot chain links): no recording of the suite
-  checks the links against the game's;
+`jp`, `fp` and `lm` are locked on another footing: they are joints the
+simulation poses with the game's own code (an item's animation, whose
+joints its hitboxes may sit on; the swinging chains, the ones a hurtbox sits
+on during gameplay and with the track the others too; a chain's links as the
+item's code turns them), read as they are at the frame's end. The lock keeps
+a later change from moving them silently.
+
+The kept chains: `ftCo_HeadlessPruneDynamics` drops each chain no hurtbox
+sits on, and nothing else gameplay reads (a hitbox's bone, a model anchor,
+the shield bone, the ECB, an item's attach bone) is on or under one; the
+solver writes only its own chain's links and joints. So solving them changes
+no gameplay value; the locks' test checks the output fingerprint is the same
+with the track on. Their copies are in the match's memory, typed as the
+dynamics pool's entries, and never on the pool's free list: the pool is as
+the prune leaves it.

@@ -10,6 +10,7 @@
 #include "gr/ground.h"
 #include "gr/inlines.h"
 #include "gr/types.h"
+#include "ft/ftdynamics.h"
 #include "it/inlines.h"
 #include "it/itCharItems.h"
 #include "it/types.h"
@@ -41,6 +42,20 @@ enum {
 // kind and identity fields) is kept.
 enum { TRACK_KEYS = 2048, TRACK_KEY_LEN = 48, TRACK_VALUE_LEN = 200 };
 
+enum { TRACK_POSE_OWNERS = 64, TRACK_POSE_JOINTS = 128 };
+
+// One owner's joints as last written (track_poses): an item, a fighter, a
+// chain's links.
+typedef struct MslTrackPose {
+    unsigned char used;
+    char kind;
+    int id;
+    int frame;
+    int character;
+    unsigned char known[TRACK_POSE_JOINTS];
+    unsigned char flag[TRACK_POSE_JOINTS];
+    float last[TRACK_POSE_JOINTS][12];
+} MslTrackPose;
 
 struct MslViewerTrack {
     // Lines since the last msl_core_match_viewer_track.
@@ -51,6 +66,11 @@ struct MslViewerTrack {
         char key[TRACK_KEY_LEN];
         char value[TRACK_VALUE_LEN];
     } state[TRACK_KEYS];
+    // The poses last written, per owner (track_poses), and the line being
+    // made.
+    MslTrackPose pose[TRACK_POSE_OWNERS];
+    char pose_line[48 * 1024];
+    size_t pose_used;
 };
 
 _Thread_local MslViewerTrack* msl_core_context_viewer_track;
@@ -664,6 +684,357 @@ static void track_items(MslViewerTrack* track, int frame,
     }
 }
 
+// Poses: the joints whose pose the game's own code sets apart from an
+// animation a viewer plays itself, as that code left them at the frame's end,
+// so a viewer can draw them as the game does. Each is written only when it
+// changes ("mask" bit k says which values follow, in order).
+//
+//   [frame,"jp",item,(joint,mask,values)...]
+//       an item's joints below its root (the root is the item's place and
+//       "irot"), by preorder index in its model as the file lays it out (an
+//       instance's children counted): rot x, y, z, scale x, y, z, translate
+//       x, y, z (mask bits 0-8). A joint is written once it differs from the
+//       file's rest pose, and then whenever it changes.
+//   [frame,"fp",port,sub,character,(part,mask,values)...]
+//       a fighter's swinging joints (ftdynamics.c): the chains a hurtbox sits
+//       on, which gameplay solves (Fox's tail, Mewtwo's, Jigglypuff's), and
+//       with the track the capes, caps and hair the gameplay build drops
+//       (msl_viewer_track_keep_dynamics), by part, the same nine values. A
+//       fighter's first line, and its first as another character, has every
+//       value.
+//   [frame,"lm",item,links,(link,out,mask,values)...]
+//       a chain's links (Link's and Young Link's hookshots, Samus's grapple,
+//       Sheik's chain, Ness's yo-yo, the Ice Climbers' belay): each link's
+//       matrix as the item's code set it (it_802A6DC8, it_802A6F80: its turn
+//       along the chain, its place and size), rows 0-2 of the 3x4 (mask bits
+//       0-11).
+//       Link 0 is the end with no prev, `links` the chain's length; out is
+//       the link's x2C_b0 (it_802A24A0 draws a link only then). A link
+//       coming out or going back is written whole.
+// refs/melee/src/melee/{ft/ftdynamics.c,it/items/itlinkhookshot.c,
+//   it/items/itseakchain.c,it/items/itnessyoyo.c,
+//   it/items/itclimbersstring.c}
+
+// The owner of a pose, kept while it is there.
+static MslTrackPose* pose_owner(MslViewerTrack* track, char kind, int id,
+                                int frame)
+{
+    int i;
+    int free_at = -1;
+    for (i = 0; i < TRACK_POSE_OWNERS; ++i) {
+        MslTrackPose* o = &track->pose[i];
+        if (o->used && o->kind == kind && o->id == id) {
+            o->frame = frame;
+            return o;
+        }
+        if (!o->used && free_at < 0) {
+            free_at = i;
+        }
+    }
+    if (free_at < 0) {
+        return NULL;
+    }
+    {
+        MslTrackPose* o = &track->pose[free_at];
+        memset(o, 0, sizeof(*o));
+        o->used = 1;
+        o->kind = kind;
+        o->id = id;
+        o->frame = frame;
+        return o;
+    }
+}
+
+static void pose_append(MslViewerTrack* track, const char* format, ...)
+{
+    size_t room = sizeof(track->pose_line) - track->pose_used;
+    va_list args;
+    int n;
+    va_start(args, format);
+    n = vsnprintf(track->pose_line + track->pose_used, room, format, args);
+    va_end(args);
+    if (n < 0 || (size_t) n >= room) {
+        fprintf(stderr, "viewer track: pose line too long\n");
+        abort();
+    }
+    track->pose_used += (size_t) n;
+}
+
+// One joint against its last written values: ",joint[extra],mask,v..." when
+// any differs bit for bit (or none was written), and they are kept.
+static void pose_joint(MslViewerTrack* track, MslTrackPose* o, int joint,
+                       int extra, const float* v, int n)
+{
+    unsigned mask = 0;
+    int k;
+    if (joint < 0 || joint >= TRACK_POSE_JOINTS) {
+        return;
+    }
+    for (k = 0; k < n; ++k) {
+        if (!o->known[joint] || vt_f32(v[k]) != vt_f32(o->last[joint][k])) {
+            mask |= 1U << k;
+        }
+    }
+    if (mask == 0) {
+        return;
+    }
+    if (extra >= 0) {
+        pose_append(track, ",%d,%d,%u", joint, extra, mask);
+    } else {
+        pose_append(track, ",%d,%u", joint, mask);
+    }
+    for (k = 0; k < n; ++k) {
+        if (mask & (1U << k)) {
+            pose_append(track, ",\"0x%08x\"", vt_f32(v[k]));
+        }
+        o->last[joint][k] = v[k];
+    }
+    o->known[joint] = 1;
+}
+
+// The owner's line, when it has any joint.
+static void pose_flush(MslViewerTrack* track, const char* head)
+{
+    if (track->pose_used > 0) {
+        put(track, "%s%s]\n", head, track->pose_line);
+    }
+    track->pose_used = 0;
+    track->pose_line[0] = '\0';
+}
+
+static void joint_values(const HSD_JObj* j, float v[9])
+{
+    v[0] = j->rotate.x;
+    v[1] = j->rotate.y;
+    v[2] = j->rotate.z;
+    v[3] = j->scale.x;
+    v[4] = j->scale.y;
+    v[5] = j->scale.z;
+    v[6] = j->translate.x;
+    v[7] = j->translate.y;
+    v[8] = j->translate.z;
+}
+
+// An item's model and its file's joints together, in the file's preorder.
+// A joint the file has and the model does not (an instance's children) is
+// counted and left out.
+static void pose_item_walk(MslViewerTrack* track, MslTrackPose* o,
+                           HSD_JObj* j, HSD_Joint* d, int* index)
+{
+    for (; d != NULL; d = d->next, j = j != NULL ? j->next : NULL) {
+        int at = (*index)++;
+        if (at > 0 && at < TRACK_POSE_JOINTS && j != NULL &&
+            !(j->flags & JOBJ_USE_QUATERNION))
+        {
+            float v[9];
+            if (!o->known[at]) {
+                // (the file's rest pose: what a viewer has without a line)
+                o->last[at][0] = d->rotation.x;
+                o->last[at][1] = d->rotation.y;
+                o->last[at][2] = d->rotation.z;
+                o->last[at][3] = d->scale.x;
+                o->last[at][4] = d->scale.y;
+                o->last[at][5] = d->scale.z;
+                o->last[at][6] = d->position.x;
+                o->last[at][7] = d->position.y;
+                o->last[at][8] = d->position.z;
+                o->known[at] = 1;
+            }
+            joint_values(j, v);
+            pose_joint(track, o, at, -1, v, 9);
+        }
+        if (d->child != NULL) {
+            pose_item_walk(track, o,
+                           j != NULL && !(j->flags & JOBJ_INSTANCE) ? j->child
+                                                                    : NULL,
+                           d->child, index);
+        }
+    }
+}
+
+// A chain's links, from the end with no prev along next.
+static void pose_links(MslViewerTrack* track, int frame, Item* ip,
+                       ItemLink* any)
+{
+    MslTrackPose* o;
+    ItemLink* link = any;
+    char head[64];
+    int n;
+    if (link == NULL) {
+        return;
+    }
+    for (n = 0; link->prev != NULL && n < TRACK_POSE_JOINTS; ++n) {
+        link = link->prev;
+    }
+    o = pose_owner(track, 'l', (int) ip->x1C, frame);
+    if (o == NULL) {
+        return;
+    }
+    for (n = 0; link != NULL && n < TRACK_POSE_JOINTS; link = link->next, ++n)
+    {
+        HSD_JObj* j = link->gobj != NULL ? link->gobj->hsd_obj : NULL;
+        float v[12];
+        int r;
+        if (j == NULL) {
+            continue;
+        }
+        for (r = 0; r < 3; ++r) {
+            v[r * 4 + 0] = j->mtx[r][0];
+            v[r * 4 + 1] = j->mtx[r][1];
+            v[r * 4 + 2] = j->mtx[r][2];
+            v[r * 4 + 3] = j->mtx[r][3];
+        }
+        if (o->known[n] && o->flag[n] != link->x2C_b0) {
+            o->known[n] = 0;
+        }
+        o->flag[n] = link->x2C_b0;
+        pose_joint(track, o, n, link->x2C_b0 ? 1 : 0, v, 12);
+    }
+    snprintf(head, sizeof(head), "[%d,\"lm\",%d,%d", frame, (int) ip->x1C,
+             n);
+    pose_flush(track, head);
+}
+
+static void track_item_poses(MslViewerTrack* track, int frame,
+                             const MslCoreMatch* match)
+{
+    Item_GObj* gobj = (Item_GObj*) match->gobj.entities->items;
+    char head[64];
+    for (; gobj != NULL; gobj = (Item_GObj*) gobj->next) {
+        Item* ip = GET_ITEM(gobj);
+        HSD_JObj* root = GET_JOBJ(gobj);
+        if (root != NULL && ip->xC8_joint != NULL) {
+            MslTrackPose* o = pose_owner(track, 'i', (int) ip->x1C, frame);
+            int index = 0;
+            if (o != NULL) {
+                pose_item_walk(track, o, root, ip->xC8_joint, &index);
+                snprintf(head, sizeof(head), "[%d,\"jp\",%d", frame,
+                         (int) ip->x1C);
+                pose_flush(track, head);
+            }
+        }
+        switch (ip->kind) {
+        case It_Kind_Link_HShot:
+        case It_Kind_CLink_HShot:
+            pose_links(track, frame, ip, ip->xDD4_itemVar.linkhookshot.x0);
+            break;
+        case It_Kind_Samus_GBeam:
+            pose_links(track, frame, ip, ip->xDD4_itemVar.samusgrapple.x0);
+            break;
+        case It_Kind_Seak_Chain:
+            pose_links(track, frame, ip, ip->xDD4_itemVar.seakchain.x4);
+            break;
+        case It_Kind_Ness_Yoyo:
+            pose_links(track, frame, ip, ip->xDD4_itemVar.nessyoyo.x8);
+            break;
+        case It_Kind_IceClimber_GumStrings:
+            pose_links(track, frame, ip, ip->xDD4_itemVar.climbersstring.x8);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+static void track_fighter_poses(MslViewerTrack* track, int frame,
+                                Fighter_GObj* gobj)
+{
+    Fighter* fp = GET_FIGHTER(gobj);
+    int port = fp->player_id;
+    int sub = fp->x221F_b4 ? 1 : 0;
+    MslTrackPose* o;
+    char head[64];
+    int i;
+    if (fp->parts == NULL || fp->dynamics_num <= 0) {
+        return;
+    }
+    o = pose_owner(track, 'f', port * 2 + sub, frame);
+    if (o == NULL) {
+        return;
+    }
+    if (o->character != (int) fp->kind + 1) {
+        memset(o->known, 0, sizeof(o->known));
+        o->character = (int) fp->kind + 1;
+    }
+    for (i = 0; i < (int) fp->dynamics_num; ++i) {
+        struct DynamicsData* link = fp->dynamic_bone_sets[i].dyn_desc.data;
+        for (; link != NULL; link = link->next) {
+            HSD_JObj* j = link->desc.lb_unk0.jobj;
+            u32 part;
+            if (j == NULL || (j->flags & JOBJ_USE_QUATERNION)) {
+                continue;
+            }
+            for (part = 0; part < ftPartsTable[fp->kind]->parts_num; ++part)
+            {
+                if (fp->parts[part].joint == j) {
+                    float v[9];
+                    joint_values(j, v);
+                    pose_joint(track, o, (int) part, -1, v, 9);
+                    break;
+                }
+            }
+        }
+    }
+    snprintf(head, sizeof(head), "[%d,\"fp\",%d,%d,%d", frame, port, sub,
+             (int) fp->kind);
+    pose_flush(track, head);
+}
+
+// The chains are copied before the prune (it puts the dropped ones' links
+// back on the pool's free list); a copy goes in where the prune left a set
+// empty. The pool ends as the prune leaves it, as without the track.
+void msl_viewer_track_keep_dynamics(Fighter* fp)
+{
+    struct DynamicsData* copies[Ft_Dynamics_NumMax];
+    int count = fp->dynamics_num < Ft_Dynamics_NumMax ? (int) fp->dynamics_num
+                                                    : Ft_Dynamics_NumMax;
+    int i;
+    // (not yet for Peach's and Zelda's dresses and hair and Donkey Kong's
+    // tie: solved this way they came out further from the game's own draws
+    // than a viewer's solve, the cause not yet found; their chains are pruned
+    // as without the track)
+    if (fp->kind == FTKIND_PEACH || fp->kind == FTKIND_ZELDA ||
+        fp->kind == FTKIND_DONKEY)
+    {
+        ftCo_HeadlessPruneDynamics(fp);
+        return;
+    }
+    for (i = 0; i < count; ++i) {
+        copies[i] = msl_viewer_track_copy_dynamics(
+            fp->dynamic_bone_sets[i].dyn_desc.data);
+    }
+    ftCo_HeadlessPruneDynamics(fp);
+    for (i = 0; i < count; ++i) {
+        DynamicsDesc* desc = &fp->dynamic_bone_sets[i].dyn_desc;
+        if (desc->data == NULL && copies[i] != NULL) {
+            desc->data = copies[i];
+        }
+    }
+}
+
+static void track_poses(MslViewerTrack* track, int frame,
+                        const MslCoreMatch* match)
+{
+    int i;
+    for (i = 0; i < match->config.num_players; ++i) {
+        if (match->fighters[i] != NULL) {
+            track_fighter_poses(track, frame, match->fighters[i]);
+        }
+        if (match->follower_fighters[i] != NULL &&
+            !GET_FIGHTER(match->follower_fighters[i])->x221F_b3)
+        {
+            track_fighter_poses(track, frame, match->follower_fighters[i]);
+        }
+    }
+    track_item_poses(track, frame, match);
+    // (an owner not seen this frame is gone: its place is free)
+    for (i = 0; i < TRACK_POSE_OWNERS; ++i) {
+        if (track->pose[i].used && track->pose[i].frame != frame) {
+            track->pose[i].used = 0;
+        }
+    }
+}
+
 void msl_viewer_track_frame(MslCoreMatch* match)
 {
     MslViewerTrack* track = match->viewer_track;
@@ -686,5 +1057,6 @@ void msl_viewer_track_frame(MslCoreMatch* match)
     }
     track_stage(track, frame, match);
     track_items(track, frame, match);
+    track_poses(track, frame, match);
 }
 #endif // MSL_VISUAL_TRACK_BUILD

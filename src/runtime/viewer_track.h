@@ -24,6 +24,15 @@ extern _Thread_local MslViewerTrack* msl_core_context_viewer_track;
 MslViewerTrack* msl_viewer_track_create(void);
 void msl_viewer_track_destroy(MslViewerTrack* track);
 
+struct Fighter;
+struct DynamicsData;
+
+// A fighter's swinging chains as Fighter_Create sets them up, with the
+// track on: the prune (ftCo_HeadlessPruneDynamics) as always, and each chain
+// it drops put back as a copy the game's solver goes on with.
+void msl_viewer_track_keep_dynamics(struct Fighter* fp);
+struct DynamicsData* msl_viewer_track_copy_dynamics(
+    const struct DynamicsData* head);
 
 // Per-frame state, at the end of each step (runtime/scalar.c).
 void msl_viewer_track_frame(struct MslCoreMatch* match);

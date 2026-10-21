@@ -92,5 +92,90 @@
         "2": "Ness"
       }
     }
+    ,
+    {
+      "replay": "replays/validation/links/2025-04_Game_20250420T082949.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 31,
+      "characters": {
+        "1": "Marth",
+        "2": "Link"
+      }
+    },
+    {
+      "replay": "replays/validation/roy/greg_zelda_20250927T181825.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 2,
+      "characters": {
+        "1": "Roy",
+        "2": "Zelda"
+      }
+    },
+    {
+      "replay": "replays/validation/bowser/MustyGummyLemur.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 2,
+      "characters": {
+        "1": "Bowser",
+        "2": "Ganondorf"
+      }
+    },
+    {
+      "replay": "replays/validation/links/slippi-replays-2025-04_Game_20250421T125608.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 31,
+      "characters": {
+        "1": "Sheik",
+        "2": "Young Link"
+      }
+    },
+    {
+      "replay": "replays/validation/icies/dl-fox-2025-09_Game_20250911T223118.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 28,
+      "characters": {
+        "1": "Fox",
+        "2": "Ice Climbers"
+      }
+    },
+    {
+      "replay": "replays/validation/ness/52757_Game_20250415T000609.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 32,
+      "characters": {
+        "1": "Fox",
+        "2": "Ness"
+      }
+    },
+    {
+      "replay": "replays/validation/samus/slippi-2025-04_Game_20250411T201258.slpz",
+      "ports": [
+        1,
+        2
+      ],
+      "stage_id": 32,
+      "characters": {
+        "1": "Fox",
+        "2": "Samus"
+      }
+    }
   ]
 }
