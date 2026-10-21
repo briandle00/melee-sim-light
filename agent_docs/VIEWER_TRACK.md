@@ -87,6 +87,13 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `pos` | state | port, sub, x, y, z, rot x, y, z, scale | the top joint, while in DeadUp states (4-10) or off the plane |
 | `shake` | state | port, sub, x, y, z (0 when it stops) | the draw offset `ftCommon_8008021C` sums: hit shake, the held-mash wobble, the smash-charge shake |
 | `hide` | state | port, sub, bits (1 invisible, 2 `x221E_b5`, 4 `x2226_b5`) | written once something is hidden |
+| `bg` | state | state, current, previous | Battlefield's background (map part 3) |
+| `fd` | state | phase, x, y, z, frames | Final Destination's background (map part 3) |
+| `fdrot` | state | rot x, y, z | Final Destination part 7's turn in phases 9 and 10 |
+| `fod` | state | left height, right height | Fountain of Dreams' water columns (`grIzumi_801CC358`) |
+| `gcolor` | state | stage object, rgba (0 when it stops) | stage material color scripts |
+| `bgcolor` | state | rgba | the camera's background color |
+| `cam` | state | eye x, y, z, interest x, y, z, fov, quake x, y | the game camera without its quake, and the quake |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 
 ## Validation
@@ -112,3 +119,8 @@ game's frame for frame. A kind the track writes that no recording of the suite
 proves yet is unlocked: `visual_state.UNLOCKED_KINDS` leaves its lines out of
 every digest (the whole track's, each kind's, each minute's), so a change to
 it fails nothing.
+
+Unlocked:
+
+- `fdrot` (Final Destination's background turn): its value is the game's, but
+  no recording was compared against the game's own background;

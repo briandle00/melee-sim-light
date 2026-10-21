@@ -31,6 +31,7 @@ WINDOW_FRAMES = 3600
 # so a change to them fails nothing (agent_docs/VIEWER_TRACK.md, "Unlocked
 # kinds").
 UNLOCKED_KINDS = frozenset({
+    "fdrot",
 })
 
 
