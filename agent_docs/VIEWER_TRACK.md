@@ -94,6 +94,9 @@ fighter's port (0-3) and `sub` 0 for the leader, 1 for Nana.
 | `gcolor` | state | stage object, rgba (0 when it stops) | stage material color scripts |
 | `bgcolor` | state | rgba | the camera's background color |
 | `cam` | state | eye x, y, z, interest x, y, z, fov, quake x, y | the game camera without its quake, and the quake |
+| `hook` | event | port, sub, x, y pairs | each frame a hookshot, grapple or yo-yo chain is out: tip first, links not yet out left out |
+| `art` | state | item kind, owner's character, article index (-1 none) | which of the owner's articles an item kind draws, once per kind |
+| `irot` | state | item id, rot x, y, z | an item's root joint turn, once it turns |
 | `tex` | event | port, sub, slot, index (slot -1: every slot back) | switchable textures, eyes and mouth (`ftAnim_800704F0`, `ftAnim_80070654`) |
 
 ## Validation
@@ -124,3 +127,5 @@ Unlocked:
 
 - `fdrot` (Final Destination's background turn): its value is the game's, but
   no recording was compared against the game's own background;
+- `hook` (the grapple and hookshot chain links): no recording of the suite
+  checks the links against the game's;

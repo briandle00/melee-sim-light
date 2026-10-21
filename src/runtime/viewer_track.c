@@ -10,6 +10,9 @@
 #include "gr/ground.h"
 #include "gr/inlines.h"
 #include "gr/types.h"
+#include "it/inlines.h"
+#include "it/itCharItems.h"
+#include "it/types.h"
 #include "lb/types.h"
 #include "runtime/context.h"
 #include "runtime/scalar.h"
@@ -506,6 +509,161 @@ static void track_stage(MslViewerTrack* track, int frame,
     emit_state(track, frame, "\"cam\"", value);
 }
 
+// Owner port and sub (0 leader, 1 Nana) of an item whose owner is a fighter.
+static bool item_owner_port(Item* ip, int* port, int* sub)
+{
+    if (ip->owner == NULL || ip->owner->classifier != HSD_GOBJ_CLASS_FIGHTER) {
+        return false;
+    }
+    *port = GET_FIGHTER(ip->owner)->player_id;
+    *sub = GET_FIGHTER(ip->owner)->x221F_b4 ? 1 : 0;
+    return true;
+}
+
+// A chain as [x, y] pairs: `head` first when given, then each link from
+// `start` along next (`along_next`) or prev, then `tail` when given. Points
+// still at the origin (not out yet) are left out, and a chain with none
+// left writes no event.
+static void track_chain(MslViewerTrack* track, int frame, Item* ip,
+                        const Vec3* head, ItemLink* start, bool along_next,
+                        const Vec3* tail)
+{
+    enum { MAX_LINKS = 64 };
+    char key[TRACK_KEY_LEN];
+    char value[64 * 2 * 14 + 64];
+    size_t used = 0;
+    int port;
+    int sub;
+    int count = 0;
+    ItemLink* link;
+
+    if (!item_owner_port(ip, &port, &sub)) {
+        port = -1;
+        sub = 0;
+    }
+    if (head != NULL && (head->x != 0.0F || head->y != 0.0F)) {
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",\"0x%08x\",\"0x%08x\"",
+                                  vt_f32(head->x), vt_f32(head->y));
+    }
+    for (link = start; link != NULL && count < MAX_LINKS;
+         link = along_next ? link->next : link->prev, ++count)
+    {
+        if (&link->pos == head || &link->pos == tail ||
+            (link->pos.x == 0.0F && link->pos.y == 0.0F))
+        {
+            continue;
+        }
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",\"0x%08x\",\"0x%08x\"",
+                                  vt_f32(link->pos.x), vt_f32(link->pos.y));
+        if (used >= sizeof(value) - 64) {
+            break;
+        }
+    }
+    if (tail != NULL && (tail->x != 0.0F || tail->y != 0.0F)) {
+        used += (size_t) snprintf(value + used, sizeof(value) - used,
+                                  ",\"0x%08x\",\"0x%08x\"",
+                                  vt_f32(tail->x), vt_f32(tail->y));
+    }
+    if (used == 0) {
+        return;
+    }
+    snprintf(key, sizeof(key), "\"hook\",%d,%d", port, sub);
+    put(track, "[%d,%s%s]\n", frame, key, value);
+}
+
+static void track_items(MslViewerTrack* track, int frame,
+                        const MslCoreMatch* match)
+{
+    Item_GObj* gobj = (Item_GObj*) match->gobj.entities->items;
+    char key[TRACK_KEY_LEN];
+    char value[TRACK_VALUE_LEN];
+
+    while (gobj != NULL) {
+        Item* ip = GET_ITEM(gobj);
+        HSD_JObj* jobj = GET_JOBJ(gobj);
+
+        switch (ip->kind) {
+        case It_Kind_Link_HShot:
+        case It_Kind_CLink_HShot: {
+            // The hook is the last link (xDD4+0); the item itself stays at
+            // its spawn point. Head first, then back toward the hand.
+            ItemLink* hook = ip->xDD4_itemVar.linkhookshot.x0;
+            if (hook != NULL) {
+                track_chain(track, frame, ip, &hook->pos, hook, true, NULL);
+            }
+            break;
+        }
+        case It_Kind_Samus_GBeam: {
+            // The claw is the last link (xDD4+0), which the grapple moves and
+            // collides; the other links follow joint animation the headless
+            // core does not run, so only the ones that have moved appear.
+            ItemLink* claw = ip->xDD4_itemVar.samusgrapple.x0;
+            if (claw != NULL) {
+                track_chain(track, frame, ip, &claw->pos, claw, true, NULL);
+            }
+            break;
+        }
+        case It_Kind_Ness_Yoyo: {
+            // Ness's yo-yo: the string's links from the hand (xDD4+C) toward
+            // the ball, then the ball (xDD4+8, the link the yo-yo's hitbox
+            // position is written to) last. The item itself stays at its
+            // spawn point.
+            ItemLink* ball = ip->xDD4_itemVar.nessyoyo.x8;
+            track_chain(track, frame, ip, NULL, ip->xDD4_itemVar.nessyoyo.xC,
+                        false, ball != NULL ? &ball->pos : NULL);
+            break;
+        }
+        default:
+            break;
+        }
+        // Which of its owner's articles (ftData x48_items, the list each
+        // fighter's OnLoad registers its items' kinds from: it_8026B3F8)
+        // this kind of item is drawn with, once per kind: [frame,"art",kind,
+        // owner's character, index], -1 when it is none of them (a Kirby
+        // copy's, an item of the stage's).
+        snprintf(key, sizeof(key), "\"art\",%d", (int) ip->kind);
+        if (last_state(track, key) == NULL) {
+            int found = -1;
+            int character = -1;
+            if (ip->owner != NULL &&
+                ip->owner->classifier == HSD_GOBJ_CLASS_FIGHTER)
+            {
+                Fighter* fp = GET_FIGHTER(ip->owner);
+                Article** items = fp->ft_data != NULL
+                                      ? (Article**) fp->ft_data->x48_items
+                                      : NULL;
+                int k;
+                character = (int) fp->kind;
+                for (k = 0; items != NULL && k < 16; ++k) {
+                    if (items[k] == ip->xC4_article_data) {
+                        found = k;
+                        break;
+                    }
+                }
+            }
+            snprintf(value, sizeof(value), ",%d,%d", character, found);
+            emit_state(track, frame, key, value);
+        }
+        // The root joint's Euler rotation, on change (spinning throws,
+        // turnips, bombs).
+        if (jobj != NULL && !(jobj->flags & JOBJ_USE_QUATERNION)) {
+            snprintf(key, sizeof(key), "\"irot\",%d", (int) ip->x1C);
+            snprintf(value, sizeof(value),
+                     ",\"0x%08x\",\"0x%08x\",\"0x%08x\"",
+                     vt_f32(jobj->rotate.x), vt_f32(jobj->rotate.y),
+                     vt_f32(jobj->rotate.z));
+            if (last_state(track, key) != NULL || jobj->rotate.x != 0.0F ||
+                jobj->rotate.y != 0.0F || jobj->rotate.z != 0.0F)
+            {
+                emit_state(track, frame, key, value);
+            }
+        }
+        gobj = (Item_GObj*) gobj->next;
+    }
+}
+
 void msl_viewer_track_frame(MslCoreMatch* match)
 {
     MslViewerTrack* track = match->viewer_track;
@@ -527,5 +685,6 @@ void msl_viewer_track_frame(MslCoreMatch* match)
         }
     }
     track_stage(track, frame, match);
+    track_items(track, frame, match);
 }
 #endif // MSL_VISUAL_TRACK_BUILD
