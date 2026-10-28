@@ -86,6 +86,10 @@ bool msl_slippi_dreamland_whispy_direction(u8* direction)
 
 void msl_slippi_apply_fighter_pre_random_seed(void)
 {
+    // The viewer build plays the replay as Slippi's Dolphin playback does: it restores the RNG once, at the frame start (SendFrameStart), and never again
+    // inside the frame (Playback/Core/RestoreGameFrame.asm restores RNG only when resync is on). The recorded pre-frame seed is the recording session's live
+    // value; writing it back here rewinds the stream past every draw an earlier callback made (the Dream Land stage animation's generator creation draws
+    // at priority 1, before the fighters), so later effects drew the same numbers twice. The production build keeps the restore: its gameplay owns that lane.
     if (msl_bound_slippi_state->fighter_pre_random_seed_pending != 0) {
         // Recording/SendFrameStart.s runs at the beginning of the source
         // scheduler. SendGamePreFrame.asm observes the same stream later at
@@ -94,7 +98,15 @@ void msl_slippi_apply_fighter_pre_random_seed(void)
         // source observations; ordinary free-running steps leave this lane
         // invalid and advance HSD RNG without intervention.
         // refs/slippi-ssbm-asm/Recording/{SendFrameStart.s,SendGamePreFrame.asm}
+#if MSL_GX_RECORD
+        // A recording with Frame Start events (tape stage_event_streams bit 2) has the frame's real start seed, restored once at the frame start;
+        // one without (Slippi before 2.2, gecko-less) carries only this pre-frame observation, so it is restored here, as the production build does.
+        if ((msl_bound_slippi_state->stage_event_streams & 4) == 0) {
+            *seed_ptr = msl_bound_slippi_state->fighter_pre_random_seed;
+        }
+#else
         *seed_ptr = msl_bound_slippi_state->fighter_pre_random_seed;
+#endif
         msl_bound_slippi_state->fighter_pre_random_seed_pending = 0;
     }
 }
@@ -118,7 +130,13 @@ void msl_slippi_apply_cpu_input(struct Fighter* fp)
     fp->input.held_inputs = input->buttons;
     // Validation also supplies SendGamePreFrame's RNG observation here.
     // Slippi playback itself only restores RNG when resync is enabled.
+#if MSL_GX_RECORD
+    if ((msl_bound_slippi_state->stage_event_streams & 4) == 0) {
+        *seed_ptr = input->random_seed;
+    }
+#else
     *seed_ptr = input->random_seed;
+#endif
     input->valid = 0;
 }
 

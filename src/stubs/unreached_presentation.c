@@ -9,6 +9,7 @@ static void unexpected(const char* symbol)
 
 #define UNREACHED(name) void name(void) { unexpected(#name); }
 
+#if !MSL_GX_RECORD   /* the viewer build has the SDK's GX library (src/gx) */
 UNREACHED(GXBegin)
 UNREACHED(GXCallDisplayList)
 UNREACHED(GXClearVtxDesc)
@@ -54,7 +55,9 @@ UNREACHED(GXSetVtxAttrFmt)
 UNREACHED(GXSetVtxDesc)
 UNREACHED(GXSetZCompLoc)
 UNREACHED(GXSetZMode)
+#endif
 
+#if !MSL_GX_RECORD   /* the viewer build has the baselib's cobj, lobj and displayfunc (src/sysdolphin/baselib) */
 UNREACHED(HSD_CObjGetCurrent)
 UNREACHED(HSD_CObjGetInvViewingMtxPtrDirect)
 UNREACHED(HSD_JObjDisp)
@@ -70,6 +73,7 @@ UNREACHED(HSD_LObjGetLightVector)
 UNREACHED(HSD_LObjGetNbActive)
 UNREACHED(HSD_LObjSetup)
 UNREACHED(_HSD_mkEnvelopeModelNodeMtx)
+#endif
 UNREACHED(HSD_ByteCodeEval)
 
 // Rendering-only profiling is intentionally suppressed in the headless port.

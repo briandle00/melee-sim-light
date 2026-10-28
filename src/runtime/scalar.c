@@ -7,6 +7,11 @@
 #include "platform/native_dat.h"
 #endif
 #include "cm/camera.h"
+#if MSL_GX_RECORD
+#include <baselib/displayfunc.h>
+#include <baselib/shadow.h>
+#include <baselib/tev.h>
+#endif
 #include "ftKirby/ftkirby.h"
 #include "ft/fighter.h"
 #include "ft/ftdata.h"
@@ -15,6 +20,7 @@
 #include "ft/ftlib.h"
 #include "gr/grdatfiles.h"
 #include "gr/grizumi.h"
+#include "gr/grpstadium.h"
 #include "gr/ground.h"
 #include "gr/types.h"
 #include "it/inlines.h"
@@ -25,6 +31,7 @@
 #include "lb/lbarchive.h"
 #include "lb/lbspdisplay.h"
 #include "mp/mpcoll.h"
+#include "mp/mpisland.h"
 #include "mp/mplib.h"
 #include "mp/types.h"
 #include "pl/player.h"
@@ -57,6 +64,17 @@
 #include <baselib/random.h>
 #include <baselib/robj.h>
 #include <MSL/math.h>
+#if MSL_GX_RECORD
+void msl_present_game_data_init(void);
+void msl_present_gm_init(const MslCoreMatchConfig* config);
+void msl_present_gm_frame(void);
+void msl_present_hud_start(void);
+void msl_present_load_fighter_banks(MslCoreMatch* match);
+void msl_present_hud_stop(void);
+#endif
+#if MSL_GX_RECORD
+void msl_present_effects_init(void);
+#endif
 
 enum {
     MSL_CORE_STAGE_FOUNTAIN_OF_DREAMS = 2,
@@ -160,7 +178,13 @@ static const MslCoreStageSpec stage_specs[] = {
       "/GrPs.dat",
       &grPs_803E1334,
       0,
-      1U << 5,
+      // Map 5's per-frame proc (grStadium_801D1604) is not render-only:
+      // Ground_801C2FE0 refreshes joint 4's collision each frame, and
+      // mpIsland_8005AE1C rebuilds the island list in reverse every time.
+      // The CPU follower's recovery AI (ftCo_800A4038) walks that list in
+      // order, so Nana's target ledge depends on the frame's parity. Keep it
+      // scheduled.
+      0,
       { { -40.0F, 32.0F, 0.0F }, { 40.0F, 32.0F, 0.0F },
         { 70.0F, 7.0F, 0.0F }, { -70.0F, 7.0F, 0.0F } },
       { { -40.0F, 32.0F, 0.0F }, { -40.0F, 5.0F, 0.0F },
@@ -384,7 +408,21 @@ Ground* msl_core_stage_ground_alloc(void)
             return &bound_stage_match->stage_ground[i];
         }
     }
+#if MSL_GX_RECORD
+    /* The viewer build draws what the game draws, so a stage that makes more Grounds than the match's table holds (Dream Land's bird flocks: the game
+     * draws 3 birds where a full table drew 1 or 2) gets the rest from the heap as the game's own allocator does
+     * (refs/melee/src/melee/gr/ground.c::alloc_user_data_ground: HSD_MemAlloc(sizeof(Ground))). The table keeps the first ones, which the observation
+     * reads by map id. The gameplay of a run does not depend on it (the epoch counter every Ground proc adds to is only compared for equality). */
+    {
+        Ground* ground = HSD_MemAlloc((ssize_t) sizeof(Ground));
+        if (ground != NULL) {
+            memset(ground, 0, sizeof(*ground));
+        }
+        return ground;
+    }
+#else
     return NULL;
+#endif
 }
 
 void msl_core_stage_ground_free(void* ground)
@@ -397,12 +435,24 @@ void msl_core_stage_ground_free(void* ground)
             return;
         }
     }
+#if MSL_GX_RECORD
+    HSD_Free(ground); /* Ground_801C0478 */
+#endif
 }
 
 StageCallbacks* msl_core_stage_callbacks(void)
 {
     return bound_stage_match->stage_data->callbacks;
 }
+
+#if MSL_GX_RECORD
+StageCallbacks* msl_native_dat_stage_callbacks;
+/* (null while game data is being prepared: no match is bound yet) */
+StageData* msl_core_selected_stage_data_if_bound(void)
+{
+    return bound_stage_match != NULL ? bound_stage_match->stage_data : NULL;
+}
+#endif
 
 StageData* msl_core_selected_stage_data(void)
 {
@@ -427,6 +477,26 @@ static void configure_headless_ground_schedule(
     MslCoreMatch* match, const MslCoreStageSpec* spec)
 {
     int i;
+#if MSL_GX_RECORD
+    // The viewer build draws the stage: its grounds keep every process the game gives them (the animations and the post processes
+    // the headless schedule drops or replaces are what the picture is made of).
+    (void) match;
+    (void) spec;
+    (void) i;
+    return;
+#endif
+    // An unfrozen Stadium keeps every ground on its source schedule: the
+    // transformations scale and animate the layout grounds, whose collision
+    // follows their joints, and add grounds of their own mid-match.
+    // refs/melee/src/melee/gr/grpstadium.c::grStadium_801D4548
+#if MSL_GX_RECORD
+    /* the viewer build draws the stage as the game animates it: every ground keeps its source schedule */
+    (void) match; (void) spec; (void) i;
+    return;
+#endif
+    if (match->config.stadium_transformations != MSL_STADIUM_FROZEN) {
+        return;
+    }
     for (i = 0; i < MSL_CORE_STAGE_GROUND_CAPACITY; ++i) {
         Ground* gp;
         uint16_t map_bit;
@@ -458,6 +528,18 @@ static void init_hsd(void)
     HSD_MtxInitAllocData();
     HSD_VecInitAllocData();
     HSD_RObjInitAllocData();
+#if MSL_GX_RECORD
+    // (the rest of baselib's HSD_ObjInit: the drawing pools)
+    HSD_RenderInitAllocData();
+    HSD_ShadowInitAllocData();
+    HSD_ZListInitAllocData();
+    {
+        // the shadow textures of a match are objects of its arena
+        // refs/melee/src/sysdolphin/baselib/mobj.c::HSD_MObjAddShadowTexture
+        extern HSD_TObj* tobj_shadows;
+        tobj_shadows = NULL;
+    }
+#endif
     HSD_GObj_803912E0(&init);
     init.gproc_pri_max = 0x18;
     HSD_GObj_80391304(&init);
@@ -662,6 +744,15 @@ static int validate_config(MslCoreMatchConfig* config)
                 "2,3,8,28,31,32\n");
         return -1;
     }
+    if (config->stadium_transformations > MSL_STADIUM_ONLINE_LOADED ||
+        (config->stadium_transformations != MSL_STADIUM_FROZEN &&
+         config->stage_id != MSL_CORE_STAGE_POKEMON_STADIUM))
+    {
+        fprintf(stderr, "stadium_transformations is 0 (frozen), 1 "
+                        "(preloaded) or 2 (online-loaded), and nonzero only "
+                        "on Pokemon Stadium\n");
+        return -1;
+    }
     if (config->num_players != 0 &&
         (config->num_players < 2 || config->num_players > 4)) {
         fprintf(stderr,
@@ -713,7 +804,10 @@ static int validate_config(MslCoreMatchConfig* config)
                     "and char_id=25 Ganondorf only\n");
             return -1;
         }
-        if (config->players[i].cpu_level > 9) {
+        if ((config->players[i].cpu_level & MSL_CORE_HUMAN_LEVEL) != 0
+                ? (config->players[i].cpu_level & 0x7F) > 9
+                : config->players[i].cpu_level > 9)
+        {
             fprintf(stderr, "CPU level must be 1..9\n");
             return -1;
         }
@@ -843,6 +937,9 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     msl_core_fighter_animation_data_init();
     init_hsd();
     msl_effect_game_data_init(&game_data->effects);
+#if MSL_GX_RECORD
+    msl_present_game_data_init();
+#endif
 #ifdef MSL_CORE_NATIVE
     // These source loaders publish immutable GameData, not Match state.
     // Run them once before constructing the preload matches.
@@ -852,13 +949,17 @@ int msl_core_game_data_init(MslCoreGameData* game_data, const char* data_root)
     if (preload_supported_game_data(game_data) != 0) {
         return -1;
     }
+#ifdef MSL_POSE_ENGINE
     if (msl_fighter_pose_programs_init(&game_data->fighter_pose_programs) !=
         0)
     {
         return -1;
     }
+#endif
     msl_core_bind_game_data(game_data);
+#ifdef MSL_POSE_ENGINE
     msl_ft_data_bind_motion_programs();
+#endif
     game_data->fingerprint = fingerprint_game_data(game_data);
     msl_core_bind_game_data(game_data);
     msl_host_finish_initialization();
@@ -874,8 +975,10 @@ void msl_core_game_data_deinit(MslCoreGameData* game_data)
     if (game_data == NULL) {
         return;
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_fighter_pose_programs_deinit(&game_data->fighter_pose_programs);
+#endif
+#ifdef MSL_CORE_NATIVE
     msl_native_dat_context_destroy(&game_data->native_dat);
 #endif
     msl_memory_context_destroy(&game_data->memory);
@@ -999,6 +1102,11 @@ int msl_core_match_reset(MslCoreMatch* match, const MslCoreGameData* game_data,
     {
         return -1;
     }
+#if MSL_GX_RECORD
+    // the HUD is torn down as the game does when a match ends, while the objects it holds are still there
+    // refs/melee/src/melee/if/ifall.c::ifAll_802F3A64
+    msl_present_hud_stop();
+#endif
     arena = match->memory.arena;
     capacity = match->memory.capacity;
     arena_owned = match->memory.arena_owned;
@@ -1035,6 +1143,7 @@ static int match_construct(MslCoreMatch* match,
     uint32_t ics_count = 0;
     uint32_t peach_count = 0;
     u32 runtime_item_count;
+    u32 stadium_transforms;
 #endif
 
     match->random.value = 1;
@@ -1045,16 +1154,30 @@ static int match_construct(MslCoreMatch* match,
     if (validate_config(&match->config) != 0) {
         return -1;
     }
+    if (match->config.stadium_transformations != MSL_STADIUM_FROZEN) {
+        for (i = 0; i < MSL_STADIUM_TRANSFORMATION_ARCHIVES; ++i) {
+            if (msl_host_archive_find(
+                    msl_stadium_transformation_archives[i]) == NULL)
+            {
+                fprintf(stderr, "unfrozen Pokemon Stadium needs %s in the "
+                                "extracted game data; re-extract it\n",
+                        msl_stadium_transformation_archives[i]);
+                return -1;
+            }
+        }
+    }
 #ifdef MSL_CORE_NATIVE
     msl_reloc_begin_match(match);
 #endif
     init_hsd();
 #ifdef MSL_CORE_NATIVE
     init_relocation_types();
+#ifdef MSL_POSE_ENGINE
     if (msl_fighter_pose_init(&match->fighter_pose,
                               match->config.num_players) != 0) {
         return -1;
     }
+#endif
 #endif
     spec = stage_spec(match->config.stage_id);
     match->stage_data = spec->source;
@@ -1143,10 +1266,44 @@ static int match_construct(MslCoreMatch* match,
     msl_slippi_state_init(&match->slippi, match->config.stage_event_streams);
 
     msl_effect_match_init(&game_data->effects, &match->effects);
+#if MSL_GX_RECORD
+    // Viewer build: the effect library starts (efLib_Init: its two objects at links 7 and 8, its callbacks; the common effect file); retail does it after the camera and before the stage,
+    // which orders them against nothing (links 7 and 8 hold no other object made earlier).
+    // refs/melee/src/melee/ef/eflib.c::efLib_Init
+    msl_present_effects_init();
+#endif
+    // (after efLib_Init, which clears the effect file table as retail's scene start does before its players load: moved here from the player-load position)
+#if MSL_GX_RECORD && defined(MSL_CORE_NATIVE)
+    // The viewer build asks for each Kirby's copy files as the match load does (ftLib_80087508 -> ftData_800857E0 -> ftKb_Init_UnkMotionStates5 ->
+    // Player_80031DC8(ftKb_SpecialN_800EED50) for every present kind); the native build preloads the archives into GameData, so the call finds
+    // them loaded and only requests the copy's effect file (efAsync_LoadSync). The same pairs as the oracle build's loop above.
+    // refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::{ftKb_Init_UnkMotionStates5,ftKb_SpecialN_800EED50}
+    for (i = 0; i < match->config.num_players; ++i) {
+        int j;
+        if (match->config.players[i].char_id != MSL_CHARACTER_KIRBY) {
+            continue;
+        }
+        for (j = 0; j < match->config.num_players; ++j) {
+            ftKb_SpecialN_800EED50((s32) match->config.players[j].char_id, match->config.players[i].costume_id);
+            if (match->config.players[j].char_id == MSL_CORE_CHAR_POPO) {
+                ftKb_SpecialN_800EED50(FTKIND_NANA, match->config.players[i].costume_id);
+            } else if (match->config.players[j].char_id == MSL_CORE_CHAR_ZELDA) {
+                ftKb_SpecialN_800EED50(FTKIND_SEAK, match->config.players[i].costume_id);
+            } else if (match->config.players[j].char_id == MSL_CORE_CHAR_SHEIK) {
+                ftKb_SpecialN_800EED50(FTKIND_ZELDA, match->config.players[i].costume_id);
+            }
+        }
+    }
+#endif
     // Standard versus creates the source camera owner before stage/fighters.
     // The HSD CObj/draw link remains headless; the transform process and
     // subject pool are gameplay-relevant through fp->x221F_b0.
     Camera_80028B9C(0x46);
+#if MSL_GX_RECORD
+    // The viewer build draws: the camera owner is the game's, with its CObj and its draw link.
+    // refs/melee/src/melee/gm/gm_16AE.c::fn_8016E730
+    Camera_80030688();
+#else
     {
         HSD_GObj* camera_gobj = GObj_Create(0x10, 0x12, 0);
         if (camera_gobj == NULL) {
@@ -1156,6 +1313,7 @@ static int match_construct(MslCoreMatch* match,
         HSD_GObj_SetupProc(camera_gobj, (void (*)(HSD_GObj*)) Camera_8002B3D4,
                            0x12);
     }
+#endif
     // All supported stages enter through their source StageData owners,
     // with Ground storage redirected into this Match.
     // refs/melee/src/melee/gr/ground.c::{Ground_801C0754,Ground_801C0800}
@@ -1163,7 +1321,18 @@ static int match_construct(MslCoreMatch* match,
     Ground_801C0378(0x40);
     Ground_801BFFB0();
     stage_info.internal_stage_id = spec->internal_id;
+#if MSL_GX_RECORD
+    msl_native_dat_stage_callbacks = spec->source->callbacks;   /* (which map of the file holds the stage's lights: native_dat.c) */
+#endif
     grDatFiles_801C6038((void*) spec->archive, 0, 0);
+#if MSL_GX_RECORD
+    msl_native_dat_stage_callbacks = NULL;
+#endif
+#if MSL_GX_RECORD
+    // fn_8016E730 begins with Player_80036DA4 (the fighters' first initialization: the scene light gobj, made from the
+    // stage file's lights, and which the stage's OnLoad reaches for); the game has the stage file in memory by then
+    Player_80036DA4();
+#endif
     if (stage_info.coll_data == NULL || stage_info.param == NULL) {
         fprintf(stderr, "failed to load stage data for external id %u\n",
                 spec->external_id);
@@ -1220,6 +1389,16 @@ static int match_construct(MslCoreMatch* match,
     // Source callbacks retain stage actor, animation and RNG lifetimes.
     // Geometry-only maps use the audited collision epoch publication.
     Ground_801C1E94();
+#if MSL_GX_RECORD
+    {
+        /* the stage's own light set (a gxlink 0 light gobj), as Ground_801C0800 creates it before OnInit */
+        extern void Ground_801C466C(void);
+        Ground_801C466C();
+        /* the stage's particle bank (Ground_801C0800: psInitDataBankLoad(0x1E, map_ptcl, map_texg, 0, 0)), from the simulator's translation */
+        extern int msl_present_bank_load(int bank);
+        msl_present_bank_load(0x1E);
+    }
+#endif
     spec->source->OnInit();
     spec->source->OnLoad();
     configure_headless_ground_schedule(match, spec);
@@ -1235,6 +1414,14 @@ static int match_construct(MslCoreMatch* match,
         const Vec3* spawn = match->config.is_teams
                                 ? &spec->teams_spawn[spawn_order]
                                 : &spec->singles_spawn[spawn_order];
+        Vec3 retail_spawn;
+        // Without Slippi's NeutralSpawn each fighter enters at the stage's
+        // spawn point for its own port (gmvs.c::getSpawnPoint, stage.c::Stage_80224E64).
+        if ((match->config.slippi_patches & MSL_PATCH_RETAIL_SPAWNS) &&
+            Ground_801C2D24(slot, &retail_spawn))
+        {
+            spawn = &retail_spawn;
+        }
         uint8_t encoded = match->config.players[i].facing_and_port;
 #ifdef MSL_CORE_NATIVE
         if (match->config.players[i].char_id == MSL_CORE_CHAR_SAMUS) {
@@ -1275,23 +1462,68 @@ static int match_construct(MslCoreMatch* match,
                            ? 0.0F : ((encoded & 1) ? 1.0F : -1.0F);
         Player_SetPlayerCharacter(
             slot, source_character_kind(match->config.players[i].char_id));
-        Player_SetSlottype(slot, match->config.players[i].cpu_level != 0
-                                    ? Gm_PKind_Cpu : Gm_PKind_Human);
-        Player_SetPlayerAndEntityCpuLevel(slot,
-                                         match->config.players[i].cpu_level);
+        {
+            // A controller slot still carries the player's CPU level byte;
+            // a human Ice Climber's Nana sets her AI up from it
+            // (ftCo_800B9704). MSL_CORE_HUMAN_LEVEL marks that case.
+            uint8_t level = match->config.players[i].cpu_level;
+            bool human = level == 0 || (level & MSL_CORE_HUMAN_LEVEL) != 0;
+            Player_SetSlottype(slot, human ? Gm_PKind_Human : Gm_PKind_Cpu);
+            Player_SetPlayerAndEntityCpuLevel(slot, level & 0x7F);
+        }
         Player_SetTeam(slot, match->config.players[i].team_id);
         Player_SetStocks(slot, match->config.stock_count);
         // Player_SetHUDDamage initializes both player entities; Fighter_Create
         // reads Player_GetDamage before entry, without damage/hitstun callbacks.
         Player_SetHUDDamage(slot, match->config.players[i].start_percent);
+#if MSL_GX_RECORD
+        {
+            // The game's player slot holds costume 0 for a costume the character does not have (mem1 of bot holdout h00: Jigglypuff, replay costume 12, slot costume_id 0);
+            // the fighter clamps its own copy the same way (fighter.c, numCostumes). The HUD's stock icon frame (gm_80168B34) reads the slot, so a raw 12 picked the icon
+            // table's blank 5x5 entry. Viewer build only: the production slot keeps the replay's byte.
+            int costume = match->config.players[i].costume_id;
+            if (costume >= (int) CostumeListsForeachCharacter[match->config.players[i].char_id].numCostumes) {
+                costume = 0;
+            }
+            Player_SetCostumeId(slot, costume);
+        }
+#else
         Player_SetCostumeId(slot, match->config.players[i].costume_id);
+#endif
         // Standard VS forwards PlayerInitData.handicap into the player owner;
         // grab duration and several damage formulas read it at runtime.
         // refs/melee/src/melee/gm/gm_16AE.c::fn_8016D8AC
         Player_SetHandicap(slot, match->config.players[i].handicap);
+#if MSL_GX_RECORD
+        // The viewer build draws the player tags (ifnametag.c): the name-tag slot id of the game's start record (PlayerInitData byte 0xA,
+        // 120 = none, which is also what a replay without a tag text restores), kept by the viewer build's name-tag table (present/hud.c).
+        // refs/melee/src/melee/gm/gm_16AE.c (Player_SetNametagSlotID(slot, xA)), refs/melee/src/melee/if/ifnametag.c::has_nametag
+        {
+            extern int msl_present_nametag_slot_id(int player_index);
+            Player_SetNametagSlotID(slot, msl_present_nametag_slot_id(i));
+        }
+#endif
         Player_SetPlayerId(slot, slot);
         Player_SetFacingDirection(slot, facing);
+#if MSL_GX_RECORD
+        {
+            /* PlayerInitData.sub_color (fn_8016D8AC): the port tint is 0 unless a team match has two players of one
+             * character and team (gm_801B0348 raises the later one's tint). The tint is only a fighter's overlay. */
+            int tint = 0;
+            if (match->config.is_teams) {
+                int j;
+                for (j = 0; j < i; j++) {
+                    if (match->config.players[j].team_id == match->config.players[i].team_id &&
+                        match->config.players[j].char_id == match->config.players[i].char_id) {
+                        tint++;
+                    }
+                }
+            }
+            Player_SetControllerIndex(slot, tint);
+        }
+#else
         Player_SetControllerIndex(slot, slot + 1);
+#endif
         // Standard VS PlayerInitData leaves xD_b2 clear, enabling magnify
         // damage for ordinary human fighters.
         // refs/melee/src/melee/gm/gm_16AE.c::fn_8016D8AC
@@ -1308,7 +1540,9 @@ static int match_construct(MslCoreMatch* match,
     Item_80266FA8();
 #endif
     Item_80266FCC();
+#if !MSL_GX_RECORD
     Player_80036DA4();
+#endif
     for (i = 0; i < match->config.num_players; ++i) {
         int slot = match->source_slots[i];
         // gm_16AE.c::fn_8016E2BC creates match fighters through the player
@@ -1392,6 +1626,17 @@ static int match_construct(MslCoreMatch* match,
     // refs/melee/src/melee/gm/gm_16AE.c::fn_8016E730
     // refs/slippi-ssbm-asm/External/OnFrame.asm::OnGameFirstFrame
     Camera_8002F3AC();
+#if MSL_GX_RECORD
+    // Viewer build: the match scene's state and the HUD, as the versus scene starts them (fn_8016DCC0, ifAll_802F390C and
+    // gm_8016E934_OnEnter), after the camera and the fighters.
+    // refs/melee/src/melee/gm/gm_16AE.c::{fn_8016E730,gm_8016E934_OnEnter}
+    // (not in the matches GameData preloads before it seals: the HUD's state is process-wide and those matches end without the HUD's teardown)
+    if (msl_core_file_context()->sealed) {
+        msl_present_gm_init(&match->config);
+        msl_present_load_fighter_banks(match);
+        msl_present_hud_start();
+    }
+#endif
 
 #ifdef MSL_CORE_NATIVE
     // Baselib's source allocators grow one object at a time on demand. Seal
@@ -1416,6 +1661,13 @@ static int match_construct(MslCoreMatch* match,
     // Retail allocates all of that lazily; the sealed arena reserves it here
     // for every Kirby in the match.
     // refs/melee/src/melee/ft/chara/ftKirby/ftkirby.c::ftKb_SpecialN_800EFB4C
+    // An unfrozen Pokemon Stadium adds its transformations' grounds in play
+    // (see the island reserve below). Its per-pool terms are about twice the
+    // largest extra peak over the same recording replayed frozen, across 18
+    // console recordings under Common/Preload Stadium Transformations: AObjs
+    // +7, FObjs +13, IDs +26, GObjs +5, procs +25, Vecs +4, JObjs +37.
+    stadium_transforms =
+        match->config.stadium_transformations != MSL_STADIUM_FROZEN ? 1 : 0;
     HSD_ObjAllocEnsureFree(&fighter_x2040_alloc_data, 4 * kirby_count);
     {
         MslSourceMatchState* state = msl_core_source_match_state();
@@ -1429,7 +1681,7 @@ static int match_construct(MslCoreMatch* match,
     }
     HSD_ObjAllocEnsureFree(HSD_AObjGetAllocData(),
                            128 + 64 * samus_count + 64 * mewtwo_count +
-                               64 * kirby_count);
+                               64 * kirby_count + 16 * stadium_transforms);
     // Article animation loads a whole joint graph in a single frame, so the
     // FObj bound is the sum of the concurrent per-fighter bursts. Every port
     // can contribute its own, and bursts from different fighters overlap, so
@@ -1463,13 +1715,15 @@ static int match_construct(MslCoreMatch* match,
     HSD_ObjAllocEnsureFree(HSD_FObjGetAllocData(),
                            256 + 128 * ness_count + 256 * samus_count +
                                32 * link_count + 32 * peach_count +
-                               192 * mewtwo_count + 256 * kirby_count);
+                               192 * mewtwo_count + 256 * kirby_count +
+                               32 * stadium_transforms);
     // Costume-hat loaders publish every descriptor key against fighter parts;
     // those IDs remain after a hat is replaced. Bound all preloaded costume
     // and accessory trees per Kirby, in addition to transient hat/item IDs.
     // ftKirby/ftkirby.c::{ftKb_SpecialN_800EF0E4,ftKb_SpecialN_800EF438}
     HSD_ObjAllocEnsureFree(HSD_IDGetAllocData(),
-                           128 + 32 * kirby_count + kirby_hat_ids);
+                           128 + 32 * kirby_count + kirby_hat_ids +
+                               64 * stadium_transforms);
     // Link and Young Link carry four RObjs each against two for every other
     // supported fighter, so four Link ports land on exactly 16 live RObjs and
     // filled the former flat 16-slot reserve to the last slot. Nothing is live
@@ -1484,14 +1738,15 @@ static int match_construct(MslCoreMatch* match,
     HSD_ObjAllocEnsureFree(&gobj_alloc_data,
                            128 + 64 * samus_count + 32 * link_count +
                                32 * sheik_count + 64 * ics_count +
-                               32 * kirby_count);
+                               32 * kirby_count + 16 * stadium_transforms);
     // Every live item GObj schedules a proc, and Ness's steered PK Thunder
     // plus PK Fire pillars keep the most item GObjs alive at once: an
     // hour-long four-Ness chaos soak peaked at 365 live procs against the
     // former flat 256, aborting in HSD_GObj_SetupProc. Two Ness beside two
     // Pikachu measured 267, so one Ness already leaves the flat figure thin.
     // tests/melee_core/pool_chaos_soak.c
-    HSD_ObjAllocEnsureFree(&gobjproc_alloc_data, 256 + 64 * ness_count);
+    HSD_ObjAllocEnsureFree(&gobjproc_alloc_data,
+                           256 + 64 * ness_count + 64 * stadium_transforms);
     // The reached Peach article graph consumes twelve temporary matrix-pool
     // slots. The resulting fifteen-item bound rounds to the established
     // 256-slot small-object reserve.
@@ -1509,7 +1764,7 @@ static int match_construct(MslCoreMatch* match,
     // refs/melee/src/sysdolphin/baselib/mtx.c::{HSD_VecAlloc,HSD_VecFree}
     HSD_ObjAllocEnsureFree(HSD_VecGetAllocData(),
                            match->fighter_pose.joint_count + 128 +
-                               96 * kirby_count);
+                               96 * kirby_count + 16 * stadium_transforms);
     // Retain dev's full source item reserve and the incoming per-tether link
     // reserves. Shy Guys are a separate stage-owned producer; grStory_801E3418
     // admits one wave of at most five while no prior wave remains alive.
@@ -1535,7 +1790,21 @@ static int match_construct(MslCoreMatch* match,
     // PlPe.dat turnip graph has 17 joints (it_802BD4AC -> Item_802680CC).
     msl_class_reserve_pieces(
         sizeof(HSD_JObj), 128 + 128 * match->config.num_players +
-                              (peach_count != 0 ? 17 * runtime_item_count : 0));
+                              (peach_count != 0 ? 17 * runtime_item_count : 0) +
+                              80 * stadium_transforms);
+
+    // An unfrozen Pokemon Stadium builds each transformation's ground in play:
+    // its joint tree and animation objects, a GObj and procs, and the
+    // collision islands of the joints it adds; two layouts are live at once
+    // while one sinks and the next rises. Its islands come from the source
+    // free list before any allocation, so the list is stocked with one per
+    // collision line, which bounds the islands any joint set can form. The
+    // object pools take their per-stage terms in the reserves above.
+    // refs/melee/src/melee/gr/grpstadium.c::grStadium_801D4548
+    // refs/melee/src/melee/mp/mpisland.c::mpIsland_8005B004
+    if (stadium_transforms) {
+        msl_mpisland_reserve(stage_info.coll_data->line_count);
+    }
 
     // This Match's source allocation pools are complete. Shared DAT graphs
     // are sealed once, after GameData has preloaded the supported domain;
@@ -1733,6 +2002,22 @@ static int preload_supported_game_data(MslCoreGameData* game_data)
                     stage_specs[i].archive);
             return -1;
         }
+    }
+    // Pokemon Stadium's transformation archives, read and translated once
+    // (grdatfiles.c::msl_grdatfiles_prepare_archive). An extraction that
+    // predates them still loads; only an unfrozen Stadium match is refused.
+    for (i = 0; i < MSL_STADIUM_TRANSFORMATION_ARCHIVES; ++i) {
+        if (!msl_host_file_exists(msl_stadium_transformation_archives[i])) {
+            return 0;
+        }
+    }
+    for (i = 0; i < MSL_STADIUM_TRANSFORMATION_ARCHIVES; ++i) {
+        HSD_Archive* archive =
+            lbArchive_LoadArchive(msl_stadium_transformation_archives[i]);
+        if (archive == NULL) {
+            return -1;
+        }
+        msl_grdatfiles_prepare_archive(archive);
     }
     return 0;
 }
@@ -2092,6 +2377,90 @@ static void pack_fighter_state_flags(const Fighter* fp, uint8_t flags[5])
                ppc_state_bit(fp->x221F_b6, 6) | ppc_state_bit(fp->x221F_b7, 7);
 }
 
+// The MslCoreCompare lanes read from a Fighter, with the position the
+// caller supplies (the pre-render capture, or the fighter's own position at
+// an earlier record point).
+static void read_post_lanes(Fighter* fp, float pos_x, float pos_y,
+                            MslCorePostFrameLanes* lanes)
+{
+    float hitstun = fp->x221C_b6 ? fp->mv.co.damage.x0 : 0.0F;
+    int hurtbox = fp->x1988 != 0 ? fp->x1988 : fp->x198C;
+    int jumps_left = fp->co_attrs.max_jumps - fp->x1968_jumpsUsed;
+
+    lanes->pos_x = pos_x;
+    lanes->pos_y = pos_y;
+    lanes->self_vel_x = fp->self_vel.x;
+    lanes->gr_vel = fp->gr_vel;
+    lanes->self_vel_y = fp->self_vel.y;
+    lanes->kb_vel_x = fp->x8c_kb_vel.x;
+    lanes->kb_vel_y = fp->x8c_kb_vel.y;
+    lanes->percent = fp->dmg.x1830_percent;
+    lanes->shield = fp->shield_health;
+    lanes->motion_id = (uint16_t) fp->motion_id;
+    lanes->anim_frame = (uint16_t) state_age_i16(fp->cur_anim_frame);
+    lanes->hitlag = float_frames_u16(fp->dmg.x195c_hitlag_frames);
+    lanes->hitstun = float_frames_u16(hitstun);
+    lanes->ground_id = (uint16_t) fp->coll_data.floor.index;
+    lanes->instance_hit_by = fp->dmg.x18ec_instancehitby;
+    lanes->instance_id = fp->x2074.x2088;
+    lanes->anim_id = (uint32_t) fp->anim_id;
+    lanes->kind = fp->kind;
+    lanes->facing = fp->facing_dir > 0.0F;
+    lanes->on_ground = fp->ground_or_air == GA_Ground;
+    lanes->jumps_left = jumps_left > 0 ? (uint8_t) jumps_left : 0;
+    // Slippi's ExtendPlayerBlock/GetLCancelStatus patches own this byte.
+    // refs/slippi-ssbm-asm/Recording/{Recording.s,GetLCancelStatus/}
+    lanes->l_cancel = msl_slippi_lcancel_get(fp);
+    lanes->hurtbox = (uint8_t) hurtbox;
+    lanes->last_attack_landed = (uint8_t) fp->x208C;
+    lanes->combo_count = (uint8_t) fp->x2090;
+    lanes->last_hit_by = (uint8_t) fp->dmg.x18c4_source_ply;
+    pack_fighter_state_flags(fp, lanes->state_flags);
+}
+
+// Slippi 3.3 sends the post-frame event from the end of Fighter_procMap
+// (its injection at 0x8006C5D8), before the damage, shield and hit procs.
+// Fighter_procMap calls this for every fighter when the capture carried that
+// recorder (MSL_PATCH_POST_FRAME_AT_MAP); write_compare publishes the lanes.
+void msl_core_capture_post_frame_at_map(HSD_GObj* gobj)
+{
+    MslCoreMatch* match = msl_core_active_match();
+    Fighter* fp = GET_FIGHTER(gobj);
+    int i;
+
+    for (i = 0; i < match->config.num_players; ++i) {
+        int role = match->fighters[i] == gobj
+                       ? 0
+                       : (match->follower_fighters[i] == gobj ? 1 : -1);
+        if (role >= 0) {
+            MslCorePostFrameLanes* lanes = &match->post_frame_at_map[i][role];
+            read_post_lanes(fp, fp->cur_pos.x, fp->cur_pos.y, lanes);
+            // The match advances frame_id after the gameplay procs.
+            lanes->frame_id = match->frame_id + 1;
+            return;
+        }
+    }
+}
+
+// The lanes write_compare publishes for one fighter: its lanes at the
+// procMap record point when the capture's recorder sent from there and they
+// were taken this frame, else the fighter now.
+static void compare_lanes(const MslCoreMatch* match, int slot, int role,
+                          Fighter* fp, float pos_x, float pos_y,
+                          MslCorePostFrameLanes* lanes)
+{
+    const MslCorePostFrameLanes* at_map =
+        &match->post_frame_at_map[slot][role];
+
+    if ((match->config.slippi_patches & MSL_PATCH_POST_FRAME_AT_MAP) &&
+        at_map->frame_id == match->frame_id)
+    {
+        *lanes = *at_map;
+        return;
+    }
+    read_post_lanes(fp, pos_x, pos_y, lanes);
+}
+
 static void write_compare(const MslCoreMatch* match, uint32_t frame_seed,
                           MslCoreCompare* compare)
 {
@@ -2115,70 +2484,61 @@ static void write_compare(const MslCoreMatch* match, uint32_t frame_seed,
 
     for (i = 0; i < match->config.num_players; ++i) {
         Fighter* fp = GET_FIGHTER(match->fighters[i]);
+        MslCorePostFrameLanes lanes;
         uint8_t state_flags[5];
-        float hitstun = fp->x221C_b6 ? fp->mv.co.damage.x0 : 0.0F;
-        int hurtbox = fp->x1988 != 0 ? fp->x1988 : fp->x198C;
-        int jumps_left = fp->co_attrs.max_jumps - fp->x1968_jumpsUsed;
 
+        compare_lanes(match, i, 0, fp, match->output_pos_x[i],
+                      match->output_pos_y[i], &lanes);
         out[offsetof(MslCoreCompare, team_id) + i] = fp->team;
-        out[offsetof(MslCoreCompare, char_id) + i] = fp->kind;
-        put_player_f32(out, offsetof(MslCoreCompare, pos_x), i,
-                       match->output_pos_x[i]);
-        put_player_f32(out, offsetof(MslCoreCompare, pos_y), i,
-                       match->output_pos_y[i]);
+        out[offsetof(MslCoreCompare, char_id) + i] = lanes.kind;
+        put_player_f32(out, offsetof(MslCoreCompare, pos_x), i, lanes.pos_x);
+        put_player_f32(out, offsetof(MslCoreCompare, pos_y), i, lanes.pos_y);
         put_player_f32(out, offsetof(MslCoreCompare, speed_air_x_self), i,
-                       fp->self_vel.x);
+                       lanes.self_vel_x);
         put_player_f32(out, offsetof(MslCoreCompare, speed_ground_x_self), i,
-                       fp->gr_vel);
+                       lanes.gr_vel);
         put_player_f32(out, offsetof(MslCoreCompare, speed_y_self), i,
-                       fp->self_vel.y);
+                       lanes.self_vel_y);
         put_player_f32(out, offsetof(MslCoreCompare, speed_x_attack), i,
-                       fp->x8c_kb_vel.x);
+                       lanes.kb_vel_x);
         put_player_f32(out, offsetof(MslCoreCompare, speed_y_attack), i,
-                       fp->x8c_kb_vel.y);
-        out[offsetof(MslCoreCompare, facing) + i] = fp->facing_dir > 0.0F;
-        out[offsetof(MslCoreCompare, on_ground) + i] =
-            fp->ground_or_air == GA_Ground;
+                       lanes.kb_vel_y);
+        out[offsetof(MslCoreCompare, facing) + i] = lanes.facing;
+        out[offsetof(MslCoreCompare, on_ground) + i] = lanes.on_ground;
         // The existing MslCoreCompare contract uses this lane for eliminated
         // player slots, not the source Fighter's transient Dead motion flag.
         // Slippi-visible stock ownership remains Player_GetStocks.
         out[offsetof(MslCoreCompare, is_dead) + i] =
             Player_GetStocks(fp->player_id) == 0;
         put_player_u16(out, offsetof(MslCoreCompare, action_id), i,
-                       (uint16_t) fp->motion_id);
+                       lanes.motion_id);
         put_player_u16(out, offsetof(MslCoreCompare, action_frame), i,
-                       (uint16_t) state_age_i16(fp->cur_anim_frame));
-        out[offsetof(MslCoreCompare, jumps_left) + i] =
-            jumps_left > 0 ? (uint8_t) jumps_left : 0;
+                       lanes.anim_frame);
+        out[offsetof(MslCoreCompare, jumps_left) + i] = lanes.jumps_left;
         out[offsetof(MslCoreCompare, stocks) + i] =
             (uint8_t) Player_GetStocks(fp->player_id);
         put_player_f32(out, offsetof(MslCoreCompare, percent), i,
-                       fp->dmg.x1830_percent);
+                       lanes.percent);
         put_player_f32(out, offsetof(MslCoreCompare, shield_hp), i,
-                       fp->shield_health);
-        put_player_u16(out, offsetof(MslCoreCompare, hitlag), i,
-                       float_frames_u16(fp->dmg.x195c_hitlag_frames));
+                       lanes.shield);
+        put_player_u16(out, offsetof(MslCoreCompare, hitlag), i, lanes.hitlag);
         put_player_u16(out, offsetof(MslCoreCompare, hitstun), i,
-                       float_frames_u16(hitstun));
-        // Slippi's ExtendPlayerBlock/GetLCancelStatus patches own this byte.
-        // refs/slippi-ssbm-asm/Recording/{Recording.s,GetLCancelStatus/}
-        out[offsetof(MslCoreCompare, l_cancel) + i] =
-            msl_slippi_lcancel_get(fp);
-        out[offsetof(MslCoreCompare, hurtbox_state) + i] = (uint8_t) hurtbox;
+                       lanes.hitstun);
+        out[offsetof(MslCoreCompare, l_cancel) + i] = lanes.l_cancel;
+        out[offsetof(MslCoreCompare, hurtbox_state) + i] = lanes.hurtbox;
         put_player_u16(out, offsetof(MslCoreCompare, ground_id), i,
-                       (uint16_t) fp->coll_data.floor.index);
+                       lanes.ground_id);
         put_player_u32(out, offsetof(MslCoreCompare, animation_index), i,
-                       (uint32_t) fp->anim_id);
+                       lanes.anim_id);
         put_player_u16(out, offsetof(MslCoreCompare, instance_hit_by), i,
-                       fp->dmg.x18ec_instancehitby);
+                       lanes.instance_hit_by);
         put_player_u16(out, offsetof(MslCoreCompare, instance_id), i,
-                       fp->x2074.x2088);
+                       lanes.instance_id);
         out[offsetof(MslCoreCompare, last_attack_landed) + i] =
-            (uint8_t) fp->x208C;
-        out[offsetof(MslCoreCompare, combo_count) + i] = (uint8_t) fp->x2090;
-        out[offsetof(MslCoreCompare, last_hit_by) + i] =
-            (uint8_t) fp->dmg.x18c4_source_ply;
-        pack_fighter_state_flags(fp, state_flags);
+            lanes.last_attack_landed;
+        out[offsetof(MslCoreCompare, combo_count) + i] = lanes.combo_count;
+        out[offsetof(MslCoreCompare, last_hit_by) + i] = lanes.last_hit_by;
+        memcpy(state_flags, lanes.state_flags, sizeof(state_flags));
         state_flags[4] =
             (state_flags[4] & 0x7FU) |
             ppc_state_bit(match->output_render_visibility[i], 0);
@@ -2193,10 +2553,8 @@ static void write_compare(const MslCoreMatch* match, uint32_t frame_seed,
     // refs/melee/src/melee/ft/ftcolanim.c::ftCo_800BFD04
     for (i = 0; i < match->config.num_players; ++i) {
         Fighter* fp;
+        MslCorePostFrameLanes lanes;
         uint8_t state_flags[5];
-        float hitstun;
-        int hurtbox;
-        int jumps_left;
 
         if (match->follower_fighters[i] == NULL) {
             continue;
@@ -2205,66 +2563,62 @@ static void write_compare(const MslCoreMatch* match, uint32_t frame_seed,
         if (fp->x221F_b3) {
             continue;
         }
-        hitstun = fp->x221C_b6 ? fp->mv.co.damage.x0 : 0.0F;
-        hurtbox = fp->x1988 != 0 ? fp->x1988 : fp->x198C;
-        jumps_left = fp->co_attrs.max_jumps - fp->x1968_jumpsUsed;
+        compare_lanes(match, i, 1, fp, match->follower_output_pos_x[i],
+                      match->follower_output_pos_y[i], &lanes);
 
         out[offsetof(MslCoreCompare, follower_present) + i] = 1;
-        out[offsetof(MslCoreCompare, follower_char_id) + i] = fp->kind;
+        out[offsetof(MslCoreCompare, follower_char_id) + i] = lanes.kind;
         put_player_f32(out, offsetof(MslCoreCompare, follower_pos_x), i,
-                       match->follower_output_pos_x[i]);
+                       lanes.pos_x);
         put_player_f32(out, offsetof(MslCoreCompare, follower_pos_y), i,
-                       match->follower_output_pos_y[i]);
+                       lanes.pos_y);
         put_player_f32(out, offsetof(MslCoreCompare, follower_speed_air_x_self),
-                       i, fp->self_vel.x);
+                       i, lanes.self_vel_x);
         put_player_f32(out,
                        offsetof(MslCoreCompare, follower_speed_ground_x_self),
-                       i, fp->gr_vel);
+                       i, lanes.gr_vel);
         put_player_f32(out, offsetof(MslCoreCompare, follower_speed_y_self), i,
-                       fp->self_vel.y);
+                       lanes.self_vel_y);
         put_player_f32(out, offsetof(MslCoreCompare, follower_speed_x_attack),
-                       i, fp->x8c_kb_vel.x);
+                       i, lanes.kb_vel_x);
         put_player_f32(out, offsetof(MslCoreCompare, follower_speed_y_attack),
-                       i, fp->x8c_kb_vel.y);
-        out[offsetof(MslCoreCompare, follower_facing) + i] =
-            fp->facing_dir > 0.0F;
-        out[offsetof(MslCoreCompare, follower_on_ground) + i] =
-            fp->ground_or_air == GA_Ground;
+                       i, lanes.kb_vel_y);
+        out[offsetof(MslCoreCompare, follower_facing) + i] = lanes.facing;
+        out[offsetof(MslCoreCompare, follower_on_ground) + i] = lanes.on_ground;
         put_player_u16(out, offsetof(MslCoreCompare, follower_action_id), i,
-                       (uint16_t) fp->motion_id);
+                       lanes.motion_id);
         put_player_u16(out, offsetof(MslCoreCompare, follower_action_frame), i,
-                       (uint16_t) state_age_i16(fp->cur_anim_frame));
+                       lanes.anim_frame);
         out[offsetof(MslCoreCompare, follower_jumps_left) + i] =
-            jumps_left > 0 ? (uint8_t) jumps_left : 0;
+            lanes.jumps_left;
         out[offsetof(MslCoreCompare, follower_stocks) + i] =
             (uint8_t) Player_GetStocks(fp->player_id);
         put_player_f32(out, offsetof(MslCoreCompare, follower_percent), i,
-                       fp->dmg.x1830_percent);
+                       lanes.percent);
         put_player_f32(out, offsetof(MslCoreCompare, follower_shield_hp), i,
-                       fp->shield_health);
+                       lanes.shield);
         put_player_u16(out, offsetof(MslCoreCompare, follower_hitlag), i,
-                       float_frames_u16(fp->dmg.x195c_hitlag_frames));
+                       lanes.hitlag);
         put_player_u16(out, offsetof(MslCoreCompare, follower_hitstun), i,
-                       float_frames_u16(hitstun));
-        out[offsetof(MslCoreCompare, follower_l_cancel) + i] =
-            msl_slippi_lcancel_get(fp);
+                       lanes.hitstun);
+        out[offsetof(MslCoreCompare, follower_l_cancel) + i] = lanes.l_cancel;
         out[offsetof(MslCoreCompare, follower_hurtbox_state) + i] =
-            (uint8_t) hurtbox;
+            lanes.hurtbox;
         put_player_u16(out, offsetof(MslCoreCompare, follower_ground_id), i,
-                       (uint16_t) fp->coll_data.floor.index);
+                       lanes.ground_id);
         put_player_u32(out, offsetof(MslCoreCompare, follower_animation_index),
-                       i, (uint32_t) fp->anim_id);
+                       i, lanes.anim_id);
         put_player_u16(out, offsetof(MslCoreCompare, follower_instance_hit_by),
-                       i, fp->dmg.x18ec_instancehitby);
+                       i, lanes.instance_hit_by);
         put_player_u16(out, offsetof(MslCoreCompare, follower_instance_id), i,
-                       fp->x2074.x2088);
+                       lanes.instance_id);
         out[offsetof(MslCoreCompare, follower_last_attack_landed) + i] =
-            (uint8_t) fp->x208C;
+            lanes.last_attack_landed;
         out[offsetof(MslCoreCompare, follower_combo_count) + i] =
-            (uint8_t) fp->x2090;
+            lanes.combo_count;
         out[offsetof(MslCoreCompare, follower_last_hit_by) + i] =
-            (uint8_t) fp->dmg.x18c4_source_ply;
-        pack_fighter_state_flags(fp, state_flags);
+            lanes.last_hit_by;
+        memcpy(state_flags, lanes.state_flags, sizeof(state_flags));
         state_flags[4] =
             (state_flags[4] & 0x7FU) |
             ppc_state_bit(match->follower_output_render_visibility[i], 0);
@@ -2354,6 +2708,86 @@ static void bind_scheduler_owners(MslCoreMatch* match)
     }
 }
 
+#if MSL_GX_RECORD
+// Slippi playback's per-fighter hook in Fighter_procInput (0x8006B0DC -> Playback/Core/RestoreGameFrame.asm): on the match's first frame
+// (game frame -123) it copies the fighter's camera box x40/x44 into x2C/x30 and snaps the camera (Camera_8002F3AC), once for every fighter
+// whose input proc runs. With the two snaps of fn_8016E730 the camera has settled on its target before the first frame, as the console's has.
+// refs/slippi-ssbm-asm/Playback/Core/RestoreGameFrame.asm
+// refs/melee/src/melee/cm/camera.c::Camera_8002F3AC
+// (the helper the fighter input hook calls on the match's first frame)
+/* The playback option (viewer build only): which game the simulator follows.
+ *   "slippi"   (default) Slippi Dolphin's playback: the hook below also stores each fighter's position into the collision data, as
+ *              the playback code does at game frame -123 (the stores at 0x8065D33C..0x8065D35C of the code Slippi injects at
+ *              0x8006B0DC in Fighter_procInput: fp+0xB0..0xB8 to fp+0x6F4..0x6FC (CollData.cur_pos) and fp+0x70C..0x714
+ *              (CollData.last_pos)). The first EntryStart air collision then moves the fighter in one sub-step, not two, so a
+ *              fighter that enters more than 6.0 units from its previous collision position ends one ulp lower in y than the
+ *              console's recording has (Falcon at 41d584cb, the recording 41d584cc) and everything that follows carries it
+ *              (the cape's dynamics chain). This is what Slippi Dolphin shows and what the gate's captures hold.
+ *   "original" the recording: the console that made the replay ran no such hook. Gameplay output is then the replays' recorded
+ *              rows (identity against the production driver).
+ * The camera snap below is not gameplay and runs in both.
+ * Set before the first step: env MSL_PLAYBACK=slippi|original (native), `--playback <name>` on the replay driver, or
+ * msl_playback_set_name() / msl_gxw_set_playback() (wasm). */
+static int msl_playback_slippi = 1;
+static int msl_playback_explicit;
+
+int msl_playback_set_name(const char* name)
+{
+    if (name == NULL) {
+        return -1;
+    }
+    if (strcmp(name, "slippi") == 0) {
+        msl_playback_slippi = 1;
+    } else if (strcmp(name, "original") == 0) {
+        msl_playback_slippi = 0;
+    } else {
+        return -1;
+    }
+    msl_playback_explicit = 1;
+    return 0;
+}
+
+const char* msl_playback_get_name(void)
+{
+    return msl_playback_slippi ? "slippi" : "original";
+}
+
+static void msl_playback_init_from_env(void)
+{
+    static int done;
+    const char* e;
+
+    if (done) {
+        return;
+    }
+    done = 1;
+    e = getenv("MSL_PLAYBACK");
+    if (e != NULL && !msl_playback_explicit && msl_playback_set_name(e) != 0) {
+        fprintf(stderr, "MSL_PLAYBACK=%s: not slippi or original; staying on %s%c", e, msl_playback_get_name(), 10);
+    }
+}
+
+void msl_slippi_first_frame_camera(Fighter* fp)
+{
+    MslCoreMatch* match = msl_core_try_active_match();
+    CmSubject* box = fp->x890_cameraBox;
+
+    if (match == NULL || match->frame_id != -123) {
+        return;
+    }
+    msl_playback_init_from_env();
+    if (msl_playback_slippi) {
+        fp->coll_data.cur_pos = fp->cur_pos;
+        fp->coll_data.last_pos = fp->cur_pos;
+    }
+    if (box == NULL) {
+        return;
+    }
+    box->x2C = box->x40;
+    Camera_8002F3AC();
+}
+#endif
+
 int msl_core_match_step_prepare(MslCoreMatch* match,
                                 const MslCoreInput* input,
                                 uint32_t frame_seed,
@@ -2384,6 +2818,17 @@ int msl_core_match_step_prepare(MslCoreMatch* match,
     // dash flick. The renderer-owned overlay itself is absent headlessly.
     // refs/melee/src/melee/{gm/gm_16AE.c,if/ifstatus.c,if/if_2F72.c}
     // SSBM.iso::IfAll.dat::ScInfCnt_scene_models[3]
+    // The same overlay switches Pokemon Stadium's jumbotron to its "Ready"
+    // screen as the match starts, to "GO" at -39 and to the ordinary screen
+    // at frame 0; the screen schedule draws random numbers from then on.
+    // refs/melee/src/melee/gm/gm_16AE.c::{fn_8016B7B4,fn_8016B7F8,fn_8016B784}
+    if (match->frame_id == -124) {
+        msl_stadium_display_event(10);
+    } else if (match->frame_id == -40) {
+        msl_stadium_display_event(11);
+    } else if (match->frame_id == -1) {
+        msl_stadium_display_event(1);
+    }
     if (match->frame_id == -40) {
         StructPairWithStageID stage_pair = {
             match->stage_data->internal_stage_id, match->config.stage_id
@@ -2395,8 +2840,30 @@ int msl_core_match_step_prepare(MslCoreMatch* match,
     for (i = 0; i < match->config.num_players; ++i) {
         int slot = match->source_slots[i];
         inject_pad_status(slot, &input->p[i]);
-        msl_ucf_set_pending_pad(slot, input->p[i].main_x, input->p[i].main_y,
-                                input->p[i].c_x, input->p[i].c_y);
+        {
+            int pending_cx = input->p[i].c_x;
+            int pending_cy = input->p[i].c_y;
+#if MSL_GX_RECORD
+            // Playback "slippi": Slippi Dolphin's playback reads the recording
+            // through SlippiLib, which returns 0 for a pre-frame byte the file
+            // does not carry (SlippiGame.cpp: readByte(..., 0) for
+            // cstickXRaw/cstickYRaw, absent before Slippi 3.17), and
+            // RestoreGameFrame.asm stores that into the raw input ring. The
+            // game's own C-stick float is the recorded one. So UCF 1.0's
+            // cardinal snap (apply_cardinals on the raw bytes) never fires,
+            // where the original game's raw 80 snapped to exactly 1.0.
+            // refs/slippi-ssbm-asm/Playback/Core/RestoreGameFrame.asm
+            msl_playback_init_from_env();
+            if (msl_playback_slippi &&
+                (match->config.slippi_patches & MSL_PATCH_RAW_CSTICK_ABSENT)) {
+                pending_cx = 0;
+                pending_cy = 0;
+            }
+#endif
+            msl_ucf_set_pending_pad(slot, input->p[i].main_x,
+                                    input->p[i].main_y, pending_cx,
+                                    pending_cy);
+        }
     }
     // Versus scene OnFrame runs after pad publication and immediately before
     // the gameplay-object scheduler. Preserve the source-owned team stock
@@ -2404,6 +2871,10 @@ int msl_core_match_step_prepare(MslCoreMatch* match,
     // refs/melee/src/melee/gm/gm_1A45.c::gm_801A4D34
     // refs/melee/src/melee/gm/gm_16AE.c::{fn_8016CFE0,fn_8016B918}
     msl_core_apply_team_stock_steal();
+#if MSL_GX_RECORD
+    // the scene's timer and frame count (fn_8016CD98, from gm_8016CFE0), before the scheduler like the rest of OnFrame
+    msl_present_gm_frame();
+#endif
     return 0;
 }
 
@@ -2449,6 +2920,39 @@ HSD_GObjEvent msl_core_match_scheduler_invoke_owner(MslCoreMatch* match,
     return next;
 }
 
+#if MSL_GX_RECORD
+/* MSL_GX_SKIP_EVAL=<tape frame>,<tape frame>...: the frames the console's capture has no swap for (the game did not render them; the capture's swap map): the matrix publication of
+ * those frames is left out and so is their display pass (gx_display.c), so the lazily evaluated joints (constraints) are made once over the gap as the console made them */
+int msl_viewer_skip_eval_frame(void)
+{
+    static int frame = -1;
+    static int parsed;
+    static int list[64];
+    static int count;
+    int i;
+    frame += 1;
+    if (!parsed) {
+        const char* v = getenv("MSL_GX_SKIP_EVAL");
+        parsed = 1;
+        while (v != NULL && *v != 0 && count < 64) {
+            char* end;
+            list[count++] = (int) strtol(v, &end, 10);
+            if (end == v) {
+                break;
+            }
+            v = *end == ',' ? end + 1 : end;
+        }
+    }
+    for (i = 0; i < count; ++i) {
+        if (list[i] == frame) {
+            return 1;
+        }
+    }
+    return 0;
+}
+#endif
+
+void msl_present_dump_particles(int step);
 int msl_core_match_step_finish(MslCoreMatch* match, uint32_t frame_seed)
 {
     int i;
@@ -2535,6 +3039,11 @@ int msl_core_match_step_finish(MslCoreMatch* match, uint32_t frame_seed)
                              msl_profile_cycles() - started);
 #endif
     }
+#if MSL_GX_RECORD
+    if (msl_viewer_skip_eval_frame()) {
+        /* a frame the reference console did not render: the lazily made matrices (and the constraints of the joints) are not evaluated */
+    } else
+#endif
     {
         Item_GObj* item_gobj = (Item_GObj*) HSD_GObj_Entities->items;
 #ifdef MSL_SUBSYSTEM_PROFILE
@@ -2580,6 +3089,9 @@ int msl_core_match_step_finish(MslCoreMatch* match, uint32_t frame_seed)
     // source match owner advances it only after those processes have run.
     msl_core_advance_match_frame();
     match->random_seed = *seed_ptr;
+#if MSL_GX_RECORD
+    { static int n; if (getenv("MSL_SEED_TRACE")) fprintf(stderr, "SEED %d %08x frameseed %08x\n", n, (unsigned) *seed_ptr, (unsigned) frame_seed); msl_present_dump_particles(n); n++; }
+#endif
 #ifdef MSL_SUBSYSTEM_PROFILE
     msl_profile_add(MSL_PROFILE_FINISH,
                          msl_profile_cycles() - finish_started);
@@ -2614,6 +3126,27 @@ int msl_core_match_step(MslCoreMatch* match, const MslCoreInput* input,
                          msl_profile_cycles() - started);
 #endif
     return msl_core_match_step_finish(match, frame_seed);
+}
+
+int msl_core_stadium_state(const MslCoreMatch* match, int* phase, int* kind)
+{
+    Ground_GObj* gobj;
+    Ground* gp;
+
+    *phase = 0;
+    *kind = 5;
+    if (match->config.stage_id != MSL_CORE_STAGE_POKEMON_STADIUM) {
+        return 0;
+    }
+    msl_core_bind_match((MslCoreMatch*) match);
+    gobj = Ground_801C2BA4(2);
+    if (gobj == NULL || (gp = (Ground*) gobj->user_data) == NULL) {
+        return 0;
+    }
+    // Recording/Stages/SendStadiumInfo.asm reports these two halfwords.
+    *phase = gp->u.stadium.xDC;
+    *kind = gp->u.stadium.xDE;
+    return 1;
 }
 
 const MslCoreCompare* msl_core_match_output(const MslCoreMatch* match)

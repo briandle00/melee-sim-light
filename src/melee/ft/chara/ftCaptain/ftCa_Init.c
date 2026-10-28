@@ -280,7 +280,7 @@ static char nr_joint[] = "PlyCaptain5K_Share_joint";
 static char gy_dat[] = "PlCaGy.dat";
 static char gy_joint[] = "PlyCaptain5KGy_Share_joint";
 
-#ifdef BUGFIX
+#if defined(BUGFIX) && !defined(MSL_CORE_NATIVE)
 /// @todo What.
 char re_dat[] = "PlCaRe.dat";
 #else

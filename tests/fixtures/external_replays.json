@@ -1,0 +1,185 @@
+[
+ {
+  "fix": "map5_island_order",
+  "path": "<replays>/4505_Game_20231220T032500.slp",
+  "sha256": "2d7a526da82daf6a52a0ae2643802377357e7fb24a5353f1148dcf31b0652e17"
+ },
+ {
+  "fix": "map5_island_order",
+  "path": "<replays>/diamond-diamond-32dc08795abd5810e5faa2e1.slp",
+  "sha256": "21c7f0761e20218c844f4f7df436883856b3a3a8601afdc2fd1ab6729d241a85"
+ },
+ {
+  "fix": "jumbotron_schedule",
+  "path": "<replays>/Game_20230121T171949.slp",
+  "sha256": "4dd8e5f58499ac1539e2a4739e708a461cb2ff7ed722ebeffd2e0a7737ed2bfe"
+ },
+ {
+  "fix": "jumbotron_schedule",
+  "path": "<replays>/Game_20200801T010936.slp",
+  "sha256": "b3582dab41bd0014adc8ad8f3d4a5ef1bc5766f242dbe2eef066196d91b50172"
+ },
+ {
+  "fix": "cstick_gate_fit",
+  "path": "<replays>/Game_002331E5F616_20240427T041014.slp",
+  "sha256": "5bed56d9869bccca2618f1a394bb206447371c5bdb138be259e7057e11d7a37f"
+ },
+ {
+  "fix": "cstick_gate_fit",
+  "path": "<replays>/master-master-1a113ee877e618fc6804da86.slp",
+  "sha256": "9a669599335f81d474204503790efd5ead5a71711625c4da99e1d3df267def72"
+ },
+ {
+  "fix": "cstick_gate_fit",
+  "path": "<replays>/23253.slp",
+  "sha256": "fadca44fd3cb94b96307ffa3e7ecf440eb873acd68763895aaffb053920b4be6"
+ },
+ {
+  "fix": "fd_background_patch",
+  "path": "<replays>/diamond-platinum-331658d5708ae138ffb655c0.slp",
+  "sha256": "e8ebb0994a5bcd281cc7873423e53b2f505a0b5f83bc84f7f4661e65af296cca"
+ },
+ {
+  "fix": "fd_background_patch",
+  "path": "<replays>/diamond-platinum-54a6e8a2e313a1606bd620a3.slp",
+  "sha256": "1ff20dc2011ac30ce68101ad1d61187d130b0b89635f9a893b09d4192f91883f"
+ },
+ {
+  "fix": "ucf_074_no_tumble",
+  "path": "<replays>/master-diamond-cb9041ea5f8f4a1586517e31.slp",
+  "sha256": "f5a44bca4226d885e1b092859d397c3b11e6d7232beea0a0627570c33331ddb4"
+ },
+ {
+  "fix": "ucf_074_no_tumble",
+  "path": "<replays>/platinum-platinum-716d9c800991426ef9c91e00.slp",
+  "sha256": "a51e830fe1b664bbd4e0ef2fdbb71805f9bfe8be35e9ca62e6a4ad2154c5b6db"
+ },
+ {
+  "fix": "ucf_08_dashback",
+  "path": "<replays>/master-diamond-bf25cf805e23959b754c2c71.slp",
+  "sha256": "bf132d3abe79a7ee58781a520382fd1023af7459a9f5edcebacd6bf1a2174b87"
+ },
+ {
+  "fix": "host_without_fma3",
+  "path": "<replays>/platinum-platinum-ab04b49fc7f3b06be608d3c2.slp",
+  "sha256": "58d338524572a3f21d18ce2fdebd768bdd8f3c0c97b4d4283011a82c3c9da7bb"
+ },
+ {
+  "fix": "host_without_fma3",
+  "path": "<replays>/platinum-platinum-c4d39e65e7ef0092de263618.slp",
+  "sha256": "ac4573f1fd6bc9ca442493ac0a6bb399d9322f78996d52b50da2c367f8e3b14e"
+ },
+ {
+  "fix": "shadow_ball_wobble",
+  "path": "<replays>/4616.slp",
+  "sha256": "2fcc93707574bf96a1b30f616d1873e6748ad2deb9aa28be09e30aaf9ca4153f"
+ },
+ {
+  "fix": "shadow_ball_wobble",
+  "path": "<replays>/8345.slp",
+  "sha256": "6b0af23f7770b57a247c42dfffd2afeb352b2dd02115d3e7fd17c41a68e442aa"
+ },
+ {
+  "fix": "shadow_ball_wobble",
+  "path": "<replays>/17314.slp",
+  "sha256": "7427131e79ae80aca7f7ab3e2eb1dba24510d60d6a6e9c4f1c9e2d3d8e96ac3c"
+ },
+ {
+  "fix": "prevent_wobbling",
+  "path": "<replays>/diamond-master_14-15__238833.slp",
+  "sha256": "b6473de0c9451873ab67de8a2008fc7810143bfc7f396f9a30f7a3b0aa8e724b"
+ },
+ {
+  "fix": "prevent_wobbling",
+  "path": "<replays>/master-platinum_14-22__213498.slp",
+  "sha256": "e2c9418af4403c0bc75606456b3a819fb0554e5c59d387749f0c149ca2f4a44e"
+ },
+ {
+  "fix": "discarded_rollback_tail",
+  "path": "<replays>/680_Game_20240921T201832.slp",
+  "sha256": "7c5e326f258be178480a580444f3abfd8dada2a39a5932472e4b6dcfe82f06df"
+ },
+ {
+  "fix": "sheik_chain_residue",
+  "path": "<replays>/Game_001BEAE58069_20240329T225112.slp",
+  "sha256": "f55f6dd658eef61f84ba9431b696364bc91f20870a51ad7e9204ccfdba5531c1"
+ },
+ {
+  "fix": "sheik_chain_residue",
+  "path": "<replays>/20743.slp",
+  "sha256": "51d0d9f4922452d3faa81c4c56065137aaa4e3e13a4b124476a997160110b322"
+ },
+ {
+  "fix": "stage_particles_and_human_level",
+  "path": "<replays>/30873.slp",
+  "sha256": "5949a278ede7a8abe8558b80a389415a38ffd550ed899166b62e0e910b8cb00a"
+ },
+ {
+  "fix": "stage_particles_and_human_level",
+  "path": "<replays>/16977.slp",
+  "sha256": "bf20976af16bdecfc72ef607faefd1a59e8b3e7f9fbcbb5ba01196dac81dd32f"
+ },
+ {
+  "fix": "stage_particles_and_human_level",
+  "path": "<replays>/platinum-platinum_10-14__47101.slp",
+  "sha256": "d2a4f76e7bf6998b88255f068e6816106b97b45d731f969e972590e0b7837fae"
+ },
+ {
+  "fix": "mr_saturn_unwritten_misc1",
+  "path": "<replays>/15434.slp",
+  "sha256": "2fbf2e24aae1d674da9a689ba94807f7584850f0cb331fdba20f4f9c2ea44462"
+ },
+ {
+  "fix": "mr_saturn_unwritten_misc1",
+  "path": "<replays>/master-platinum_12-25__243494.slp",
+  "sha256": "740d6879277659ce5f9a9e25ec4f2b40fb02c1219e91e8f91af932fe59325028"
+ },
+ {
+  "fix": "subaction_effect_id_byte_order",
+  "path": "<replays>/11483.slp",
+  "sha256": "af1988cb6826e6b0d9019ea4cc88afc6b698e11ee0538ddd63309e8f22425cdd"
+ },
+ {
+  "fix": "subaction_effect_id_byte_order",
+  "path": "<replays>/diamond-diamond-4bcb56e6aaa2879096891eed.slp",
+  "sha256": "ff3f33a8e9fa22c14198c63e8034235746e5565f91e266eba34eb1ad28611079"
+ },
+ {
+  "fix": "subaction_effect_id_byte_order",
+  "path": "<replays>/diamond-platinum_0-5__115989.slp",
+  "sha256": "333b3f6756e274673edd433b4277d94d9b71a107f906ce145f7ead9d78c10317"
+ },
+ {
+  "fix": "particle_generator_full_id",
+  "path": "<replays>/5486.slp",
+  "sha256": "cb742dee5441ecb6cc13b3cc7a3fd09f03ec64f9e7d6c68c158a0119048c4c2e"
+ },
+ {
+  "fix": "slippi_3_3_post_frame_record_point",
+  "path": "<replays>/(TI86) Falco vs DK [FD] Game_20200304T204823.slp",
+  "sha256": "609b39803319cb3742d3af0c30af89892d79f7afdd9afaa68bb77539752bcad4",
+  "reader": "peppi-0.9"
+ },
+ {
+  "fix": "slippi_3_3_post_frame_record_point",
+  "path": "<replays>/(TI86) Falco vs DK [BF] Game_20200304T205601.slp",
+  "sha256": "7771bca5c18b29fcc407ce617275f1242a04dd164b0fc2a73594fa1e93c48539",
+  "reader": "peppi-0.9"
+ },
+ {
+  "fix": "slippi_3_3_post_frame_record_point",
+  "path": "<replays>/(L) Falco vs DK [PS] Game_000000000000_20200304T191142.slp",
+  "sha256": "86b6185b847a7c61e9acf97fba312b84357ba26c698e5caedc39b197a2090977",
+  "reader": "peppi-0.9"
+ },
+ {
+  "fix": "guard_lean_blend_all_joints",
+  "path": "<replays>/25981.slp",
+  "sha256": "30be3203faa1687674807f877ab3d5b25fa0936f175e962367eb2315244d657e"
+ },
+ {
+  "fix": "dreamland_background_particles",
+  "path": "<replays>/diamond-diamond_2-14__218040.slp",
+  "sha256": "63c109e4395adac512b5bb48a1cdbea7e46e00db61cf062c7a5003bfedba37d5"
+ }
+]

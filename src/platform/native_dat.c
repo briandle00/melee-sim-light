@@ -16,6 +16,10 @@
 #include <melee/gr/ground.h>
 #include <melee/it/it_3F14.h>
 #include <melee/it/types.h>
+#if MSL_GX_RECORD
+#include <baselib/lobj.h>
+#include <melee/sc/types.h>
+#endif
 #ifndef MSL_CORE_WASM
 #include <sys/mman.h>
 #endif
@@ -43,6 +47,7 @@ typedef struct MslNativeArchive {
     uint32_t data_size;
     uint32_t* reloc_fields;
     uint32_t reloc_count;
+    uint32_t console_base;   /* where the console would hold the file's data: what a relocated pointer read past a block holds (the viewer build) */
     uint32_t* boundaries;
     uint32_t boundary_count;
     MslDatMemo* memo;
@@ -102,6 +107,54 @@ static int compare_u32(const void* lhs, const void* rhs)
     return a < b ? -1 : a > b;
 }
 
+#if MSL_GX_RECORD
+// The viewer build's GX layer names the memory its commands point at (textures, vertex arrays) by the block of
+// the native arena it lies in: each allocation's offset and size, in allocation (so address) order.
+static uint32_t* gx_block_offsets;
+static uint32_t* gx_block_sizes;
+static size_t gx_block_count;
+static size_t gx_block_cap;
+
+static void gx_block_note(size_t offset, size_t size)
+{
+    if (gx_block_count == gx_block_cap) {
+        gx_block_cap = gx_block_cap ? gx_block_cap * 2 : 65536;
+        gx_block_offsets = realloc(gx_block_offsets, gx_block_cap * sizeof(*gx_block_offsets));
+        gx_block_sizes = realloc(gx_block_sizes, gx_block_cap * sizeof(*gx_block_sizes));
+        if (gx_block_offsets == NULL || gx_block_sizes == NULL) {
+            abort();
+        }
+    }
+    gx_block_offsets[gx_block_count] = (uint32_t) offset;
+    gx_block_sizes[gx_block_count] = (uint32_t) size;
+    gx_block_count++;
+}
+
+int msl_native_dat_block(const void* pointer, const uint8_t** base, size_t* size)
+{
+    size_t lo = 0;
+    size_t hi = gx_block_count;
+    size_t offset;
+    if (!msl_native_dat_owns(pointer)) {
+        return 0;
+    }
+    offset = (size_t) ((const uint8_t*) pointer - native_dat_arena);
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (gx_block_offsets[mid] + (size_t) gx_block_sizes[mid] <= offset) {
+            lo = mid + 1;
+        } else if (gx_block_offsets[mid] > offset) {
+            hi = mid;
+        } else {
+            *base = native_dat_arena + gx_block_offsets[mid];
+            *size = gx_block_sizes[mid];
+            return 1;
+        }
+    }
+    return 0;
+}
+#endif
+
 static void* native_alloc(size_t size)
 {
     size_t aligned;
@@ -146,6 +199,9 @@ static void* native_alloc(size_t size)
         abort();
     }
     result = native_dat_arena + native_dat_arena_used;
+#if MSL_GX_RECORD
+    gx_block_note(native_dat_arena_used, size);
+#endif
     native_dat_arena_used += aligned;
     memset(result, 0, size);
     return result;
@@ -207,8 +263,15 @@ void msl_native_dat_finish_initialization(void)
     // below still rejects every later DAT allocation/translation attempt.
     (void) protected_size;
 #else
+#if MSL_GX_RECORD
+    // The viewer build keeps the arena writable: the game's refraction loader rewrites display lists in place
+    // (refs/melee/src/melee/lb/lbrefract.c::lbRefract_PObjLoad), the same bytes every time.
+    (void) protected_size;
+    if (0)
+#else
     if (protected_size != 0 &&
         mprotect(native_dat_arena, protected_size, PROT_READ) != 0)
+#endif
     {
         perror("mprotect immutable native DAT arena");
         abort();
@@ -461,9 +524,42 @@ static void* translate_target_count(MslNativeArchive* context,
     if (type->kind == MSL_DAT_VOID) {
         uint32_t end = next_boundary(context, source_offset);
         size_t size = end > source_offset ? end - source_offset : 1;
-        result = native_alloc(size);
+        size_t held = size;
+#if MSL_GX_RECORD
+        // The console holds the whole file in one block of memory: a palette read past its own entries (the game loads 256
+        // entries for any 8-bit image) reads the file's next bytes, which the viewer build must hold too. A small block
+        // keeps up to 2 KiB of what follows it in the file.
+        if (size < 2048 && source_offset < context->data_size) {
+            held = context->data_size - source_offset;
+            if (held > 2048) {
+                held = 2048;
+            }
+            if (held < size) {
+                held = size;
+            }
+        }
+#endif
+        result = native_alloc(held);
         add_memo(context, source_offset, type, result);
-        memcpy(result, context->data + source_offset, size);
+        memcpy(result, context->data + source_offset, held <= context->data_size - source_offset ? held : size);
+#if MSL_GX_RECORD
+        // the file's pointer fields in the bytes that follow are the console's relocated addresses
+        if (held > size && source_offset + held <= context->data_size) {
+            uint32_t k;
+            for (k = 0; k < context->reloc_count; ++k) {
+                uint32_t field = context->reloc_fields[k];
+                if (field >= source_offset + size && field + 4 <= source_offset + held) {
+                    uint32_t target = read_be32(context->data + field);
+                    uint8_t* at = (uint8_t*) result + (field - source_offset);
+                    uint32_t value = context->console_base + target;
+                    at[0] = (uint8_t) (value >> 24);
+                    at[1] = (uint8_t) (value >> 16);
+                    at[2] = (uint8_t) (value >> 8);
+                    at[3] = (uint8_t) value;
+                }
+            }
+        }
+#endif
         return result;
     }
     if (count == 0) {
@@ -494,12 +590,49 @@ static void* translate_target(MslNativeArchive* context,
                               uint32_t source_offset,
                               const MslDatType* type)
 {
+#if MSL_GX_RECORD
+    // UnkStageDat.unk28 is declared UnkStageDatInternal**: its elements are materials the stage's joints use too
+    // (grDatFiles_801C6228 sets a render flag in the word at +4, an MObjDesc's rendermode). The viewer build draws, so
+    // it holds the whole descriptor.
+    if (type->kind == MSL_DAT_STRUCT &&
+        strcmp(type->name, "UnkStageDatInternal") == 0)
+    {
+        type = msl_dat_root_HSD_MObjDesc;
+    }
+#endif
     uint32_t span = next_boundary(context, source_offset) - source_offset;
     uint32_t count = 1;
     int graph_node =
         type->kind == MSL_DAT_STRUCT &&
         (strncmp(type->name, "HSD_", 4) == 0 ||
          strncmp(type->name, "_HSD_", 5) == 0);
+#if MSL_GX_RECORD
+    // A model's vertex descriptor list, its envelope weights and the list of those are arrays ended by an entry of their
+    // own (an attribute of 0xFF, a joint of 0, a pointer of 0); the next relocation target may lie inside them (the
+    // ending entry is shared), so they are counted by their ending.
+    // refs/melee/src/sysdolphin/baselib/pobj.c::{setupVtxDesc,loadEnvelopeDesc}
+    if (strcmp(type->name, "HSD_VtxDescList") == 0 ||
+        strcmp(type->name, "HSD_EnvelopeDesc") == 0 ||
+        (type->kind == MSL_DAT_POINTER && type->source_size == 4 &&
+         type->element != NULL && type->element->kind == MSL_DAT_STRUCT &&
+         strcmp(type->element->name, "HSD_EnvelopeDesc") == 0))
+    {
+        uint32_t size = type->source_size;
+        uint32_t k;
+        for (k = 0; source_offset + (k + 1) * size <= context->data_size; ++k) {
+            uint32_t word = read_be32(context->data + source_offset + k * size);
+            int ends = type->kind == MSL_DAT_POINTER
+                           ? word == 0
+                           : strcmp(type->name, "HSD_VtxDescList") == 0
+                                 ? word == 0xFF
+                                 : word == 0;
+            if (ends) {
+                return translate_target_count(context, source_offset, type,
+                                              k + 1);
+            }
+        }
+    }
+#endif
     // An Article is always a single object referenced slot-by-slot from
     // ftData.x48_items; no source consumer indexes an Article array through
     // one pointer. PlLk.dat packs an unreferenced hookshot joint blob
@@ -715,6 +848,21 @@ static void translate_value(MslNativeArchive* context,
                 memcpy((uint8_t*) native + offsetof(HSD_Joint, u), &spline,
                        sizeof(spline));
             }
+#if MSL_GX_RECORD
+            // The viewer build draws: the DObj descriptors a joint's union points at are translated too (the generator
+            // leaves the union out of the joint's fields).
+            // refs/melee/src/sysdolphin/baselib/jobj.c::JObjLoadCore
+            if ((flags & (JOBJ_SPLINE | JOBJ_PTCL)) == 0) {
+                uint32_t target = raw_pointer(context, source_offset + 0x10);
+                void* dobj = NULL;
+                if (target != UINT32_MAX) {
+                    dobj = translate_target(context, target,
+                                            msl_dat_root_HSD_DObjDesc);
+                }
+                memcpy((uint8_t*) native + offsetof(HSD_Joint, u), &dobj,
+                       sizeof(dobj));
+            }
+#endif
             {
                 HSD_Joint* joint = native;
                 Vec3 rotation = joint->rotation;
@@ -728,6 +876,144 @@ static void translate_value(MslNativeArchive* context,
             // refs/melee/src/sysdolphin/baselib/{jobj.h,jobj.c::JObjUpdateFunc}
             return;
         }
+#if MSL_GX_RECORD
+        if (strcmp(type->name, "itGamewatchparachuteAttributes") == 0 ||
+            strcmp(type->name, "MslDatGameWatchChefAttrs") == 0 ||
+            strcmp(type->name, "MslDatKirbyChefPanAttrs") == 0) {
+            // Every Game & Watch article's first special attribute is a pointer (declared void*, so copied raw) to the record the draw reads
+            // through it_266F_ItemVars: {u16 count, u8* indices, u16 count, u8* indices} (the dynamic bones it hides while the flat pass draws).
+            // The viewer build draws, so the record is translated into the host's layout of that struct (u16 at +0, pointer at +8, u16 at +16,
+            // pointer at +24).
+            // refs/melee/src/melee/it/itdraw.c::{it_8026EECC,it_8026EBC8,it_8026EC54}, items/itgamewatch*.c, it_2725.c::it_8027CE64
+            for (i = 0; i < type->field_count; ++i) {
+                const MslDatField* field = &type->fields[i];
+                uint32_t field_source = source_offset + field->source_offset;
+                if (field->source_offset == 0) {
+                    uint32_t target = raw_pointer(context, field_source);
+                    void* record = NULL;
+                    if (target != UINT32_MAX && target + 16 <= context->data_size) {
+                        /* (the host's layout of the record: u16, pointer, u16, pointer) */
+                        struct MslBoneRecord { uint16_t count0; uint8_t* indices0; uint16_t count1; uint8_t* indices1; };
+                        struct MslBoneRecord* host = native_alloc(sizeof(struct MslBoneRecord));
+                        int k;
+                        for (k = 0; k < 2; ++k) {
+                            uint32_t count_at = target + 8 * k;
+                            uint32_t table = raw_pointer(context, count_at + 4);
+                            uint16_t count = (uint16_t) read_be16(context->data + count_at);
+                            uint8_t* indices = NULL;
+                            if (table != UINT32_MAX && table + count <= context->data_size) {
+                                indices = native_alloc(count ? count : 1);
+                                memcpy(indices, context->data + table, count);
+                            }
+                            if (k == 0) {
+                                host->count0 = count;
+                                host->indices0 = indices;
+                            } else {
+                                host->count1 = count;
+                                host->indices1 = indices;
+                            }
+                        }
+                        record = host;
+                    }
+                    memcpy((uint8_t*) native + field->native_offset, &record, sizeof(record));
+                    continue;
+                }
+                translate_value(context, field->type, field_source, (uint8_t*) native + field->native_offset);
+            }
+            return;
+        }
+        if (strcmp(type->name, "FtPartsDesc") == 0 || strncmp(type->name, "MslDatKirbyHat", 14) == 0) {
+            // vis_table is a void* (*)[4]: a table of [costume][4] pointers to FtPartsVisLookup arrays (the hide-part
+            // lists of each model, ftParts_8007487C). The viewer build hides parts, so the lookups are translated; the
+            // table's extent runs to the next referenced offset. A FtPartsDesc has it at +4; a Kirby hat's record at +8
+            // (KirbyHatStruct), except the five hats with per-costume models (Donkey Kong, Jigglypuff, Mewtwo, Falco,
+            // Game & Watch): their record starts with the parts desc itself (+4), which the code reads through a
+            // FtPartsDesc cast, i.e. at the host offset 8 (a u32 model_num, then a pointer).
+            // refs/melee/src/melee/ft/ftparts.c::{ftParts_8007487C,ftParts_80074D7C},
+            // ftKirby/ftkirby.c::ftKb_SpecialN_800F11F0
+            int own_desc = strncmp(type->name, "MslDatKirbyHat", 14) == 0 &&
+                           (strcmp(type->name + 14, "Donkey") == 0 || strcmp(type->name + 14, "Purin") == 0 ||
+                            strcmp(type->name + 14, "Mewtwo") == 0 || strcmp(type->name + 14, "Falco") == 0 ||
+                            strcmp(type->name + 14, "Gamewatch") == 0);
+            uint32_t vis_at = type->name[0] == 'F' || own_desc ? 4 : 8;
+            for (i = 0; i < type->field_count; ++i) {
+                const MslDatField* field = &type->fields[i];
+                uint32_t field_source = source_offset + field->source_offset;
+                if (field->source_offset == vis_at &&
+                    (field->type->kind == MSL_DAT_POINTER || field->type->kind == MSL_DAT_BASE)) {
+                    uint32_t target = raw_pointer(context, field_source);
+                    void* table = NULL;
+                    if (target != UINT32_MAX && target % 4 == 0) {
+                        uint32_t words = (next_boundary(context, target) - target) / 4;
+                        uint32_t k;
+                        void** native_table;
+                        words -= words % 4;
+                        native_table = native_alloc((size_t) (words ? words : 4) * sizeof(void*));
+                        for (k = 0; k < words; ++k) {
+                            uint32_t entry = raw_pointer(context, target + k * 4);
+                            native_table[k] = entry == UINT32_MAX
+                                                  ? NULL
+                                                  : translate_target(context, entry,
+                                                                     msl_dat_root_FtPartsVisLookup);
+                        }
+                        table = native_table;
+                    }
+                    if (own_desc) {
+                        translate_value(context, field->type, field_source,
+                                        (uint8_t*) native + field->native_offset);
+                        {
+                            /* (the host's FtPartsDesc: a u32 model_num, then the pointer) */
+                            struct { uint32_t model_num; void* vis_table; } host_desc;
+                            memcpy((uint8_t*) native + ((uint8_t*) &host_desc.vis_table - (uint8_t*) &host_desc), &table, sizeof(table));
+                        }
+                    } else {
+                        memcpy((uint8_t*) native + field->native_offset, &table, sizeof(table));
+                    }
+                    continue;
+                }
+                translate_value(context, field->type, field_source, (uint8_t*) native + field->native_offset);
+            }
+            return;
+        }
+        if (strcmp(type->name, "HSD_PObjDesc") == 0) {
+            // The union at the end holds, by the pobj's type bits, the joint it is bound to, its shape set or its envelope
+            // list.
+            // refs/melee/src/sysdolphin/baselib/pobj.c::{PObjLoad,HSD_PObjResolveRefs}
+            uint32_t flags = read_be16(context->data + source_offset + 0x0C);
+            for (i = 0; i < type->field_count; ++i) {
+                const MslDatField* field = &type->fields[i];
+                uint32_t field_source = source_offset + field->source_offset;
+                if (field->type->kind == MSL_DAT_UNION) {
+                    uint32_t target = raw_pointer(context, field_source);
+                    void* pointer = NULL;
+                    if (target != UINT32_MAX) {
+                        switch (flags & 0x3000) {
+                        case 0x1000:
+                            pointer = translate_target(
+                                context, target,
+                                msl_dat_root_HSD_ShapeSetDesc);
+                            break;
+                        case 0x2000:
+                            pointer = translate_target(
+                                context, target,
+                                msl_dat_root_MslDatEnvelopeList);
+                            break;
+                        default:
+                            pointer = translate_target(
+                                context, target, msl_dat_root_HSD_Joint);
+                            break;
+                        }
+                    }
+                    memcpy((uint8_t*) native + field->native_offset, &pointer,
+                           sizeof(pointer));
+                    continue;
+                }
+                translate_value(context, field->type, field_source,
+                                (uint8_t*) native + field->native_offset);
+            }
+            return;
+        }
+#endif
         if (strcmp(type->name, "HSD_AObjDesc") == 0) {
             // AObjDesc::obj_id is declared u32 because retail uses either an
             // object-table id or a relocated HSD_Joint address in the same
@@ -750,6 +1036,67 @@ static void translate_value(MslNativeArchive* context,
                                       msl_hsd_id_from_pointer(joint));
                         continue;
                     }
+                }
+                translate_value(context, field->type, field_source,
+                                (uint8_t*) native + field->native_offset);
+            }
+            return;
+        }
+        if (strcmp(type->name, "ftDynamics") == 0) {
+            // ftDynamics::x10 is declared FigaTree***, but the archive's
+            // table holds, per animation blend slot, a pointer to plain
+            // 32-bit counts: how many leading chain joints the animation
+            // drives. ftCo_8009E4A8 and ftCo_8009E7B4 pass tree[i] to
+            // ftCo_8009CB40, which compares it as (s32) arg3 against the
+            // chain index. The counts are not relocated, so following the
+            // declared pointer type turned every one into NULL (0): each
+            // chain joint was then left to the physics. Keep the declared
+            // host shape (pointer-sized slots) and carry each count in its
+            // slot, as the PPC word it is; a slot without a relocation stays
+            // NULL, as ftCo_8009E7B4's checks expect.
+            // refs/melee/src/melee/ft/ftdynamics.c::{ftCo_8009CB40,
+            //   ftCo_8009E4A8,ftCo_8009E7B4}
+            for (i = 0; i < type->field_count; ++i) {
+                const MslDatField* field = &type->fields[i];
+                uint32_t field_source = source_offset + field->source_offset;
+                if (field->source_offset == 0x10 &&
+                    field->type->kind == MSL_DAT_POINTER)
+                {
+                    uint32_t table = raw_pointer(context, field_source);
+                    void** slots = NULL;
+                    if (table != UINT32_MAX) {
+                        uint32_t slot_count =
+                            (next_boundary(context, table) - table) / 4;
+                        uint32_t s;
+                        if (slot_count == 0) {
+                            slot_count = 1;
+                        }
+                        slots = native_alloc((size_t) slot_count *
+                                             sizeof(*slots));
+                        for (s = 0; s < slot_count; ++s) {
+                            uint32_t counts =
+                                raw_pointer(context, table + s * 4);
+                            uintptr_t* words;
+                            uint32_t n;
+                            uint32_t k;
+                            if (counts == UINT32_MAX) {
+                                continue;
+                            }
+                            n = (next_boundary(context, counts) - counts) / 4;
+                            if (n == 0) {
+                                n = 1;
+                            }
+                            words = native_alloc((size_t) n * sizeof(*words));
+                            for (k = 0; k < n; ++k) {
+                                words[k] = read_be32(context->data + counts +
+                                                     k * 4);
+                            }
+                            slots[s] = words;
+                        }
+                    }
+                    memcpy((uint8_t*) native + field->native_offset, &slots,
+                           sizeof(slots));
+                    continue;
                 }
                 translate_value(context, field->type, field_source,
                                 (uint8_t*) native + field->native_offset);
@@ -848,6 +1195,25 @@ static void translate_value(MslNativeArchive* context,
             }
             return;
         }
+#if MSL_GX_RECORD
+        if (strcmp(type->name, "HSD_CObjDesc") == 0) {
+            // A camera descriptor is read through whichever member the projection type names; they share the leading fields and
+            // differ in the last four words. The whole of the largest is translated.
+            // refs/melee/src/sysdolphin/baselib/cobj.c::CObjLoad
+            const MslDatField* widest = NULL;
+            uint32_t k;
+            for (k = 0; k < type->field_count; ++k) {
+                if (widest == NULL || type->fields[k].type->source_size > widest->type->source_size) {
+                    widest = &type->fields[k];
+                }
+            }
+            if (widest != NULL) {
+                translate_value(context, widest->type, source_offset + widest->source_offset,
+                                (uint8_t*) native + widest->native_offset);
+            }
+            return;
+        }
+#endif
         if (type->field_count != 0) {
             const MslDatField* field = &type->fields[0];
             translate_value(context, field->type,
@@ -950,6 +1316,17 @@ int msl_native_archive_parse(HSD_Archive* archive, uint8_t* source,
     context->data = archive->data;
     context->data_size = archive->header.data_size;
     context->reloc_count = archive->header.nb_reloc;
+#if MSL_GX_RECORD
+    {
+        // The console relocates a file in place: each pointer field holds the file's base address plus its target. The base is
+        // wherever the game's heap put the file, which no input here determines; files are placed one after the other from a
+        // fixed start (MSL_DAT_BASE sets one base for every file, to test against a console capture).
+        static uint32_t next_console_base = 0x80300000u;
+        const char* forced = getenv("MSL_DAT_BASE");
+        context->console_base = forced != NULL ? (uint32_t) strtoul(forced, NULL, 0) : next_console_base;
+        next_console_base += (archive->header.data_size + 31u) & ~31u;
+    }
+#endif
     context->reloc_fields = native_alloc(
         (size_t) context->reloc_count * sizeof(*context->reloc_fields));
     boundaries_capacity = context->reloc_count + archive->header.nb_public + 1;
@@ -1120,6 +1497,93 @@ static const MslDatType* msl_kirby_copy_root_type(const char* symbol)
     return NULL;
 }
 
+#if MSL_GX_RECORD
+// A text engine table (baselib/sislib.c, the public symbols "SIS_*"): word 0 the font's glyph bitmaps (32x32, I4, 512 bytes each), word 1
+// the kerning pairs (2 bytes per glyph), then the strings the game asks for by index: byte streams of the engine (an op byte, its
+// operands; glyph codes are 2 bytes; the grammar of HSD_SisLib_803A6478). The console keeps them as 32-bit pointers into the file; the
+// table here holds host pointers to copies of the same bytes, with room after each string for what the game appends to it
+// (HSD_SisLib_803A660C).
+// refs/melee/src/sysdolphin/baselib/sislib.c
+static uint32_t sis_stream_length(const MslNativeArchive* context, uint32_t start)
+{
+    uint32_t at = start;
+    while (at < context->data_size) {
+        uint8_t op = context->data[at];
+        if (op == 0) {
+            return at - start;
+        }
+        if (op >= 0x20) {
+            at += 2;
+            continue;
+        }
+        switch (op) {
+        case 6: case 7: case 8: case 9: case 10: case 14:
+            if (op == 8 || op == 9) {
+                static int warned;
+                if (!warned) {
+                    warned = 1;
+                    fprintf(stderr, "native DAT: a text stream jumps (op %u at 0x%x): not translated\n", (unsigned) op, (unsigned) at);
+                }
+            }
+            at += 5;
+            break;
+        case 12:
+            at += 4;
+            break;
+        case 5:
+            at += 3;
+            break;
+        default:
+            at += 1;
+            break;
+        }
+    }
+    return context->data_size - start;
+}
+
+static void* translate_sis_table(MslNativeArchive* context, uint32_t offset)
+{
+    uint32_t count = 0;
+    uint8_t** table;
+    uint32_t i;
+    uint32_t bitmaps;
+    uint32_t kerning;
+
+    while (count < 256 && raw_pointer(context, offset + count * 4) != UINT32_MAX) {
+        count += 1;
+    }
+    if (count < 2) {
+        return NULL;
+    }
+    table = native_alloc((size_t) (count + 1) * sizeof(*table));
+    bitmaps = raw_pointer(context, offset);
+    kerning = raw_pointer(context, offset + 4);
+    for (i = 0; i < count; ++i) {
+        uint32_t target = raw_pointer(context, offset + i * 4);
+        uint32_t length;
+        uint32_t room = 0;
+
+        if (target >= context->data_size) {
+            continue;
+        }
+        if (i == 0) {
+            length = kerning > bitmaps ? kerning - bitmaps : ((bitmaps - kerning) / 2) * 512;
+        } else if (i == 1) {
+            length = bitmaps > kerning ? bitmaps - kerning : (kerning - bitmaps) / 512 * 2;
+        } else {
+            length = sis_stream_length(context, target) + 1;
+            room = 512;
+        }
+        if (target + length > context->data_size) {
+            length = context->data_size - target;
+        }
+        table[i] = native_alloc((size_t) length + room + 4);
+        memcpy(table[i], context->data + target, length);
+    }
+    return table;
+}
+#endif
+
 static const MslDatType* public_type(const char* symbol)
 {
     size_t length = strlen(symbol);
@@ -1172,6 +1636,11 @@ static const MslDatType* public_type(const char* symbol)
     if (strcmp(symbol, "itPublicData") == 0) {
         return msl_dat_root_it_804D6D20_t;
     }
+#if MSL_GX_RECORD
+    if (length >= 11 && strcmp(symbol + length - 11, "_image_desc") == 0) {
+        return msl_dat_root_HSD_ImageDesc;
+    }
+#endif
     if (length >= 9 && strcmp(symbol + length - 9, "_figatree") == 0) {
         return msl_dat_root_FigaTree;
     }
@@ -1215,6 +1684,190 @@ static void* translate_stage_params(MslNativeArchive* context,
     }
     return translate_target_count(context, offset, type, 1);
 }
+
+#if MSL_GX_RECORD
+/* map_plit: the stage's light sets (a null-ended array of LightList*; each LightList names a chain of HSD_LightDesc). The
+ * generated layout leaves HSD_LightDesc.u (attenuation data a point or spot light reads) to be built here by light type,
+ * as HSD_LObjLoadDesc reads it (LObjLoad). */
+static void translate_light_attenuation(MslNativeArchive* context, uint32_t desc_offset, HSD_LightDesc* desc)
+{
+    uint32_t u = raw_pointer(context, desc_offset + 0x18);
+    const MslDatType* type = NULL;
+
+    if (u == UINT32_MAX) {
+        return;
+    }
+    switch (desc->flags & LOBJ_TYPE_MASK) {
+    case LOBJ_POINT:
+        type = (desc->attnflags & LOBJ_LIGHT_ATTN) ? msl_dat_root_HSD_LightAttn : msl_dat_root_HSD_LightPointDesc;
+        break;
+    case LOBJ_SPOT:
+        type = desc->attnflags != 0 ? msl_dat_root_HSD_LightAttn : msl_dat_root_HSD_LightSpotDesc;
+        break;
+    default:
+        return;
+    }
+    desc->u.p = translate_target_count(context, u, type, 1);
+}
+
+static void* translate_stage_lights(MslNativeArchive* context, uint32_t offset)
+{
+    uint32_t count = 0;
+    uint32_t i;
+    LightList** result;
+
+    while (raw_pointer(context, offset + count * 4) != UINT32_MAX) {
+        count += 1;
+    }
+    result = native_alloc((size_t) (count + 1) * sizeof(*result));
+    for (i = 0; i < count; ++i) {
+        uint32_t list = raw_pointer(context, offset + i * 4);
+        uint32_t desc_offset;
+        HSD_LightDesc* desc;
+
+        result[i] = translate_target_count(context, list, msl_dat_root_LightList, 1);
+        desc_offset = raw_pointer(context, list);
+        for (desc = result[i]->desc; desc != NULL && desc_offset != UINT32_MAX; desc = desc->next) {
+            translate_light_attenuation(context, desc_offset, desc);
+            desc_offset = raw_pointer(context, desc_offset + 0x04);
+        }
+    }
+    return result;
+}
+
+/* A scene's lights (SceneDesc.lights at +8: a null-ended array of LightList*): the scene's own translation covers the descs, not the
+ * attenuation data a point or spot light reads (translate_light_attenuation) */
+static void translate_scene_light_attenuation(MslNativeArchive* context, uint32_t scene_offset, SceneDesc* scene)
+{
+    uint32_t array = raw_pointer(context, scene_offset + 0x08);
+    uint32_t i;
+
+    if (scene == NULL || scene->lights == NULL || array == UINT32_MAX) {
+        return;
+    }
+    for (i = 0; scene->lights[i] != NULL; ++i) {
+        uint32_t list = raw_pointer(context, array + i * 4);
+        uint32_t desc_offset;
+        HSD_LightDesc* desc;
+
+        if (list == UINT32_MAX) {
+            return;
+        }
+        desc_offset = raw_pointer(context, list);
+        for (desc = scene->lights[i]->desc; desc != NULL && desc_offset != UINT32_MAX; desc = desc->next) {
+            translate_light_attenuation(context, desc_offset, desc);
+            desc_offset = raw_pointer(context, desc_offset + 0x04);
+        }
+    }
+}
+
+/* A stage file's lights beyond map_plit: each map entry (UnkStageDat_x8_t at +8 of map_head, 0x34 bytes each) names its light
+ * sets at +0x18 (the decomp types it void*), and UnkStageDat names the per-light flag overrides (Ground_801C20E0) at +0x18
+ * with their count at +0x1C. The viewer build's Ground_801C466C reads both. */
+/* Whether the words at `offset` are a stage's light sets (a null-ended array of LightList pointers, each a desc pointer and an
+ * animation pointer, each desc a class name, a next pointer, light flags): the map entries' +0x18 word names different things in
+ * different entries, and the stage's callbacks that say which is the lights are not known while the file is read. */
+extern StageCallbacks* msl_native_dat_stage_callbacks;
+static int looks_like_light_sets(MslNativeArchive* context, uint32_t offset)
+{
+    uint32_t n = 0;
+    while (n < 16) {
+        uint32_t list = raw_pointer(context, offset + n * 4);
+        uint32_t desc;
+        uint32_t flags;
+        if (list == UINT32_MAX) {
+            break;
+        }
+        if (list + 8 > context->data_size) {
+            return 0;
+        }
+        desc = raw_pointer(context, list);
+        if (desc == UINT32_MAX || desc + 0x1C > context->data_size) {
+            return 0;
+        }
+        flags = read_be32(context->data + desc + 8);
+        if ((flags >> 16) >= 0x1000 || (flags & 0xFFFF) >= 0x10) {
+            return 0;
+        }
+        n++;
+    }
+    return n >= 1 && n < 16 && offset + n * 4 + 4 <= context->data_size && read_be32(context->data + offset + n * 4) == 0;
+}
+
+static void translate_stage_light_tables(MslNativeArchive* context, uint32_t map_head, UnkStageDat* dat)
+{
+    typedef struct MslLightOverride {
+        HSD_LightDesc* desc;
+        uint8_t a : 1, b : 1, c : 1;   /* the source byte's top three bits (0x80, 0x40, 0x20) */
+        uint8_t rest : 5;
+        uint8_t pad[3];   /* (ground.c's LightOverrideEntry: the host's own stride, 8 bytes with 4-byte pointers) */
+    } MslLightOverride;
+    uint32_t maps = raw_pointer(context, map_head + 8);
+    uint32_t count = read_be32(context->data + map_head + 12);
+    uint32_t i;
+    uint32_t over;
+    uint32_t over_count;
+
+    /* map_plit's lights first: the overrides name descs of both sets */
+    (void) msl_native_archive_get_public(context->archive, "map_plit");
+    over = raw_pointer(context, map_head + 0x18);
+    over_count = read_be32(context->data + map_head + 0x1C);
+
+    if (maps != UINT32_MAX && dat->unk8 != NULL) {
+        for (i = 0; i < count; ++i) {
+            dat->unk8[i].x18 = NULL;   /* (the other entries' +0x18 words name other things: left out) */
+        }
+        for (i = 0; i < count; ++i) {
+            uint32_t lights = raw_pointer(context, maps + i * 0x34 + 0x18);
+            /* the map the stage's callbacks flag (0x80000000) holds the lights, as Ground_801C466C_inline picks it */
+            if (msl_native_dat_stage_callbacks != NULL && !(msl_native_dat_stage_callbacks[i].flags & 0x80000000)) {
+                continue;
+            }
+            if (lights != UINT32_MAX && looks_like_light_sets(context, lights)) {
+                dat->unk8[i].x18 = translate_stage_lights(context, lights);
+                break;
+            }
+        }
+    }
+    if (over != UINT32_MAX && over_count != 0) {
+        MslLightOverride* native = native_alloc((size_t) over_count * sizeof(*native));
+        for (i = 0; i < over_count; ++i) {
+            uint32_t desc = raw_pointer(context, over + i * 8);
+            uint8_t bits = context->data[over + i * 8 + 4];
+            if (desc != UINT32_MAX) {
+                /* only descs of a light set this build translates can be one a set holds: the rest never match */
+                MslDatMemo* memo = find_memo(context, desc);
+                if (memo != NULL && memo->type == msl_dat_root_HSD_LightDesc) {
+                    native[i].desc = memo->native;
+                }
+            }
+            native[i].a = (bits & 0x80) != 0;
+            native[i].b = (bits & 0x40) != 0;
+            native[i].c = (bits & 0x20) != 0;
+        }
+        dat->unk18 = native;
+    }
+    /* UnkStageDat.unk20: the light animations that loop (Ground_801C43C4): {LightAnim*, flag in the source byte's top bit} */
+    {
+        typedef struct MslLightAnimFlag {
+            void* unk0;
+            uint8_t flag : 1;   /* (the decomp's Ground_801C43C4 element: a pointer and a byte, the host's own stride) */
+        } MslLightAnimFlag;
+        uint32_t table = raw_pointer(context, map_head + 0x20);
+        uint32_t table_count = read_be32(context->data + map_head + 0x24);
+        if (table != UINT32_MAX && table_count != 0) {
+            MslLightAnimFlag* native = native_alloc((size_t) table_count * sizeof(*native));
+            for (i = 0; i < table_count; ++i) {
+                uint32_t anim = raw_pointer(context, table + i * 8);
+                MslDatMemo* memo = anim != UINT32_MAX ? find_memo(context, anim) : NULL;
+                native[i].unk0 = memo != NULL ? memo->native : NULL;
+                native[i].flag = (context->data[table + i * 8 + 4] & 0x80) != 0;
+            }
+            dat->unk20 = native;
+        }
+    }
+}
+#endif
 
 static void* translate_stage_item_public(MslNativeArchive* context,
                                          uint32_t offset)
@@ -1482,7 +2135,13 @@ static void* translate_fighter_common_public(MslNativeArchive* context,
         // refs/melee/src/melee/ft/ft_0D4D.c::ftCo_800D4FF4
         msl_dat_root_Fighter_804D6534_t,
         msl_dat_root_MslDatVec2Pointer,
-        msl_dat_root_MslDatByte,
+        // Pointers 10 and 11 are one (list, length) pair each: the shake of
+        // a held fighter that mashes and of a smash charge. Fighter_804D652C_t
+        // has Fighter_804D6528_t's layout; as bytes the pair kept the file's
+        // 32-bit words and ftCommon_InitGrab read its length past them.
+        // refs/melee/src/melee/ft/ftcommon.c::{ftCommon_InitGrab,
+        //   ftCommon_GrabMash,ftCommon_8008021C}
+        msl_dat_root_Fighter_804D6528_t,
         msl_dat_root_Fighter_804D6528_t,
         msl_dat_root_Fighter_804D6524_t,
         msl_dat_root_Fighter_804D6520_t,
@@ -1506,6 +2165,28 @@ static void* translate_fighter_common_public(MslNativeArchive* context,
                             ? translate_fighter_cpu_tables(context, target)
                             : translate_target(context, target,
                                                element_types[i]);
+        }
+    }
+    // Pointer 9 (Fighter_804D6530, the hit's model shake) is three pairs of
+    // a table of offsets and that table's length: air, ground, electric. As
+    // pointers the three lengths (plain words, no relocation) came out null,
+    // so ftCo_8009064C stored a length of 0 and Fighter_procUpdate put the
+    // shake's index back to 0 every frame: the shake stood on its table's
+    // first entry. The lengths are the file's own words, kept in the odd
+    // slots as the game's code reads them. Only the model's shake reads
+    // this; gameplay does not.
+    // refs/melee/src/melee/ft/chara/ftCommon/ftCo_DamageFall.c::{
+    //   ftCo_8009064C,ftCo_80090690}, refs/melee/src/melee/ft/fighter.c
+    {
+        uint32_t target = raw_pointer(context, offset + 9 * 4);
+        void** pairs = result[9];
+        if (target != UINT32_MAX && pairs != NULL &&
+            next_boundary(context, target) - target >= 24)
+        {
+            for (i = 0; i < 3; ++i) {
+                pairs[i * 2 + 1] = (void*) (uintptr_t) read_be32(
+                    context->data + target + (i * 2 + 1) * 4);
+            }
         }
     }
     return result;
@@ -1534,6 +2215,61 @@ typedef enum MslFighterArticleProfile {
     MSL_FIGHTER_ARTICLES_CLINK,
     MSL_FIGHTER_AUX_PURIN_PARTS,
 } MslFighterArticleProfile;
+
+#if MSL_GX_RECORD
+/* The part-visibility tables of a fighter (FtPartsDesc.vis_table, ftParts_8007487C): the decomp types them void*, so the
+ * layout generator leaves them as raw big-endian PPC data. The viewer build reads them (ftParts_80074D7C hides DObjs by
+ * them), so they are rebuilt here as the native FtPartsVisLookup / TempS / u8 arrays. */
+static void translate_parts_vis(MslNativeArchive* context, uint32_t desc_offset, FtPartsDesc* desc)
+{
+    uint32_t models, table, rows, r, c, m, j;
+    void* (*native)[4];
+
+    if (desc_offset == UINT32_MAX || desc_offset + 8 > context->data_size) {
+        return;
+    }
+    models = read_be32(context->data + desc_offset);
+    table = raw_pointer(context, desc_offset + 4);
+    if (table == UINT32_MAX || models > 11) {
+        return;
+    }
+    rows = (next_boundary(context, table) - table) / 16;
+    if (rows == 0) {
+        rows = 1;
+    }
+    native = native_alloc((size_t) rows * sizeof(*native));
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < 4; c++) {
+            uint32_t lookup = raw_pointer(context, table + r * 16 + c * 4);
+            FtPartsVisLookup* lk;
+            if (lookup == UINT32_MAX) {
+                continue;
+            }
+            lk = native_alloc((size_t) models * sizeof(*lk));
+            for (m = 0; m < models; m++) {
+                uint32_t count = read_be32(context->data + lookup + m * 8);
+                uint32_t list = raw_pointer(context, lookup + m * 8 + 4);
+                lk[m].x0 = (int) count;
+                if (list == UINT32_MAX || count == 0) {
+                    continue;
+                }
+                lk[m].x4 = native_alloc((size_t) count * sizeof(TempS));
+                for (j = 0; j < count; j++) {
+                    uint32_t n = read_be32(context->data + list + j * 8);
+                    uint32_t bytes = raw_pointer(context, list + j * 8 + 4);
+                    lk[m].x4[j].x0 = (int) n;
+                    if (bytes != UINT32_MAX && n != 0) {
+                        lk[m].x4[j].x4 = native_alloc(n);
+                        memcpy(lk[m].x4[j].x4, context->data + bytes, n);
+                    }
+                }
+            }
+            native[r][c] = lk;
+        }
+    }
+    desc->vis_table = native;
+}
+#endif
 
 static ftData* translate_fighter_public(
     MslNativeArchive* context, uint32_t offset,
@@ -1576,6 +2312,9 @@ static ftData* translate_fighter_public(
     }
     result->x10 = translate_target_count(
         context, target, msl_dat_root_MslDatAnimBytePair, anim_count);
+#if MSL_GX_RECORD
+    translate_parts_vis(context, raw_pointer(context, offset + 0x08), &result->x8->x0);
+#endif
 
     switch (article_profile) {
     case MSL_FIGHTER_ARTICLES_NONE:
@@ -1936,6 +2675,9 @@ void* msl_native_archive_get_public(HSD_Archive* archive, const char* symbol)
     if (cached != NULL) {
         return cached->address;
     }
+    if (native_dat_initialization_complete) {
+        fprintf(stderr, "uncached native archive public lookup of '%s'", symbol);
+    }
     require_dat_initialization("uncached native archive public lookup");
     type = public_type(symbol);
     offset = raw_public_offset(archive, symbol);
@@ -2090,10 +2832,56 @@ void* msl_native_archive_get_public(HSD_Archive* archive, const char* symbol)
     } else if (strcmp(symbol, "map_head") == 0) {
         translate_stage_animation_tables(context, offset);
         result = translate_target_count(context, offset, type, 1);
+#if MSL_GX_RECORD
+        translate_stage_light_tables(context, offset, (UnkStageDat*) result);
+#endif
     } else if (strcmp(symbol, "yakumono_param") == 0) {
         result = translate_stage_params(context, offset);
     } else if (strcmp(symbol, "itemdata") == 0) {
         result = translate_stage_item_public(context, offset);
+#if MSL_GX_RECORD
+    } else if (strcmp(symbol, "lupe") == 0 || strcmp(symbol, "tdsce") == 0 ||
+               strcmp(symbol, "Stc_scemdls") == 0 ||
+               strcmp(symbol, "Stc_rarwmdls") == 0 ||
+               (strlen(symbol) > 13 &&
+                strcmp(symbol + strlen(symbol) - 13, "_scene_models") == 0))
+    {
+        // The HUD's files publish null-ended lists of model descriptors (lbArchive_LoadSections hands them out as
+        // DynamicModelDesc**).
+        // refs/melee/src/melee/if/{ifstatus.c,ifstock.c,iftime.c,ifmagnify.c,ifnametag.c}
+        uint32_t count = 0;
+        while (raw_pointer(context, offset + count * 4) != UINT32_MAX) {
+            count += 1;
+        }
+        result = translate_target_count(context, offset, msl_dat_root_MslDatModelDescList, count + 1);
+    } else if (strcmp(symbol, "lbRefData") == 0) {
+        // LbRf.dat: the refraction users' parameters: a count (a byte, then 3 of padding), then a pointer to count pairs of floats
+        // (melee/lb/lbrefract.c::lbRefData)
+        struct { int32_t count; float* params; }* data;
+        uint32_t count = context->data[offset];
+        uint32_t target = raw_pointer(context, offset + 4);
+        uint32_t i;
+        data = native_alloc(sizeof(*data));
+        data->count = (int32_t) count;
+        data->params = native_alloc((size_t) (count * 2 + 2) * sizeof(float));
+        for (i = 0; target != UINT32_MAX && i < count * 2 && target + 4 * (i + 1) <= context->data_size; ++i) {
+            uint32_t bits = read_be32(context->data + target + 4 * i);
+            memcpy(&data->params[i], &bits, sizeof(float));
+        }
+        result = data;
+    } else if (strncmp(symbol, "SIS_", 4) == 0) {
+        result = translate_sis_table(context, offset);
+    } else if (strcmp(symbol, "lbBgFlashColAnimData") == 0) {
+        // LbBf.dat: the screen flash's color animation scripts, the fighters' color animation data type (lb_800144C8)
+        result = translate_target(context, offset, msl_dat_root_Fighter_804D653C_t);
+    } else if (strlen(symbol) > 11 && strcmp(symbol + strlen(symbol) - 11, "_scene_data") == 0) {
+        // refs/melee/src/melee/if/ifall.c::ifAll_802F390C: the scene (cameras, lights, fogs, models)
+        result = translate_target_count(context, offset, msl_dat_root_SceneDesc, 1);
+        // the lights' attenuation data (a point or spot light's HSD_LightDesc.u), built as a stage's light sets are
+        translate_scene_light_attenuation(context, offset, (SceneDesc*) result);
+    } else if (strcmp(symbol, "map_plit") == 0) {
+        result = translate_stage_lights(context, offset);
+#endif
     } else if (type != NULL) {
         result = translate_target_count(context, offset, type, 1);
     }
@@ -2122,6 +2910,64 @@ void msl_native_archive_locate_extern(HSD_Archive* archive,
         fprintf(stderr, "native DAT non-null external symbols are unsupported\n");
         abort();
     }
+}
+
+// The particle probe's (sysdolphin/baselib/ps_probe.c): each translated
+// command's script. The translation keeps a command's header only (the
+// headless core runs no particle scripts); the probe runs them, so with
+// MSL_PARTICLE_PROBE set the bytes after the header are kept beside it.
+typedef struct MslParticleScript {
+    const HSD_PSCmdList* command;
+    uint8_t* bytes;
+    uint32_t size;
+} MslParticleScript;
+static MslParticleScript* particle_scripts;
+static size_t particle_script_count;
+static size_t particle_script_capacity;
+
+static void note_particle_script(const HSD_PSCmdList* command,
+                                 const uint8_t* bytes, uint32_t size)
+{
+    MslParticleScript* slot;
+    const char* on = getenv("MSL_PARTICLE_PROBE");
+
+#if MSL_GX_RECORD
+    // (the viewer build runs the probe's library always)
+    (void) on;
+    if (command == NULL) {
+        return;
+    }
+#else
+    if (on == NULL || on[0] == '\0' || command == NULL) {
+        return;
+    }
+#endif
+    if (particle_script_count == particle_script_capacity) {
+        particle_script_capacity =
+            particle_script_capacity ? particle_script_capacity * 2 : 1024;
+        particle_scripts =
+            realloc(particle_scripts,
+                    particle_script_capacity * sizeof(*particle_scripts));
+    }
+    slot = &particle_scripts[particle_script_count++];
+    slot->command = command;
+    slot->size = size;
+    slot->bytes = malloc(size ? size : 1);
+    memcpy(slot->bytes, bytes, size);
+}
+
+const uint8_t* msl_native_particle_script(const HSD_PSCmdList* command,
+                                          uint32_t* size)
+{
+    size_t i;
+    // (the newest first: an archive loaded again is translated again)
+    for (i = particle_script_count; i > 0; --i) {
+        if (particle_scripts[i - 1].command == command) {
+            *size = particle_scripts[i - 1].size;
+            return particle_scripts[i - 1].bytes;
+        }
+    }
+    return NULL;
 }
 
 // psInitDataBankLoad's command bank: version 0 lists [0, count); versions
@@ -2165,8 +3011,24 @@ static int msl_translate_particle_bank(MslNativeArchive* context, uint32_t bank,
             context->data + entries +
             (version == 0 ? i : i - first_count) * 4);
         if (relative != 0) {
+            // (its script runs to the next command's header, or the data's end)
+            uint32_t start = bank + relative + 0x3C;
+            uint32_t end = context->data_size;
+            uint32_t j;
             result[i - *id_base] = translate_target_count(
                 context, bank + relative, msl_dat_root_HSD_PSCmdList, 1);
+            for (j = version == 0 ? 0 : first_count; j < total; ++j) {
+                uint32_t other = read_be32(
+                    context->data + entries +
+                    (version == 0 ? j : j - first_count) * 4);
+                if (other != 0 && bank + other >= start && bank + other < end) {
+                    end = bank + other;
+                }
+            }
+            if (start <= context->data_size) {
+                note_particle_script(result[i - *id_base], context->data + start,
+                                     end - start);
+            }
         }
     }
     *count = (int) total;
@@ -2254,3 +3116,129 @@ EF_EffectDesc* msl_native_effect_models(HSD_Archive* archive,
                                   msl_dat_root_EF_EffectDesc,
                                   (uint32_t) count);
 }
+
+#if MSL_GX_RECORD
+// Viewer build: the particle texture groups of a bank (psInitDataBank's texBank: a count, then that many group pointers; a
+// group is a header and texTable[num + palnum] pointers to the images and then the palettes). The game relocates them in
+// place (psInitDataBankLocate); here each group is a host-width copy and each image or palette a copy of its bytes in the arena
+// (so the GX layer can name them).
+// refs/melee/src/sysdolphin/baselib/particle.c::{psInitDataBankLocate,psInitDataBankLoad}
+// The bytes of an image of a texture format (GXGetTexBufferSize without mipmaps): whole tiles of 32 bytes (64 for RGBA8).
+static uint32_t particle_image_bytes(uint32_t fmt, uint32_t width, uint32_t height)
+{
+    uint32_t tile_w;
+    uint32_t tile_h;
+    uint32_t tile_bytes = 32;
+
+    switch (fmt) {
+    case 0: case 8: case 0xE: tile_w = 8; tile_h = 8; break;      // I4, C4, CMPR
+    case 1: case 2: case 9: tile_w = 8; tile_h = 4; break;        // I8, IA4, C8
+    case 6: tile_w = 4; tile_h = 4; tile_bytes = 64; break;       // RGBA8
+    default: tile_w = 4; tile_h = 4; break;                       // IA8, RGB565, RGB5A3, C14X2
+    }
+    return ((width + tile_w - 1) / tile_w) * ((height + tile_h - 1) / tile_h) * tile_bytes;
+}
+
+// The bank's own layout: every offset in it (the groups, their images and palettes) is relative to the bank's start, which the
+// game adds in place (psInitDataBankLocate phase 3), so none of them are in the archive's relocation table. A group's palettes
+// follow its images in texTable: one when palflag & 1, palnum of them, or one per image (formats C4, C8, C14X2 only).
+static HSD_PSTexGroup** msl_translate_particle_textures(MslNativeArchive* context, uint32_t bank, int* count)
+{
+    uint32_t groups;
+    uint32_t i;
+    HSD_PSTexGroup** result;
+
+    *count = 0;
+    if (bank == UINT32_MAX || bank + 4 > context->data_size) {
+        return NULL;
+    }
+    groups = read_be32(context->data + bank);
+    if (groups > 4096 || bank + 4 + groups * 4 > context->data_size) {
+        return NULL;
+    }
+    result = native_alloc((size_t) (groups + 1) * sizeof(*result));
+    for (i = 0; i < groups; ++i) {
+        uint32_t relative = read_be32(context->data + bank + 4 + i * 4);
+        uint32_t group = bank + relative;
+        uint32_t num;
+        uint32_t fmt;
+        uint32_t palnum;
+        uint32_t palflag;
+        uint32_t palettes = 0;
+        uint32_t total;
+        uint32_t j;
+        HSD_PSTexGroup* copy;
+
+        result[i] = NULL;
+        if (relative == 0 || group + 0x18 > context->data_size) {
+            continue;
+        }
+        num = read_be32(context->data + group);
+        fmt = read_be32(context->data + group + 0x4);
+        palnum = read_be16(context->data + group + 0x14);
+        palflag = read_be16(context->data + group + 0x16);
+        if (fmt == 8 || fmt == 9 || fmt == 10) {
+            palettes = (palflag & 1) ? 1 : (palnum != 0 ? palnum : num);
+        }
+        total = num + palettes;
+        if (total > 4096 || group + 0x18 + total * 4 > context->data_size) {
+            continue;
+        }
+        copy = native_alloc(offsetof(HSD_PSTexGroup, texTable) + (size_t) (total + 1) * sizeof(copy->texTable[0]));
+        copy->num = num;
+        copy->fmt = fmt;
+        copy->tlutfmt = read_be32(context->data + group + 0x8);
+        copy->width = read_be32(context->data + group + 0xC);
+        copy->height = read_be32(context->data + group + 0x10);
+        copy->palnum = (u16) palnum;
+        copy->palflag = (u16) palflag;
+        for (j = 0; j < total; ++j) {
+            uint32_t offset = read_be32(context->data + group + 0x18 + j * 4);
+            uint32_t size = j < num ? particle_image_bytes(fmt, copy->width, copy->height)
+                                    : (fmt == 8 ? 16u : (fmt == 9 ? 256u : 16384u)) * 2u;
+            copy->texTable[j] = NULL;
+            if (offset != 0 && bank + offset + size <= context->data_size) {
+                uint8_t* bytes = native_alloc(size);
+                memcpy(bytes, context->data + bank + offset, size);
+                copy->texTable[j] = bytes;
+            }
+        }
+        result[i] = copy;
+    }
+    *count = (int) groups;
+    return result;
+}
+
+// An effect file's: its public table's second word points at the bank (efasync.c::efAsync_LoadSync passes it as texBank).
+HSD_PSTexGroup** msl_native_effect_textures(HSD_Archive* archive, const char* symbol, int* count)
+{
+    MslNativeArchive* context;
+    uint32_t table;
+
+    require_dat_initialization("native effect texture translation");
+    *count = 0;
+    if (archive == NULL || symbol == NULL) {
+        return NULL;
+    }
+    context = archive_context(archive);
+    table = raw_public_offset(archive, symbol);
+    if (table == UINT32_MAX) {
+        return NULL;
+    }
+    return msl_translate_particle_textures(context, raw_pointer(context, table + 4), count);
+}
+
+// A stage's: map_texg is the bank itself (Ground_801C0800: psInitDataBankLoad(0x1E, map_ptcl, map_texg, 0, 0)).
+HSD_PSTexGroup** msl_native_particle_textures(HSD_Archive* archive, const char* symbol, int* count)
+{
+    uint32_t bank;
+
+    require_dat_initialization("native particle texture translation");
+    *count = 0;
+    if (archive == NULL || symbol == NULL) {
+        return NULL;
+    }
+    bank = raw_public_offset(archive, symbol);
+    return msl_translate_particle_textures(archive_context(archive), bank, count);
+}
+#endif

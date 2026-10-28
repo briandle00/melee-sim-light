@@ -21,6 +21,15 @@
 #include <dolphin/mtx.h>
 #include <dolphin/os.h>
 
+#if MSL_GX_RECORD
+// (the position-matrix log, env MSL_W4_POSLOG: every position matrix a pobj loads, with the joints it was made from)
+extern void msl_w4_poslog(int kind, HSD_JObj* a, HSD_JObj* b, Mtx m);
+#define W4_POSLOG(kind, a, b, m) msl_w4_poslog((kind), (a), (b), (m))
+#else
+#define W4_POSLOG(kind, a, b, m) ((void) 0)
+#endif
+
+
 /// @todo Several differently-signed comparisons appear in asserts, likely
 ///       indicating the sign of one of the variables is declared incorrectly
 #pragma clang diagnostic ignored "-Wsign-compare"
@@ -1031,6 +1040,7 @@ static void SetupRigidModelMtx(HSD_PObj* pobj, Mtx vmtx, Mtx pmtx,
     }
 
     GXSetCurrentMtx(GX_PNMTX0);
+    W4_POSLOG(1, jobj, NULL, pmtx);
     GXLoadPosMtxImm(pmtx, GX_PNMTX0);
     HSD_PerfCountMtxLoad();
 
@@ -1126,6 +1136,8 @@ static void SetupEnvelopeModelMtx(HSD_PObj* pobj, Mtx vmtx, Mtx pmtx,
     MtxPtr right;
     Mtx mtx;
     PObjSetupFlag flags = SETUP_NONE;
+    HSD_JObj* envelope_first_jobj = NULL;
+    int envelope_first_weight_full = 0;
 
     jobj = HSD_JObjGetCurrent();
     HSD_PObjClearMtxMark(NULL, HSD_MTX_ENVELOPE);
@@ -1142,6 +1154,8 @@ static void SetupEnvelopeModelMtx(HSD_PObj* pobj, Mtx vmtx, Mtx pmtx,
         int perf = 0;
 
         HSD_ASSERT(1872, envelope);
+        envelope_first_jobj = envelope->jobj;
+        envelope_first_weight_full = envelope->weight >= (1.0f - FLT_EPSILON);
         if (envelope->weight >= (1.0f - FLT_EPSILON)) {
             HSD_JObjSetupMatrix(envelope->jobj);
             if (right) {
@@ -1176,6 +1190,7 @@ static void SetupEnvelopeModelMtx(HSD_PObj* pobj, Mtx vmtx, Mtx pmtx,
             MTXConcat(mtxp, right, mtx);
         }
         MTXConcat(vmtx, mtxp, tmp);
+        W4_POSLOG(envelope_first_weight_full ? 2 : 3, envelope_first_jobj, jobj, tmp);
         GXLoadPosMtxImm(tmp, mtx_no);
         HSD_PerfCountMtxLoad();
 

@@ -81,9 +81,53 @@ def test_legacy_stadium_patch_establishes_frozen_play(properties_only, monkeypat
     assert game.start["stage"] == 3 and game.start["is_frozen_ps"] is False
     assert "unfrozen-stadium" not in admission.capture_issues(game, raw)
     codes = admission.gecko_codes(raw)
+    assert admission.stadium_transformations(game.start, codes) == \
+        admission.STADIUM_FROZEN
     del codes[0xC21D4578]
     monkeypatch.setattr(admission, "gecko_codes", lambda _raw: codes)
+    # Without the bypass the capture's Common/Preload Stadium Transformations
+    # would have transformed the stage, deterministically.
+    assert admission.stadium_transformations(game.start, codes) == \
+        admission.STADIUM_PRELOADED
+    assert "unfrozen-stadium" not in admission.capture_issues(game, raw)
+    # Without the preload either, the transformation archive streamed from
+    # the disc: nothing in the file says when it arrived.
+    del codes[0xC21D45EC]
+    assert admission.stadium_transformations(game.start, codes) is None
     assert "unfrozen-stadium" in admission.capture_issues(game, raw)
+
+
+def test_frozen_fd_background_is_the_nop_at_its_think():
+    nop = bytes.fromhex("0421aae460000000")
+    # The same list sets other bits too (a list without NeutralSpawn or the
+    # UCF injections sets MSL_PATCH_RETAIL_SPAWNS and the absent-UCF bits),
+    # so the test reads its own bit.
+    fd = admission.PATCH_FD_BACKGROUND_FROZEN
+    assert admission.slippi_patches({0x0421AAE4: nop}) & fd == fd
+    assert admission.slippi_patches(
+        {0x0421AAE4: bytes.fromhex("0421aae448000001")}) & fd == 0
+    assert admission.slippi_patches({}) == 0
+
+
+@pytest.mark.parametrize("codes,expected", [
+    ({0xC21D45EC: b""}, admission.STADIUM_PRELOADED),
+    ({0xC20165AC: b""}, admission.STADIUM_ONLINE_LOADED),
+    # Online's toggle (IngameCheckIfFrozen): its static byte set is frozen.
+    ({0xC20165AC: b"", 0xC21D457C: bytes.fromhex(
+        "c21d457c000000074800000c4e80002101000000")}, admission.STADIUM_FROZEN),
+    ({0xC20165AC: b"", 0xC21D457C: bytes.fromhex(
+        "c21d457c000000074800000c4e80002100000000")},
+     admission.STADIUM_ONLINE_LOADED),
+    ({}, None),
+    ({0xC21D45EC: b"", 0xC20165AC: b""}, None),
+])
+def test_stadium_patch_set_names_the_transformations(codes, expected):
+    start = {"stage": 3, "is_frozen_ps": False}
+    assert admission.stadium_transformations(start, codes) == expected
+    assert admission.stadium_transformations({"stage": 31}, codes) == \
+        admission.STADIUM_FROZEN
+    assert admission.stadium_transformations(
+        {"stage": 3, "is_frozen_ps": True}, codes) == admission.STADIUM_FROZEN
 
 
 def test_unreviewed_offscreen_body_is_rejected(properties_only, monkeypatch):
@@ -126,6 +170,13 @@ def test_unreviewed_arithmetic_override_is_rejected(properties_only):
     assert "unestablished-arithmetic" in admission.capture_issues(game, raw, fnmsubs_profile="retail")
 
 
+def test_unreviewed_host_arithmetic_is_rejected(properties_only):
+    game, raw = read_game(VALID)
+    assert admission.capture_issues(game, raw, jit_arithmetic="fma") == []
+    assert "unestablished-arithmetic" in admission.capture_issues(
+        game, raw, jit_arithmetic="no-host-fma")
+
+
 def test_excluded_captures_are_absent_from_every_suite():
     excluded = {r["replay"] for r in admission.evidence()["excluded"]}
     for path in (ROOT / "replays/suites").glob("*.json"):
@@ -166,3 +217,30 @@ def test_supported_rule_values_do_not_become_capture_bans(properties_only):
         player["stocks"] = 3
         player["handicap"] = 8
     assert "unsupported-settings" not in admission.capture_issues(game, raw)
+
+
+def test_human_levels_are_read_from_a_ranked_recording():
+    _, raw = read_game("replays/validation/icies/master-platinum-9718e1fa01455e35446f7ae7.slpz")
+    assert admission.raw_player_levels(raw) == [1, 1, 1, 1]
+
+
+def test_absent_ucf_routines_are_read_from_the_list():
+    absent = admission.PATCH_UCF_ABSENT
+    assert admission.slippi_patches({}) & absent == 0
+    # No UCF at all.
+    assert admission.slippi_patches({0xC216E510: b""}) & absent == absent
+    # UCF 0.74: dashback and shield drop, no tumble fix.
+    assert admission.slippi_patches(
+        {0xC20C9A44: b"", 0xC20998A4: b""}) & absent == \
+        admission.PATCH_UCF_TUMBLE_ABSENT
+    assert admission.slippi_patches(
+        {0xC20908F4: b"", 0xC20C9A44: b"", 0xC20998A4: b""}) & absent == 0
+
+
+def test_slippi_3_3_post_frame_record_point_is_read_from_the_list():
+    # 3.3 sends the post-frame event from the end of Fighter_procMap
+    # (0x8006C5D8); later versions send it at 0x8006DA34.
+    assert admission.slippi_patches({0xC206C5D8: b""}) & \
+        admission.PATCH_POST_FRAME_AT_MAP
+    assert admission.slippi_patches({0xC206DA34: b""}) & \
+        admission.PATCH_POST_FRAME_AT_MAP == 0

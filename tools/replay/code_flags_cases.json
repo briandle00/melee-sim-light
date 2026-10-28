@@ -1,0 +1,206 @@
+[
+ {
+  "codes": [],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255216256
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255216256
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255651356
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255651356
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255651356
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255651356
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3255330108
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255330108
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255330108
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255330108
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255651356,
+   3255330108
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255651356,
+   3255330108
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255651356,
+   3255330108
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3255216256,
+   3255651356,
+   3255330108
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": true,
+   "freeze_dead_up_fall_physics": true,
+   "whispy_dead_fighter_fix": true
+  }
+ },
+ {
+  "codes": [
+   3256280336
+  ],
+  "online": false,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": false
+  }
+ },
+ {
+  "codes": [
+   3256280336
+  ],
+  "online": true,
+  "flags": {
+   "brawl_offscreen_damage": false,
+   "freeze_dead_up_fall_physics": false,
+   "whispy_dead_fighter_fix": false
+  }
+ }
+]

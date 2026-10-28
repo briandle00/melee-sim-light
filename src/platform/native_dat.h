@@ -79,6 +79,9 @@ extern const MslDatType* const msl_dat_root_MapCollData;
 extern const MslDatType* const msl_dat_root_UnkStage6B0;
 extern const MslDatType* const msl_dat_root_DynamicModelDesc;
 extern const MslDatType* const msl_dat_root_HSD_Joint;
+#if MSL_GX_RECORD
+extern const MslDatType* const msl_dat_root_HSD_ImageDesc;
+#endif
 extern const MslDatType* const msl_dat_root_HSD_Spline;
 extern const MslDatType* const msl_dat_root_HSD_AnimJoint;
 extern const MslDatType* const msl_dat_root_HSD_MatAnimJoint;
@@ -233,6 +236,11 @@ void msl_native_archive_locate_extern(HSD_Archive* archive,
 int msl_native_effect_bank(HSD_Archive* archive, const char* symbol,
                            int* count, int* id_base,
                            HSD_PSCmdList*** commands);
+// The particle probe's: a translated command's script (the bytes after its
+// header in the archive, to the next command's), kept only while
+// MSL_PARTICLE_PROBE is set. NULL when it is not known.
+const uint8_t* msl_native_particle_script(const HSD_PSCmdList* command,
+                                          uint32_t* size);
 int msl_native_particle_bank(HSD_Archive* archive, const char* symbol,
                              int* count, int* id_base,
                              HSD_PSCmdList*** commands);
@@ -251,5 +259,26 @@ msl_native_joint_quaternion(const HSD_Joint* joint)
     // DAT arena; it remains immutable with its source descriptor.
     return (const Quaternion*) (joint + 1);
 }
+
+#if MSL_GX_RECORD
+extern const MslDatType* const msl_dat_root_HSD_DObjDesc;
+extern const MslDatType* const msl_dat_root_HSD_ShapeSetDesc;
+extern const MslDatType* const msl_dat_root_HSD_MObjDesc;
+extern const MslDatType* const msl_dat_root_LightList;
+extern const MslDatType* const msl_dat_root_HSD_LightDesc;
+extern const MslDatType* const msl_dat_root_HSD_LightAttn;
+extern const MslDatType* const msl_dat_root_HSD_LightPointDesc;
+extern const MslDatType* const msl_dat_root_HSD_LightSpotDesc;
+extern const MslDatType* const msl_dat_root_FtPartsVisLookup;
+extern const MslDatType* const msl_dat_root_MslDatEnvelopeList;
+extern const MslDatType* const msl_dat_root_SceneDesc;
+extern const MslDatType* const msl_dat_root_MslDatModelDescList;
+// The particle texture groups of an effect file (its public table's texture bank) or of a stage (map_texg); count groups.
+struct _HSD_PSTexGroup;
+struct _HSD_PSTexGroup** msl_native_effect_textures(HSD_Archive* archive, const char* symbol, int* count);
+struct _HSD_PSTexGroup** msl_native_particle_textures(HSD_Archive* archive, const char* symbol, int* count);
+// The native arena block a pointer lies in (viewer build): its start and size; 0 when it is not in the arena.
+int msl_native_dat_block(const void* pointer, const uint8_t** base, size_t* size);
+#endif
 
 #endif

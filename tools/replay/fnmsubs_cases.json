@@ -1,0 +1,52 @@
+[
+ {
+  "online": false,
+  "playedOn": "",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": false,
+  "playedOn": "dolphin",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": false,
+  "playedOn": "mainline dolphin",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": false,
+  "playedOn": "nintendont",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": false,
+  "playedOn": "network",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": true,
+  "playedOn": "",
+  "fnmsubs_zero": true
+ },
+ {
+  "online": true,
+  "playedOn": "dolphin",
+  "fnmsubs_zero": true
+ },
+ {
+  "online": true,
+  "playedOn": "mainline dolphin",
+  "fnmsubs_zero": false
+ },
+ {
+  "online": true,
+  "playedOn": "nintendont",
+  "fnmsubs_zero": true
+ },
+ {
+  "online": true,
+  "playedOn": "network",
+  "fnmsubs_zero": true
+ }
+]

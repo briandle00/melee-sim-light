@@ -567,7 +567,13 @@ void ftCo_8009DC54(Fighter* fp)
         BoneDynamicsDesc* dyn = fp->dynamic_bone_sets;
         ssize_t i = 0;
         do {
+#if MSL_GX_RECORD
+            // Jigglypuff's hat joint is fv.pr.x223C; the retail layout puts Kirby's hat.jobj at the same offset, the host's 64-bit layouts of the two union members do not.
+            // (the sim-hosted-layout bug class) refs/melee/src/melee/ft/ftdynamics.c::ftCo_8009DC54
+            HSD_JObj* cur = fp->fv.pr.x223C;
+#else
             HSD_JObj* cur = fp->fv.kb.hat.jobj;
+#endif
             ftDynamics* dynamics = data->x2C;
             ssize_t j;
             for (j = 0;

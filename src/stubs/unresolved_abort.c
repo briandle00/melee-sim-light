@@ -12,6 +12,7 @@ static void unexpected(const char* symbol)
 // reclassified with explicit source-backed semantics before the source boundary closes.
 #define ABORT_STUB(name) void name() { unexpected(#name); }
 
+#if !MSL_GX_RECORD   /* the viewer build has lobj.c */
 ABORT_STUB(HSD_LObjAddCurrent)
 ABORT_STUB(HSD_LObjClearFlags)
 ABORT_STUB(HSD_LObjRemoveAll)
@@ -19,6 +20,7 @@ ABORT_STUB(HSD_LObjSetCurrentAll)
 ABORT_STUB(HSD_LObjSetFlags)
 ABORT_STUB(HSD_LObjSetupInit)
 ABORT_STUB(HSD_LObj_803668EC)
+#endif
 ABORT_STUB(ftCh_GrabUnk1_8015ADD0)
 ABORT_STUB(ftCh_GrabUnk1_8015BC88)
 ABORT_STUB(ftMh_MS_343_80151484)
@@ -31,8 +33,10 @@ ABORT_STUB(it_8028B718)
 ABORT_STUB(it_8028B780)
 ABORT_STUB(it_8028B7E8)
 ABORT_STUB(it_8028B850)
+#if !MSL_GX_RECORD
 ABORT_STUB(lbRefract_80022998)
 ABORT_STUB(lbRefract_80022BD0)
+#endif
 
 // Indexed branches retained by common fighter code but impossible for the
 // current Fox-only kind domain.

@@ -181,6 +181,10 @@ HSD_MObj* HSD_MObjLoadDesc(HSD_MObjDesc* mobjdesc)
         }
 
         HSD_MOBJ_METHOD(mobj)->load(mobj, mobjdesc);
+#if MSL_GX_RECORD
+        // The viewer build draws: the material's TEV is compiled with the model.
+        HSD_MObjCompileTev(mobj);
+#endif
         // Headless port: TEV DAG compilation exists only to configure the GX
         // renderer. Preserve the material/texture objects used by animation,
         // but do not build presentation-only TEV state during model loading.

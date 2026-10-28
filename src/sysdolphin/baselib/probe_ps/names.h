@@ -1,0 +1,63 @@
+// The particle library's globals, as the probe's own copy names them (made by nm over the
+// library compiled alone): the simulator keeps its stand-ins under the game's names.
+#ifndef MSL_PROBE_PS_NAMES_H
+#define MSL_PROBE_PS_NAMES_H
+#define HSD_PSAppSrt_804D10B0 pp_HSD_PSAppSrt_804D10B0
+#define hsd_803983A4 pp_hsd_803983A4
+#define hsd_80398A08 pp_hsd_80398A08
+#define hsd_80398F0C pp_hsd_80398F0C
+#define hsd_80398F8C pp_hsd_80398F8C
+#define hsd_803991D8 pp_hsd_803991D8
+#define hsd_8039930C pp_hsd_8039930C
+#define hsd_8039CEAC pp_hsd_8039CEAC
+#define hsd_8039CF4C pp_hsd_8039CF4C
+#define hsd_8039D048 pp_hsd_8039D048
+#define hsd_8039D0A0 pp_hsd_8039D0A0
+#define hsd_8039D1E4 pp_hsd_8039D1E4
+#define hsd_8039D1EC pp_hsd_8039D1EC
+#define hsd_8039D214 pp_hsd_8039D214
+#define hsd_8039D354 pp_hsd_8039D354
+#define hsd_8039D3AC pp_hsd_8039D3AC
+#define hsd_8039D4DC pp_hsd_8039D4DC
+#define hsd_8039D580 pp_hsd_8039D580
+#define hsd_8039D5DC pp_hsd_8039D5DC
+#define hsd_8039D688 pp_hsd_8039D688
+#define hsd_8039D71C pp_hsd_8039D71C
+#define hsd_8039D9C8 pp_hsd_8039D9C8
+#define hsd_8039DAD4 pp_hsd_8039DAD4
+#define hsd_8039EE24 pp_hsd_8039EE24
+#define hsd_8039EFAC pp_hsd_8039EFAC
+#define hsd_8039F05C pp_hsd_8039F05C
+#define hsd_8039F6CC pp_hsd_8039F6CC
+#define hsd_804D0908 pp_hsd_804D0908
+#define hsd_804D0948 pp_hsd_804D0948
+#define hsd_804D0F60 pp_hsd_804D0F60
+#define hsd_804D0F90 pp_hsd_804D0F90
+#define hsd_804D78D8 pp_hsd_804D78D8
+#define hsd_804D78DA pp_hsd_804D78DA
+#define hsd_804D78DE pp_hsd_804D78DE
+#define hsd_804D78E0 pp_hsd_804D78E0
+#define hsd_804D78E8 pp_hsd_804D78E8
+#define hsd_804D78EC pp_hsd_804D78EC
+#define hsd_804D78F4 pp_hsd_804D78F4
+#define hsd_804D78FC pp_hsd_804D78FC
+#define hsd_804D7900 pp_hsd_804D7900
+#define psAddGeneratorAppSRT pp_psAddGeneratorAppSRT
+#define psAddGeneratorAppSRT_begin pp_psAddGeneratorAppSRT_begin
+#define psAddParticleAppSRT_begin pp_psAddParticleAppSRT_begin
+#define psAttachGeneratorAppSRT pp_psAttachGeneratorAppSRT
+#define psAttachParticleAppSRT pp_psAttachParticleAppSRT
+#define psCamera pp_psCamera
+#define psCmdListArray pp_psCmdListArray
+#define psFormGroupArray pp_psFormGroupArray
+#define psGenerateParticle0 pp_psGenerateParticle0
+#define psInitAppSRT pp_psInitAppSRT
+#define psInitDataBank pp_psInitDataBank
+#define psInitDataBankLoad pp_psInitDataBankLoad
+#define psInitDataBankLocate pp_psInitDataBankLocate
+#define psNumCmdList pp_psNumCmdList
+#define psRemoveGeneratorSRT pp_psRemoveGeneratorSRT
+#define psRemoveParticleAppSRT pp_psRemoveParticleAppSRT
+#define psTexGroupArray pp_psTexGroupArray
+#define ptclref_804D0E5C pp_ptclref_804D0E5C
+#endif

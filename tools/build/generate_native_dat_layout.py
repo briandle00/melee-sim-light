@@ -49,7 +49,22 @@ _DWARF_ATE_CODES = {
 }
 
 
-def _dwarf_tool() -> str:
+def _is_elf(object_path: Path) -> bool:
+    try:
+        with open(object_path, "rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return True
+
+
+def _dwarf_tool(object_path: Path | None = None) -> str:
+    # The host object is PE/COFF on Windows, which readelf rejects outright.
+    # binutils shares its DWARF dumper, so objdump prints the same listing for
+    # it; the PPC object stays ELF on every host and keeps the readelf path.
+    if object_path is not None and not _is_elf(object_path):
+        if shutil.which("objdump"):
+            return "objdump"
+        raise RuntimeError(f"{object_path} is not ELF and objdump is missing")
     if shutil.which("readelf"):
         return "readelf"
     # Prefer a full LLVM llvm-dwarfdump (e.g. Homebrew's) over Apple's
@@ -77,9 +92,13 @@ class Die:
 
 class Dwarf:
     def __init__(self, object_path: Path):
-        tool = _dwarf_tool()
+        tool = _dwarf_tool(object_path)
         if tool == "readelf":
             command = ["readelf", "--debug-dump=info", "--wide", str(object_path)]
+            die_re = _DIE_RE
+            attr_re = _ATTR_RE
+        elif tool == "objdump":
+            command = ["objdump", "--dwarf=info", "--wide", str(object_path)]
             die_re = _DIE_RE
             attr_re = _ATTR_RE
         else:
@@ -103,7 +122,7 @@ class Dwarf:
                     self.address_size = int(match.group(1) or match.group(2), 16)
             match = die_re.match(line)
             if match:
-                if tool == "readelf":
+                if tool in ("readelf", "objdump"):
                     depth = int(match.group(1))
                     offset = int(match.group(2), 16)
                     tag = match.group(3)
@@ -122,7 +141,7 @@ class Dwarf:
             match = attr_re.match(line)
             if match and current is not None:
                 value = match.group(2)
-                if tool != "readelf":
+                if tool not in ("readelf", "objdump"):
                     code = _DWARF_ATE_CODES.get(value)
                     if code is not None:
                         value = str(code)
@@ -301,6 +320,11 @@ class PairBuilder:
                 # boundary does after renderer omission.
                 # Source: refs/melee/src/sysdolphin/baselib/jobj.c.
                 if name == "HSD_Joint" and src_name == "u":
+                    continue
+                # HSD_LightDesc.u points at attenuation data by light type; an infinite or ambient light has none. The
+                # viewer build's stage-light translator (native_dat.c: translate_stage_lights) builds it by type.
+                # Source: refs/melee/src/sysdolphin/baselib/lobj.c::LObjLoad.
+                if name == "HSD_LightDesc" and src_name == "u":
                     continue
                 # Article special attributes are declared void in the decomp.
                 # The Fox public-root translator supplies the exact type for
@@ -636,11 +660,48 @@ DAT_ROOT_NAMES = [
     "itLinkArrowAttributes",
 ]
 
+# what a draw object tree hangs from, beyond the skeleton (HSD_Joint): the viewer build translates the DObj/MObj/PObj/
+# TObj descriptors a joint's union points at (refs/melee/src/sysdolphin/baselib/{jobj,dobj,mobj,pobj,tobj}.c)
+DRAW_OBJECT_ROOT_NAMES = [
+    "HSD_DObjDesc",
+    "HSD_ShapeSetDesc",
+    "HSD_MObjDesc",
+    "LightList",
+    "HSD_ImageDesc",
+    "HSD_LightDesc",
+    "HSD_LightAttn",
+    "HSD_LightPointDesc",
+    "HSD_LightSpotDesc",
+    "FtPartsVisLookup",
+]
+
+
+# what the presentation code (HUD, effects: refs/melee/src/melee/{if,ef}) reads from its archives, beyond the draw objects: a scene
+# (cameras, lights, fogs and the list of its models) and the null-ended lists of model descriptors the HUD's files publish
+PRESENT_ROOT_NAMES = [
+    "SceneDesc",
+]
+
+
+def scene_member_pointee(dwarf: "Dwarf", member_name: str) -> "Die":
+    """The type SceneDesc's member `member_name` points to (models: DynamicModelDesc** -> DynamicModelDesc*)."""
+    scene = dwarf.named("SceneDesc")
+    while scene.tag in _WRAPPERS:
+        scene = dwarf.ref(scene)
+    member = next(m for m in PairBuilder._members(scene) if dwarf.name(m) == member_name)
+    pointer = dwarf.ref(member)
+    while pointer.tag in _WRAPPERS:
+        pointer = dwarf.ref(pointer)
+    return dwarf.ref(pointer)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ppc", type=Path, required=True)
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    # the viewer build (MSL_GX_RECORD): also the roots the draw objects hang from
+    parser.add_argument("--draw-objects", action="store_true")
     args = parser.parse_args()
 
     src = Dwarf.from_layout(args.ppc)
@@ -649,6 +710,36 @@ def main() -> None:
     roots = [
         (name, builder.pair(src.named(name), dst.named(name))) for name in DAT_ROOT_NAMES
     ]
+    if args.draw_objects:
+        for name in DRAW_OBJECT_ROOT_NAMES:
+            roots.append((name, builder.pair(src.named(name), dst.named(name))))
+        for name in PRESENT_ROOT_NAMES:
+            roots.append((name, builder.pair(src.named(name), dst.named(name))))
+        # a null-ended list of model descriptors: the element type is DynamicModelDesc*
+        roots.append((
+            "MslDatModelDescList",
+            builder.pair(scene_member_pointee(src, "models"), scene_member_pointee(dst, "models")),
+        ))
+        # HSD_PObjDesc.u.envelope_p is an HSD_EnvelopeDesc**: its element type, HSD_EnvelopeDesc*, is the root of an
+        # envelope list (a null-ended array of pointers to null-ended arrays of descriptors)
+        def pobj_union_member(dwarf: Dwarf, member_name: str) -> Die:
+            pobj = dwarf.named("HSD_PObjDesc")
+            while pobj.tag in _WRAPPERS:
+                pobj = dwarf.ref(pobj)
+            union = next(
+                dwarf.ref(m) for m in PairBuilder._members(pobj) if dwarf.name(m) == "u"
+            )
+            while union.tag in _WRAPPERS:
+                union = dwarf.ref(union)
+            member = next(m for m in PairBuilder._members(union) if dwarf.name(m) == member_name)
+            pointer = dwarf.ref(member)
+            while pointer.tag in _WRAPPERS:
+                pointer = dwarf.ref(pointer)
+            return dwarf.ref(pointer)       # the pointee of HSD_EnvelopeDesc**: HSD_EnvelopeDesc*
+        roots.append((
+            "MslDatEnvelopeList",
+            builder.pair(pobj_union_member(src, "envelope_p"), pobj_union_member(dst, "envelope_p")),
+        ))
     emit(builder, roots, args.output)
 
 

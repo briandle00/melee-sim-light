@@ -145,8 +145,14 @@ void Stage_80224CAC(Vec3* out)
     rotation.z = 0.0F;
     lbVector_ApplyEulerRotation(&forward, &rotation);
     scale = out->z / -forward.z;
+#if MSL_GX_RECORD
+    // GALE01 Stage_80224CAC 0x80224D50..: both sums are fmadds
+    result.x = __fmadds(forward.x, scale, out->x);
+    result.y = __fmadds(forward.y, scale, out->y);
+#else
     result.x = forward.x * scale + out->x;
     result.y = forward.y * scale + out->y;
+#endif
     result.z = 0.0F;
     *out = result;
 }
@@ -401,6 +407,28 @@ static bool headless_camera_point_on_screen(const Mtx view, float fov,
     return pixel_x >= 0 && pixel_x < 640 && pixel_y >= 0 && pixel_y < 480;
 }
 
+// The viewer build's real fighter draw (ftDrawCommon_80080E18_inline2) needs
+// the same camera-to-world transform of a DeadUpFall fighter that
+// msl_camera_publish_match_visibility publishes into cur_pos, but the draw must
+// not read a camera CObj that the headless camera never keeps current.
+// Offline retail uses the separately maintained DeadUp camera, Slippi Online
+// (FreezeDeadUpFallPhysics) the live one and only for the model.
+bool msl_camera_deadup_world_position(const Vec3* camera_space, Vec3* world)
+{
+    Mtx view;
+    Mtx inverse;
+    Vec3 eye;
+    float fov;
+
+    headless_camera_build_view(view, &eye, &fov,
+                               !msl_core_freezes_dead_up_fall_physics());
+    if (!PSMTXInverse(view, inverse)) {
+        return false;
+    }
+    PSMTXMultVec(inverse, (Vec3*) camera_space, world);
+    return true;
+}
+
 void msl_camera_publish_match_visibility(Fighter_GObj* const* fighters,
                                          int fighter_count)
 {
@@ -425,7 +453,10 @@ void msl_camera_publish_match_visibility(Fighter_GObj* const* fighters,
         // a new one.
         // refs/melee/src/melee/if/ifmagnify.c::ifMagnify_802FC618
         // refs/melee/src/melee/ft/fighter.c::Fighter_80068E64
-        if (fp->player_id >= 0 && fp->player_id < 6) {
+        // It asks Player_GetEntity(slot) - the port's leader - so an Ice
+        // Climbers port publishes Popo's bit and never Nana's; she shares
+        // Popo's slot and would otherwise overwrite it every frame.
+        if (fp->player_id >= 0 && fp->player_id < 6 && !fp->x221F_b4) {
             msl_vanilla_magnify_offscreen[fp->player_id] =
                 fp->x221F_b0 && ftLib_80086ED0(gobj);
         }
@@ -437,6 +468,11 @@ void msl_camera_publish_match_visibility(Fighter_GObj* const* fighters,
         // refs/melee/src/melee/ft/ftdrawcommon.c::ftDrawCommon_80080E18
         // refs/melee/src/melee/ft/ftlib.c::ftLib_80086A8C
         // refs/melee/src/melee/cm/camera.c::{Camera_80030BBC,Camera_80030CD8}
+#if MSL_GX_RECORD
+        // The viewer build draws the fighters, and their draw (ftDrawCommon_80080E18 -> ftLib_80086A8C) sets x221F_b0 itself, so
+        // the magnifier's draw callback (ifMagnify_802FBBDC) reads what the preceding draw left, as in retail.
+        (void) point;
+#else
         if (subject == NULL || fp->x2229_b3 || fp->x2220_b7) {
             fp->x221F_b0 = false;
         } else {
@@ -448,6 +484,7 @@ void msl_camera_publish_match_visibility(Fighter_GObj* const* fighters,
             fp->x221F_b0 =
                 !headless_camera_point_on_screen(view, fov, point);
         }
+#endif
 
         // Offline retail DeadUpFall stores its visible trajectory in camera
         // coordinates and publishes the inverse-view result through cur_pos

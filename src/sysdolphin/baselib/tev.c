@@ -52,25 +52,23 @@ HSD_ObjAllocData* HSD_ChanGetAllocData(void)
     return &chan_alloc_data;
 }
 
+/* The console reads a GXColor as one big-endian word (r in the top byte); these compare and copy the color channels by member so they mean the same on a little-endian host
+   (the mask 0xFFFFFF00 left the red byte out of the comparison there and took the alpha byte in). */
 static bool CompareRGB(GXColor* c0, GXColor* c1)
 {
-    u32* d0 = (u32*) c0;
-    u32* d1 = (u32*) c1;
-    return ((*d0 ^ *d1) & 0xFFFFFF00) != 0;
+    return c0->r != c1->r || c0->g != c1->g || c0->b != c1->b;
 }
 
 static bool CompareRGBA(GXColor* c0, GXColor* c1)
 {
-    u32* d0 = (u32*) c0;
-    u32* d1 = (u32*) c1;
-    return *d0 != *d1;
+    return c0->r != c1->r || c0->g != c1->g || c0->b != c1->b || c0->a != c1->a;
 }
 
 static void CopyRGB(GXColor* dst, GXColor* src)
 {
-    u32* d = (u32*) dst;
-    u32* s = (u32*) src;
-    *d = (*d & 0xff) | (*s & 0xffffff00);
+    dst->r = src->r;
+    dst->g = src->g;
+    dst->b = src->b;
 }
 
 void HSD_SetupChannel(HSD_Chan* ch)

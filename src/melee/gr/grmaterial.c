@@ -338,8 +338,14 @@ static void fn_801C8EF8(HSD_MObj* mobj, u32 rendermode)
     gp = HSD_GObj_804D7814->user_data;
     (void) gp;
     if (grMaterial_GetOverlay(gp)->x7C_color_enable || gp->x10_flags.b6) {
+#if MSL_GX_RECORD
+        /* (the source reads them at the console's offsets +0xC4 and +0x50 of the struct: its members, on a 64-bit host) */
+        sp_cnst = grMaterial_803E0A20.texp_tmpl;
+        sp_tevdesc = grMaterial_803E0A20.tevdesc_tmpl;
+#else
         sp_cnst = *(HSD_TECnst*) (base + 0xC4);
         sp_tevdesc = *(HSD_TevDesc*) (base + 0x50);
+#endif
         sp_tevdesc.stage = HSD_StateAssignTev();
         if (grMaterial_GetOverlay(gp)->x7C_color_enable) {
             reg1 = lbGetFreeColorRegister(0, mobj, NULL);

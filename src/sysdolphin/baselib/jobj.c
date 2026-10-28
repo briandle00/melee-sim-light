@@ -188,7 +188,7 @@ void HSD_JObjMakeMatrix(HSD_JObj* jobj)
         } else {
             scl = NULL;
         }
-#ifdef MSL_CORE_NATIVE
+#if defined(MSL_CORE_NATIVE) && !MSL_GX_RECORD   // the viewer build makes the matrix as the console does (HSD_MtxSRT, then PSMTXConcat with the parent)
         HSD_MtxSRTConcat(jobj->mtx, jobj->parent->mtx, &jobj->scale,
                          (Vec3*) &jobj->rotate, &jobj->translate, scl);
 #else
@@ -199,14 +199,14 @@ void HSD_JObjMakeMatrix(HSD_JObj* jobj)
         HSD_MtxSRT(jobj->mtx, &jobj->scale, (Vec3*) &jobj->rotate,
                    &jobj->translate, NULL);
     }
-#ifdef MSL_CORE_NATIVE
+#if defined(MSL_CORE_NATIVE) && !MSL_GX_RECORD
     if (jobj->parent != NULL && (jobj->flags & 0x20000)) {
 #else
     if (jobj->parent != NULL) {
 #endif
         PSMTXConcat(jobj->parent->mtx, jobj->mtx, jobj->mtx);
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (!msl_fighter_pose_path(jobj, &anim_jobj))
 #endif
     {
@@ -222,6 +222,12 @@ void HSD_JObjMakeMatrix(HSD_JObj* jobj)
         jobj->mtx[1][3] = vec.y;
         jobj->mtx[2][3] = vec.z;
     }
+#if MSL_GX_RECORD
+    {
+        extern void msl_w4_mk_probe(HSD_JObj*);
+        msl_w4_mk_probe(jobj);
+    }
+#endif
 }
 
 void HSD_JObjRemoveAnimByFlags(HSD_JObj* jobj, u32 flags)
@@ -573,7 +579,7 @@ void JObjUpdateFunc(void* obj, enum_t type, HSD_ObjData* val)
 void HSD_JObjAnim(HSD_JObj* jobj)
 {
     if (jobj != NULL) {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
         if (msl_fighter_pose_owns_animation(jobj->aobj)) {
             msl_fighter_pose_animate_joint(jobj);
             return;
@@ -600,7 +606,7 @@ void HSD_JObjAnim(HSD_JObj* jobj)
         HSD_AObjInterpretAnim(jobj->aobj, jobj, JObjUpdateFunc);
         HSD_RObjAnimAll(jobj->robj);
 #endif
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
         if (union_type_dobj(jobj)) {
             HSD_DObjAnimAll(jobj->u.dobj);
         }
@@ -631,7 +637,7 @@ void JObjAnimAll(HSD_JObj* jobj)
 void HSD_JObjAnimAll(HSD_JObj* jobj)
 {
     if (jobj != NULL) {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
         if (msl_fighter_pose_owns_animation(jobj->aobj)) {
             msl_fighter_pose_animate_tree(jobj);
             return;
@@ -782,6 +788,7 @@ typedef struct MslCoreFilteredJObjLoad {
     u8* depths;
     HSD_Joint* joints[MSL_CORE_FILTERED_JOBJ_CAPACITY];
     bool failed;
+    bool with_dobj;   // the viewer build draws: the model's draw objects come along
 } MslCoreFilteredJObjLoad;
 
 static void msl_core_consume_cold_joint_list(MslCoreFilteredJObjLoad* load,
@@ -807,7 +814,8 @@ static void msl_core_consume_cold_joint_list(MslCoreFilteredJObjLoad* load,
 
 static void msl_core_JObjLoadFilteredShallow(HSD_JObj* jobj,
                                              HSD_Joint* joint,
-                                             HSD_JObj* parent)
+                                             HSD_JObj* parent,
+                                             bool with_dobj)
 {
     u32 id;
     jobj->parent = parent;
@@ -825,7 +833,13 @@ static void msl_core_JObjLoadFilteredShallow(HSD_JObj* jobj,
         // fighter tree retains JObj/AObj/RObj pose and constraint owners.
         // refs/melee/src/sysdolphin/baselib/{jobj.c,dobj.c,mobj.c,pobj.c}
         jobj->u.dobj = NULL;
+#if MSL_GX_RECORD
+        if (with_dobj) {
+            jobj->u.dobj = HSD_DObjLoadDesc(joint->u.dobjdesc);
+        }
+#endif
     }
+    (void) with_dobj;
     jobj->robj = HSD_RObjLoadDesc(joint->robjdesc);
     jobj->rotate.x = joint->rotation.x;
     jobj->rotate.y = joint->rotation.y;
@@ -883,7 +897,7 @@ static HSD_JObj* msl_core_load_filtered_joint_list(
     }
     jobj->next = msl_core_load_filtered_joint_list(load, joint->next, parent,
                                                    depth);
-    msl_core_JObjLoadFilteredShallow(jobj, joint, parent);
+    msl_core_JObjLoadFilteredShallow(jobj, joint, parent, load->with_dobj);
     return jobj;
 }
 
@@ -891,9 +905,11 @@ HSD_JObj* msl_core_HSD_JObjLoadJointFiltered(HSD_Joint* joint,
                                              const u8* keep_by_node,
                                              size_t node_count,
                                              HSD_JObj** jobj_by_node,
-                                             u8* depth_by_node)
+                                             u8* depth_by_node,
+                                             bool with_dobj)
 {
     MslCoreFilteredJObjLoad load = { 0 };
+    load.with_dobj = with_dobj;
     HSD_JObj* root;
     size_t i;
 
@@ -920,6 +936,11 @@ HSD_JObj* msl_core_HSD_JObjLoadJointFiltered(HSD_Joint* joint,
             continue;
         }
         HSD_RObjResolveRefsAll(jobj->robj, source->robjdesc);
+#if MSL_GX_RECORD
+        if (load.with_dobj && union_type_dobj(jobj)) {
+            HSD_DObjResolveRefsAll(jobj->u.dobj, source->u.dobjdesc);
+        }
+#endif
         if (jobj->flags & JOBJ_INSTANCE) {
             jobj->child =
                 HSD_IDGetDataFromTable(
@@ -1365,6 +1386,30 @@ extern const Vec3 HSD_JObj_803B94C4;
 ///       whenever 'if' condition is false.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsometimes-uninitialized"
+#if MSL_GX_RECORD
+/* the inline sqrtf the game's code has (math_ppc.h: frsqrte, three fused Newton steps; GALE01 resolveIKJoint1/2, HSD_JObjSetupMatrixSub, ...) where libc's is correctly rounded */
+extern double __frsqrte(double);
+static inline float jobj_gekko_sqrtf(float x)
+{
+    if (x > 0.0F) {
+        double g = __frsqrte((double) x);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        return (float) ((double) x * g);
+    }
+    return x;
+}
+#define JOBJ_SQRTF(x) jobj_gekko_sqrtf(x)
+#else
+#define JOBJ_SQRTF(x) sqrtf(x)
+#endif
+
+#if MSL_GX_RECORD
+#pragma GCC push_options
+#pragma GCC target("fma")
+#pragma GCC optimize("fp-contract=fast")
+#endif
 void resolveIKJoint1(HSD_JObj* jobj)
 {
     HSD_JObj* robj_4;
@@ -1465,9 +1510,9 @@ void resolveIKJoint1(HSD_JObj* jobj)
                 VECCrossProduct(&sp50, &sp68, &sp5C);
                 VECCrossProduct(&sp68, &sp5C, &sp50);
             }
-            var_f4 = sqrtf(1.0F / (1e-10F + VECDotProduct(&sp50, &sp50)));
+            var_f4 = JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp50, &sp50)));
             VECScale(&sp50, &sp80, var_f4);
-            var_f4_2 = sqrtf(1.0F / (1e-10F + VECDotProduct(&sp5C, &sp5C)));
+            var_f4_2 = JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp5C, &sp5C)));
             VECScale(&sp5C, &sp74, var_f4_2);
             temp_f5 = temp_f30 * temp_f30;
             var_f28 = var_f29 * var_f29;
@@ -1479,9 +1524,9 @@ void resolveIKJoint1(HSD_JObj* jobj)
                 var_f27 = 0.0F;
             }
             temp_f5_2 = (temp_f5 - var_f27) / temp_f31;
-            var_f4_3 = sqrtf(1.0F / (1e-10F + temp_f5_2));
+            var_f4_3 = JOBJ_SQRTF(1.0F / (1e-10F + temp_f5_2));
             var_f1 = temp_f5_2 * var_f4_3;
-            var_f5 = sqrtf(1.0F / (1e-10F + var_f27));
+            var_f5 = JOBJ_SQRTF(1.0F / (1e-10F + var_f27));
             var_f29_2 = var_f27 * var_f5;
         } else {
             var_f1 = 0.0F;
@@ -1497,7 +1542,7 @@ void resolveIKJoint1(HSD_JObj* jobj)
         }
         VECScale(&sp74, &sp5C, var_f29_2);
         VECAdd(&sp98, &sp5C, &sp98);
-        var_f4_4 = sqrtf(1.0F / (1e-10F + PSVECDotProduct(&sp98, &sp98)));
+        var_f4_4 = JOBJ_SQRTF(1.0F / (1e-10F + PSVECDotProduct(&sp98, &sp98)));
         VECScale(&sp98, &sp98, var_f4_4);
         jobj->mtx[0][0] = sp98.x * spBC.x;
         jobj->mtx[1][0] = sp98.y * spBC.x;
@@ -1514,6 +1559,9 @@ void resolveIKJoint1(HSD_JObj* jobj)
         jobj->mtx[2][3] = spB0.z;
     }
 }
+#if MSL_GX_RECORD
+#pragma GCC pop_options
+#endif
 #pragma clang diagnostic pop
 
 const Vec3 HSD_JObj_803B94C4 = { 0.0F, 0.0F, 0.0F };
@@ -1566,7 +1614,7 @@ void resolveIKJoint2(HSD_JObj* jobj)
         sp7C.y = mtx[1][0];
         sp7C.z = mtx[2][0];
     }
-    var_f4 = sqrtf(1.0F / (1e-10F + VECDotProduct(&sp7C, &sp7C)));
+    var_f4 = JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp7C, &sp7C)));
     VECScale(&sp7C, &sp7C, var_f4);
     if (jobj->parent->scl != NULL) {
         var_f31 = jobj->parent->scl->x;
@@ -1577,7 +1625,7 @@ void resolveIKJoint2(HSD_JObj* jobj)
     VECAdd(&sp88, &sp7C, &sp94);
     VECSubtract(&var_r29->translate, &sp94, &sp7C);
     VECScale(&sp7C, &sp7C,
-             sqrtf(1.0F / (1e-10F + VECDotProduct(&sp7C, &sp7C))));
+             JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp7C, &sp7C))));
     temp_r28 = HSD_RObjGetByType(jobj->robj, 0x20000000, 5);
     temp_r29 = HSD_RObjGetByType(jobj->robj, 0x20000000, 6);
     if ((temp_r28 != NULL) || (temp_r29 != NULL)) {
@@ -1630,7 +1678,7 @@ void resolveIKJoint2(HSD_JObj* jobj)
         sp64.z = mtx[2][2];
     }
     VECCrossProduct(&sp64, &sp7C, &sp70);
-    var_f4_2 = sqrtf(1.0F / (1e-10F + VECDotProduct(&sp70, &sp70)));
+    var_f4_2 = JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp70, &sp70)));
     VECScale(&sp70, &sp70, var_f4_2);
     VECCrossProduct(&sp7C, &sp70, &sp64);
     jobj->mtx[0][0] = sp7C.x * spA0.x;
@@ -1680,7 +1728,7 @@ void HSD_JObjSetupMatrixSub(HSD_JObj* jobj)
                     sp10.z = parent->mtx[2][0];
                     VECScale(
                         &sp10, &sp10,
-                        sqrtf(1.0F / (1e-10F + VECDotProduct(&sp10, &sp10))));
+                        JOBJ_SQRTF(1.0F / (1e-10F + VECDotProduct(&sp10, &sp10))));
                     if (parent->scl != NULL) {
                         x_scale = parent->scl->x;
                     }
@@ -1709,7 +1757,7 @@ void HSD_JObjSetupMatrixSub(HSD_JObj* jobj)
 
 void HSD_JObjSetMtxDirtySub(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (msl_fighter_pose_set_mtx_dirty(jobj)) {
         return;
     }
@@ -1778,9 +1826,14 @@ void JObjReleaseChild(HSD_JObj* jobj)
     }
 }
 
+// Viewer track only (runtime/ps_probe.h): the particle probe's generators
+// on this joint are taken off it. Does nothing with the probe off.
+void msl_particle_probe_joint_gone(HSD_JObj* jobj);
+
 void JObjRelease(HSD_Class* o)
 {
     HSD_JObj* jobj = (HSD_JObj*) o;
+    msl_particle_probe_joint_gone(jobj);
     HSD_JOBJ_METHOD(jobj)->release_child(jobj);
 
     if (HSD_IDGetDataFromTable(NULL, jobj->id, NULL) == jobj) {

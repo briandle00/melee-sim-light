@@ -26,6 +26,13 @@ static float lbVector_Len_xy(Vec3* vec)
     return sqrtf_accurate(vec->x * vec->x + vec->y * vec->y);
 }
 
+#if MSL_GX_RECORD
+float msl_w4_vec_len(Vec3* vec)
+{
+    return lbVector_Len(vec);
+}
+#endif
+
 float lbVector_Normalize(Vec3* vec)
 {
     float len = lbVector_Len(vec);

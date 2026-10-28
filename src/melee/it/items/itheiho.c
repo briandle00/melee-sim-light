@@ -351,7 +351,7 @@ bool itHeiho_UnkMotion4_Anim(Item_GObj* gobj)
     } else {
         HSD_AObjSetRate(child->aobj, 2.0F);
     }
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     HSD_AObjSetRate(child->u.dobj->mobj->tobj->aobj, 2.0F);
 #endif
     // The omitted TObj AObj changes texture playback only. The child JObj

@@ -276,7 +276,11 @@ int HSD_TExpMakeDag(HSD_TExp* root, HSD_TExpDag* list)
             if (tmp->tev.a_in[idx].type == HSD_TE_TEV) {
                 HSD_TExp** r2 = &sp94[last];
                 for (l = last; l < num; l++) {
+#if MSL_GX_RECORD
+                    if (tmp->tev.a_in[idx].exp == *r2) {
+#else
                     if (tmp->tev.a_in[i].exp == *r2) {
+#endif
                         HSD_TExpDag** deps2;
                         u8 dep_count2 = list[last].nb_dep;
                         deps2 = list[last].depend;
@@ -288,10 +292,19 @@ int HSD_TExpMakeDag(HSD_TExp* root, HSD_TExpDag* list)
                             }
                             deps2++;
                         }
+#if MSL_GX_RECORD
+                        // (the decomp's version reads `l` again after the search above reused it; the entry found
+                        // is dep_entry2, as the color inputs' loop has it)
+                        if (l >= list[last].nb_dep) {
+                            list[last].depend[list[last].nb_dep++] = dep_entry2;
+                            dep_entry2->nb_ref++;
+                        }
+#else
                         if (l >= list[last].nb_dep) {
                             list[last].depend[list[last].nb_dep++] = &list[l];
                             list[l].nb_ref++;
                         }
+#endif
                         break;
                     }
                     r2++;

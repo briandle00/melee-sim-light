@@ -201,7 +201,14 @@ void PSVECScale(Vec* src, Vec* out, float scale)
 
 float PSVECDotProduct(Vec* a, Vec* b)
 {
+#if MSL_GX_RECORD
+    /* the retail routine: ps_mul (y, z), ps_madd (x, y) onto it, ps_sum0 */
+    float yy = a->y * b->y;
+    float zz = a->z * b->z;
+    return fmaf(a->x, b->x, yy) + zz;
+#else
     return a->z * b->z + (a->x * b->x + a->y * b->y);
+#endif
 }
 
 void PSVECCrossProduct(Vec* a, Vec* b, Vec* out)
@@ -225,8 +232,24 @@ void PSVECCrossProduct(Vec* a, Vec* b, Vec* out)
 
 float PSVECMag(Vec* value)
 {
+#if MSL_GX_RECORD
+    /* the retail routine: ps_mul/ps_madd/ps_sum0 for the square, then frsqrte with one Newton step and fsel */
+    float xx = value->x * value->x;
+    float yy = value->y * value->y;
+    float mag2 = fmaf(value->z, value->z, xx) + yy;
+    double estimate = ppc_frsqrte((double) mag2);
+    float estimate_sq = (float) (estimate * ppc_force_25_bit(estimate));
+    float estimate_half = (float) (estimate * 0.5);
+    float correction = fmaf(-estimate_sq, mag2, 3.0F);
+    float inv = correction * estimate_half;
+    if (!(inv >= 0.0F)) {
+        inv = mag2;
+    }
+    return mag2 * inv;
+#else
     return sqrtf(value->z * value->z +
                  (value->x * value->x + value->y * value->y));
+#endif
 }
 
 void PSMTXIdentity(Mtx matrix)
@@ -653,6 +676,76 @@ void PSMTXTrans(Mtx matrix, float x, float y, float z)
     matrix[2][3] = z;
 }
 
+#if MSL_GX_RECORD
+// The console's frC operand of the single-precision multiplies (fmuls, fmadds, ps_muls0/1, ps_madds) is cut to 25 bits.
+static double msl_c25(float value)
+{
+    double d = value;
+    uint64_t bits;
+    memcpy(&bits, &d, 8);
+    bits = (bits & 0xFFFFFFFFF8000000ull) + (bits & 0x0000000008000000ull);
+    memcpy(&d, &bits, 8);
+    return d;
+}
+
+static float msl_mulc(float a, float c)
+{
+    return (float) ((double) a * msl_c25(c));
+}
+
+// GALE01 PSMTXRotAxisRad (0x80342530): the SDK's paired-single code, operation for operation. m01 and m10 are the two fused
+// operations (fnmsubs / fmadds on z and sin); every other product is a ps_muls with the cut frC; the sums are ps_sum.
+void PSMTXRotAxisRad(Mtx matrix, Vec* axis, float radians)
+{
+    Vec normal;
+    float s = sinf(radians);
+    float c = cosf(radians);
+    float t = 1.0F - c;
+    float x;
+    float y;
+    float z;
+    float xt;
+    float yt;
+    float zt;
+    float xtx;
+    float xty;
+    float yty;
+    float xtz;
+    float ytz;
+    float ztz;
+    float xs;
+    float ys;
+
+    PSVECNormalize(axis, &normal);
+    x = normal.x;
+    y = normal.y;
+    z = normal.z;
+    xt = msl_mulc(x, t);
+    yt = msl_mulc(y, t);
+    zt = msl_mulc(z, t);
+    xtx = msl_mulc(xt, x);
+    xty = msl_mulc(xt, y);
+    yty = msl_mulc(yt, y);
+    xtz = msl_mulc(xt, z);
+    ytz = msl_mulc(yt, z);
+    ztz = msl_mulc(zt, z);
+    xs = msl_mulc(x, s);
+    ys = msl_mulc(y, s);
+    matrix[0][0] = xtx + c;
+    matrix[0][1] = (float) (-fma((double) z, msl_c25(s), -(double) xty));
+    matrix[0][2] = xtz + ys;
+    matrix[0][3] = 0.0F;
+    matrix[1][0] = (float) fma((double) z, msl_c25(s), (double) xty);
+    matrix[1][1] = c + yty;
+    matrix[1][2] = -xs + ytz;
+    matrix[1][3] = 0.0F;
+    matrix[2][0] = xtz + -ys;
+    matrix[2][1] = xs + ytz;
+    matrix[2][2] = ztz + c;
+    matrix[2][3] = 0.0F;
+}
+
+#else
 void PSMTXRotAxisRad(Mtx matrix, Vec* axis, float radians)
 {
     Vec normal;
@@ -668,10 +761,19 @@ void PSMTXRotAxisRad(Mtx matrix, Vec* axis, float radians)
     y = normal.y;
     z = normal.z;
     matrix[0][0] = cosine + one_minus_cosine * x * x;
+#if MSL_GX_RECORD
+    /* the retail routine (GALE01 0x80342530, paired singles): the xy term (x*omc)*y rounded, then fnmsubs/fmadds of z*sin onto it */
+    matrix[0][1] = fmaf(-z, sine, y * (one_minus_cosine * x));
+#else
     matrix[0][1] = y * (one_minus_cosine * x) - sine * z;
+#endif
     matrix[0][2] = z * (one_minus_cosine * x) + sine * y;
     matrix[0][3] = 0.0F;
+#if MSL_GX_RECORD
+    matrix[1][0] = fmaf(z, sine, y * (one_minus_cosine * x));
+#else
     matrix[1][0] = y * (one_minus_cosine * x) + sine * z;
+#endif
     matrix[1][1] = cosine + one_minus_cosine * y * y;
     matrix[1][2] = z * (one_minus_cosine * y) - sine * x;
     matrix[1][3] = 0.0F;
@@ -680,6 +782,8 @@ void PSMTXRotAxisRad(Mtx matrix, Vec* axis, float radians)
     matrix[2][2] = cosine + one_minus_cosine * z * z;
     matrix[2][3] = 0.0F;
 }
+
+#endif
 
 void MTXRotRad(Mtx matrix, char axis, float radians)
 {

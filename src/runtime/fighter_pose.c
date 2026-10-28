@@ -315,6 +315,16 @@ void msl_fighter_pose_set_root_position(HSD_JObj* root, const Vec3* position)
     HSD_ASSERT(150, root_node != NULL);
     HSD_ASSERT(151, root_node->parent_index == UINT16_MAX);
     root->translate = *position;
+#if MSL_GX_RECORD
+    // The viewer build sets the root position as HSD_JObjSetTranslate does: the root and every descendant are marked dirty, so that matrices built under another pose
+    // (the foot IK builds its pose into them and restores the locals) are rebuilt from the locals; the patch of the translation column below assumes consistent matrices.
+    // refs/melee/src/sysdolphin/baselib/jobj.h::HSD_JObjSetTranslate, jobj.c::HSD_JObjSetMtxDirtySub
+    if (!(root->flags & JOBJ_MTX_INDEP_SRT)) {
+        HSD_JObjSetMtxDirty(root);
+    }
+    (void) unchanged;
+    return;
+#endif
     if (HSD_JObjMtxIsDirty(root)) {
         return;
     }

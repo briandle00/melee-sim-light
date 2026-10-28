@@ -1,4 +1,5 @@
 #include "db/db.h"
+#include "runtime/viewer_track.h"
 #include "ft/types.h"
 
 #include "ftCommon/forward.h"
@@ -175,17 +176,26 @@ int un_80322598(int spawn_id, float pos_y)
 // Presentation/audio/effect owners are side-effect-free in the headless
 // runtime. Gameplay script timing remains in ftaction/lbcommand. Preserve the
 // real prototypes because Wasm validates every direct-call signature.
+#if !MSL_GX_RECORD /* (the viewer build has the game's own efLib_*, efAsync_Load* and psInitDataBank*: present/) */
 void efLib_DestroyAll(HSD_GObj* gobj)
 {
-    (void) gobj;
+    if (msl_viewer_track_on) {
+        msl_viewer_track_fxend(gobj);
+    }
 }
+void msl_particle_probe_owner_pause(HSD_GObj* owner, int on);
+void msl_particle_probe_owner_flags(HSD_GObj* owner, int expire_flags);
 void efLib_PauseAll(HSD_GObj* gobj)
 {
-    (void) gobj;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_pause(gobj, 1);
+    }
 }
 void efLib_ResumeAll(HSD_GObj* gobj)
 {
-    (void) gobj;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_pause(gobj, 0);
+    }
 }
 // Hosted GameData loads every effect bank eagerly at init
 // (runtime/effects.c::msl_effect_data_init), so the retail sync/async bank
@@ -203,30 +213,44 @@ void efAsync_LoadAsync(int index)
 }
 void efLib_SetFlags(HSD_GObj* gobj, s32 expire_flags)
 {
-    (void) gobj;
-    (void) expire_flags;
+    if (msl_viewer_track_on) {
+        msl_particle_probe_owner_flags(gobj, (int) expire_flags);
+    }
 }
 void efLib_SetParamAlpha(HSD_GObj* gobj, u8 alpha)
 {
     (void) gobj;
     (void) alpha;
 }
+#endif
 void HSD_PadRumbleRemoveId(u8 port, int id)
 {
     (void) port;
     (void) id;
 }
+#if !MSL_GX_RECORD
 void grDisplay_801C5DB0(HSD_GObj* gobj, int render_pass)
 {
     (void) gobj;
     (void) render_pass;
 }
+#endif
+#if !MSL_GX_RECORD
 void lbBgFlash_80021C48(u32 type, u32 duration)
 {
+    // The screen flash a hit starts (ftCo_8008DB10, by element) is drawn,
+    // never simulated: the track says when, for a viewer to draw it.
+    if (msl_viewer_track_on) {
+        msl_viewer_track_bgflash((int) type, (int) duration);
+    }
     (void) type;
     (void) duration;
 }
+#endif
+#if !MSL_GX_RECORD
 void lbRefract_80022BB8(void) {}
+#endif
+#if !MSL_GX_RECORD
 void psInitDataBank(int bank, int* commands, int* textures, u32* references,
                     int* forms)
 {
@@ -245,6 +269,7 @@ void psInitDataBankLoad(int bank, int* commands, int* textures,
     (void) references;
     (void) forms;
 }
+#endif
 // Transform-state copying only asks the crowd owner to arm a gasp. Its two
 // source writes are audio scheduling and are not read by gameplay.
 // refs/melee/src/melee/{ft/ftcommon.c::ftCommon_8007EFC8,
@@ -342,6 +367,7 @@ bool lbAudioAx_800265C4(HSD_GObj* gobj, int sfx)
     return false;
 }
 
+#if !MSL_GX_RECORD // viewer build: the HUD (present/) defines them
 int ifMagnify_802FB6E8(int slot)
 {
     (void) slot;
@@ -364,6 +390,7 @@ void ifStatus_802F6D10(s32 slot)
 {
     (void) slot;
 }
+#endif
 // The native ABI tolerates the old unspecified-argument stubs, but Wasm
 // enforces indirect-call signatures. Keep these reached debug-only item
 // owners precisely typed; their source effects only toggle debug overlays.
@@ -398,8 +425,10 @@ int HSD_PadRumbleAdd(u8 no, int id, int frame, int pri, void* listp)
 // performs the base PObj load, then rewrites GX display-list vertex data only
 // for refraction rendering (refs/melee/src/melee/lb/lbrefract.c:493).  Keep
 // the model construction and exclude only that renderer-owned rewrite.
+#if !MSL_GX_RECORD
 s32 lbRefract_PObjLoad(HSD_PObj* pobj, HSD_PObjDesc* desc)
 {
     return hsdPObj.load(pobj, desc);
 }
+#endif
 

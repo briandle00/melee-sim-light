@@ -153,6 +153,11 @@ int msl_reloc_seal_match(MslCoreMatch* match)
     uint32_t index_capacity = 1;
     uint32_t i;
 
+#if MSL_GX_RECORD
+    // The viewer build keeps no savestate: there is no registry to seal (its objects are made at run time, too).
+    (void) match;
+    return 0;
+#endif
     if (match == NULL || build_match != match || build_registry.count == 0 ||
         build_registry.count >= UINT16_MAX)
     {
@@ -204,12 +209,24 @@ int msl_reloc_seal_match(MslCoreMatch* match)
     return 0;
 }
 
+_Thread_local int msl_probe_heap;
+
 void msl_reloc_register(void* address, MslRelocType type, uint32_t count,
                         uint32_t stride, uint32_t flags)
 {
     MslCoreMatch* match = msl_core_try_active_match();
     MslRelocRegistry* registry;
     uint32_t* slot;
+
+    if (msl_probe_heap) {
+        return;
+    }
+#if MSL_GX_RECORD
+    (void) match;
+    (void) registry;
+    (void) slot;
+    return;
+#endif
 
     if (match == NULL || address == NULL || count == 0) {
         return;
@@ -277,6 +294,10 @@ void msl_reloc_register_hsd_class(void* address, HSD_ClassInfo* info)
 {
     HSD_ClassInfo* cursor;
     MslRelocType type = MSL_RELOC_RAW;
+
+    if (msl_probe_heap) {
+        return;
+    }
 
     for (cursor = info; cursor != NULL; cursor = cursor->head.parent) {
         const char* name = cursor->head.class_name;

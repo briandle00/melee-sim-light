@@ -1,4 +1,8 @@
 #include "ftPr_Init.h"
+#if MSL_GX_RECORD
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 #include "ftPr_SpecialHi.h"
 #include "ftPr_SpecialLw.h"
@@ -439,10 +443,14 @@ ftCollisionBox ftPr_Init_803D0610 = {
     +8, +0, -4, +4, +4, +4,
 };
 /* static */ extern char* ftPr_Init_803D05B4[5];
+#if defined(MSL_CORE_HOSTED) && MSL_GX_RECORD
+/* 45A1E0: the costume hats' joint graphs, read from the costume archive on first use (the viewer build draws them) */
+HSD_Joint* ft_8045A1E0[6];
+#endif
 
 void ftPr_Init_8013C2F8(void)
 {
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_CORE_HOSTED   // (the hosted cache is filled with the costume preload and kept)
     ft_8045A1E0[0] = NULL;
     ft_8045A1E0[1] = NULL;
     ft_8045A1E0[2] = NULL;
@@ -464,8 +472,11 @@ void ftPr_Init_OnUserDataRemove(HSD_GObj* gobj)
 void ftPr_Init_8013C360(HSD_GObj* gobj)
 {
     Fighter* fp = GET_FIGHTER(gobj);
+#if MSL_GX_RECORD
+    if (getenv("MSL_W4_PURIN")) { fprintf(stderr, "purin hat: costume %d hatname %s\n", (int) fp->x619_costume_id, ftPr_Init_803D05B4[fp->x619_costume_id] ? ftPr_Init_803D05B4[fp->x619_costume_id] : "-"); }
+#endif
 
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD   // the viewer build draws the costume hat: it loads it as the game does
     // Purin's detached costume-hat JObj is consumed only by the display/model
     // callbacks below. The gameplay skeleton remains the fighter's ordinary
     // costume joint graph, which Fighter_Create has already loaded.
@@ -482,7 +493,12 @@ void ftPr_Init_8013C360(HSD_GObj* gobj)
         UNK_T* items = fp->ft_data->x48_items;
         UNK_T* items_shifted = items[1];
 
+#if defined(MSL_CORE_HOSTED)
+        // the hat's joint graph was translated with the costume (ftData_80085820); the native archives translate publics only at GameData initialization
+        if (0) {
+#else
         if (!joints[fp->x619_costume_id]) {
+#endif
             UnkCostumeStruct* costume_list =
                 CostumeListsForeachCharacter[fp->kind].costume_list;
             joints[fp->x619_costume_id] = HSD_ArchiveGetPublicAddress(
@@ -490,6 +506,9 @@ void ftPr_Init_8013C360(HSD_GObj* gobj)
                 ftPr_Init_803D05B4[fp->x619_costume_id]);
         }
 
+#if MSL_GX_RECORD
+        if (getenv("MSL_W4_PURIN")) { fprintf(stderr, "purin joint %p archive %p\n", (void*) joints[fp->x619_costume_id], (void*) CostumeListsForeachCharacter[fp->kind].costume_list[fp->x619_costume_id].x14_archive); }
+#endif
         fp->fv.pr.x2240.data = HSD_ObjAlloc(&fighter_x2040_alloc_data);
         ftPartsPObjSetDefaultClass();
         fp->fv.pr.x223C = HSD_JObjLoadJoint(joints[fp->x619_costume_id]);

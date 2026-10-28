@@ -2372,11 +2372,23 @@ void ftData_800857E0(FighterKind kind)
     }
 }
 
+#if MSL_GX_RECORD
+extern HSD_Joint* ft_8045A1E0[6];
+extern char* ftPr_Init_803D05B4[5];
+#endif
+
 void ftData_80085820(FighterKind kind, int costume_id)
 {
     UnkCostumeStruct* temp_r5 =
         &CostumeListsForeachCharacter[kind].costume_list[costume_id];
     if (temp_r5->joint == NULL) {
+#if MSL_GX_RECORD
+        // Jigglypuff's costume hats (ftPr_Init_8013C360 reads them from the costume archive when the fighter is created): their joint graphs are translated with the
+        // costume, the native archives translating publics only at GameData initialization. refs/melee/src/melee/ft/chara/ftPurin/ftPr_Init.c::ftPr_Init_8013C360
+        if (kind == FTKIND_PURIN && ftPr_Init_803D05B4[costume_id] != NULL && ft_8045A1E0[costume_id] == NULL) {
+            lbArchive_80017040(NULL, ftData_803C2360[kind][costume_id].dat_filename, &ft_8045A1E0[costume_id], ftPr_Init_803D05B4[costume_id], MSL_LBARCHIVE_END);
+        }
+#endif
         if (ftData_803C2360[kind][costume_id].matanim_joint_name != NULL) {
             lbArchive_80017040(
                 &temp_r5->x14_archive,
@@ -2540,9 +2552,11 @@ static FigaTree* native_motion_tree(struct Fighter_WaitAnimData* motion)
     HSD_Archive archive;
     FigaTree* tree;
 
+#ifdef MSL_POSE_ENGINE
     if (motion->x14 & MSL_FIGHTER_MOTION_PROGRAM) {
         return msl_fighter_pose_program_tree((uint16_t) motion->x14);
     }
+#endif
     HSD_ASSERT(0x9E0,
                HSD_ArchiveParse(
                    &archive,
@@ -2554,6 +2568,7 @@ static FigaTree* native_motion_tree(struct Fighter_WaitAnimData* motion)
     return tree;
 }
 
+#ifdef MSL_POSE_ENGINE
 void msl_ft_data_bind_motion_programs(void)
 {
     int kind;
@@ -2581,6 +2596,7 @@ void msl_ft_data_bind_motion_programs(void)
         }
     }
 }
+#endif
 #endif
 
 void ftData_80085CD8(Fighter* fp, Fighter* arg1, int msid)

@@ -60,6 +60,7 @@ REQUIRED_FILES = {
     "PdPm.dat",
     "ItCo.dat",
     "ItCo.usd",
+    "PlCaRe.usd",
     "EfCoData.dat",
     "EfFxData.dat",
     "EfCaData.dat",
@@ -98,6 +99,12 @@ REQUIRED_FILES = {
     "GrNBa.dat",
     "GrIz.dat",
     "GrPs.dat",
+    # Pokemon Stadium's fire, grass, water and rock transformations, read
+    # mid-match by grStadium_801D4548 when the stage is unfrozen.
+    "GrPs1.dat",
+    "GrPs2.dat",
+    "GrPs3.dat",
+    "GrPs4.dat",
     "GrSt.dat",
     "GrOp.dat",
 }

@@ -31,7 +31,11 @@ enum {
     // The PPC compatibility oracle still constructs source-width DAT graphs
     // inside its Match arena and is not a resident production-batch target.
     // tests/melee_core/runtime_census.c
-#ifdef MSL_CORE_NATIVE
+#if MSL_GX_RECORD
+    // The viewer build keeps the draw objects (DObj/MObj/PObj/TObj of every model) and builds more at run time (a
+    // fighter's entry accessory, effects): a roomy arena that is not sealed against them.
+    MSL_MEMORY_MATCH_BYTES = 192 * 1024 * 1024,
+#elif defined(MSL_CORE_NATIVE)
     MSL_MEMORY_MATCH_BYTES = 3 * 1024 * 1024,
 #else
     // 8 MiB filled up when the twelfth character (Dr. Mario) joined the
@@ -270,6 +274,17 @@ void* msl_memory_alloc(MslMemoryContext* context, size_t size)
     }
     aligned_used = (context->used + MSL_MEMORY_ARENA_ALIGNMENT - 1) &
                    ~(size_t) (MSL_MEMORY_ARENA_ALIGNMENT - 1);
+#if MSL_GX_RECORD
+    if (context->sealed && context->arena != NULL &&
+        size <= context->capacity - aligned_used)
+    {
+        // (the viewer build allocates after sealing, with no ledger entry)
+        result = context->arena + aligned_used;
+        context->used = aligned_used + size;
+        memset(result, 0, size);
+        return result;
+    }
+#endif
     if (context->sealed || context->allocations == NULL ||
         context->allocation_count == context->allocation_capacity ||
         size > context->capacity - aligned_used)

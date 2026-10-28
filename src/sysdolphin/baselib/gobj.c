@@ -317,11 +317,21 @@ u32 HSD_GObj_80390EB8(s32 i)
     return HSD_GObj_804085F0[i];
 }
 
+#if MSL_GX_RECORD
+/* present/trace.c: MSL_GX_TRACE=<file> lists every draw callback of the recorded frames with the pipe's byte offsets */
+void msl_gx_trace_render(HSD_GObj* gobj, int pass, int after);
+#endif
 inline void render_gobj(HSD_GObj* cur, int i)
 {
     HSD_GObj* saved = HSD_GObj_804D7814;
     HSD_GObj_804D7814 = cur;
+#if MSL_GX_RECORD
+    msl_gx_trace_render(cur, i, 0);
+#endif
     cur->render_cb(cur, i);
+#if MSL_GX_RECORD
+    msl_gx_trace_render(cur, i, 1);
+#endif
     HSD_GObj_804D7814 = saved;
 }
 

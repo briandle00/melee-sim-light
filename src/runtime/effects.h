@@ -45,6 +45,11 @@ typedef struct MslCoreEffectGeneratorBank {
     // occupied range [id_base, count) is stored at commands[id - id_base].
     // Version-0 banks have id_base 0.
     s32 id_base;
+#if MSL_GX_RECORD
+    // Viewer build: the bank's particle texture groups (psInitDataBank's texBank), for the particle display.
+    struct _HSD_PSTexGroup** textures;
+    s32 texture_count;
+#endif
 } MslCoreEffectGeneratorBank;
 
 typedef struct MslCoreEffectData {
@@ -61,6 +66,32 @@ typedef struct MslCoreEffectState {
     MslCoreEffectQueueNode nodes[MSL_CORE_EFFECT_QUEUE_CAPACITY];
     MslCoreEffectQueueNode* free;
 } MslCoreEffectState;
+
+// The particle probe's (sysdolphin/baselib/ps_probe.c): a loaded bank, or
+// NULL.
+const MslCoreEffectGeneratorBank* msl_effect_probe_bank(int bank);
+// Whether making this generator draws a random number in the game
+// (hsd_8039F05C: one whose command counts at random).
+int msl_effect_generator_draws(int bank, int generator_id);
+// Viewer track only. An effect model (file * 1000 + its place in the file's
+// table) outside the ones the simulator draws for itself (the common file's
+// first 0x28): how many random numbers the game draws as its animation
+// takes its first step - one for each generator its particle keys start
+// there whose command counts at random. Recorded once at startup.
+int msl_effect_model_first_draws(int model_id);
+// How many models an effect file's table has (0: none the track knows).
+int msl_effect_model_count(int bank);
+// Viewer track only: whether an effect file is one gameplay does not load
+// (kept for the track and the probe alone).
+int msl_effect_view_only(int bank);
+// A file's whole model table (the common file's too, past the 0x28 the
+// simulator keeps), or NULL.
+const EF_EffectDesc* msl_effect_model_table(int bank);
+// The running stage's internal id (the particle probe's "stage" line).
+int msl_particle_probe_stage_id(void);
+// The particle probe's: a joint animation's particle keys go to `callback`
+// while it runs its own models; NULL puts the match's own back.
+void msl_effect_probe_dptcl(void (*callback)(int, int, int, HSD_JObj*));
 
 void msl_effect_game_data_init(MslCoreEffectData* data);
 #ifdef MSL_CORE_NATIVE

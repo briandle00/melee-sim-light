@@ -26,13 +26,14 @@
 
 #ifdef MSL_CORE_HOSTED
 #include "runtime/context.h"
+#include "runtime/viewer_track.h"
 #include "runtime/fighter_pose.h"
 #include "runtime/source_state.h"
 #include "runtime/subsystem_profile.h"
 #define ftAnim_804590D8 (msl_core_ft_anim_scratch()->anim_joints)
 #define ftAnim_804590D8_unk (msl_core_ft_anim_scratch()->mat_anim_joints)
 #define ftAnim_804590D8_F0 (msl_core_ft_anim_scratch()->joints)
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
 #define HSD_JObjAnim(joint) msl_fighter_pose_animate_joint(joint)
 #define HSD_JObjAnimAll(root) msl_fighter_pose_animate_tree(root)
 #define HSD_JObjReqAnimByFlags(joint, flags, frame)                           \
@@ -295,7 +296,7 @@ void ftAnim_8006E054(Fighter* fp, HSD_JObj* jobj, HSD_JObj* arg2,
 
 void ftAnim_8006E7B8(Fighter* fp, Fighter_Part part)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
 #ifdef MSL_CORE_WASM
     msl_fighter_pose_animate_parts(fp->parts[part].joint, fp->parts);
 #else
@@ -437,24 +438,36 @@ void ftAnim_8006EBA4(Fighter_GObj* gobj)
     uint64_t started = msl_profile_cycles();
 #endif
     ftAnim_8006E9B4(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_ftAnim_8006E9B4"); }
+#endif
 #ifdef MSL_SUBSYSTEM_PROFILE
     msl_profile_add(MSL_PROFILE_POSE_ANIMATION,
                          msl_profile_cycles() - started);
     started = msl_profile_cycles();
 #endif
     ftAction_80073240(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_ftAction_80073240"); }
+#endif
 #ifdef MSL_SUBSYSTEM_PROFILE
     msl_profile_add(MSL_PROFILE_ACTION_SCRIPT,
                          msl_profile_cycles() - started);
     started = msl_profile_cycles();
 #endif
     ftAnim_800707B0(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_ftAnim_800707B0"); }
+#endif
 #ifdef MSL_SUBSYSTEM_PROFILE
     msl_profile_add(MSL_PROFILE_SECONDARY_POSE,
                          msl_profile_cycles() - started);
     started = msl_profile_cycles();
 #endif
     ftCo_800DB500(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_ftCo_800DB500"); }
+#endif
 #ifdef MSL_SUBSYSTEM_PROFILE
     msl_profile_add(MSL_PROFILE_CAPTURE_POSE,
                          msl_profile_cycles() - started);
@@ -676,7 +689,7 @@ float ftAnim_8006F3DC(Fighter_GObj* fighter_gobj)
 {
     Fighter* fp = GET_FIGHTER(fighter_gobj);
 
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     {
         HSD_JObj* root = fp->x8A4_animBlendFrames == 0.0F
                              ? GET_JOBJ(fighter_gobj)
@@ -733,7 +746,7 @@ static HSD_JObj* get_part_joint(Fighter* fp, int part, bool do_blending)
     return result;
 }
 
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
 #define ftAnim_AttachAll(jobj, tree, track, frames)                           \
     msl_fighter_pose_attach_figa((jobj), (tree), (track), (frames), false)
 #define ftAnim_AttachFiltered(jobj, tree, track, frames)                      \
@@ -952,6 +965,7 @@ HSD_Joint* ftAnim_8006F994(Fighter* fp, HSD_JObj* jobj, HSD_Joint* joint)
         i += 1;
         ftAnim_GetNextJointInTree(&joint, &depth);
     }
+    return joint;   /* (r3 holds the exhausted joint, NULL, when the retail function ends: falling off the end is undefined for the hosted compiler) */
 }
 
 void ftAnim_8006FA58(Fighter* fp, Fighter_Part part, HSD_Joint* joint)
@@ -1071,7 +1085,7 @@ void ftAnim_8006FE08(Fighter* fp, bool do_blending)
 void ftAnim_8006FE48(Fighter_GObj* fighter_gobj)
 {
     Fighter* fp = GET_FIGHTER(fighter_gobj);
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     fp->x8AC_animSkeleton =
         ftParts_HeadlessLoadInterp(fp, fp->x108_costume_joint);
 #else
@@ -1079,7 +1093,7 @@ void ftAnim_8006FE48(Fighter_GObj* fighter_gobj)
 #endif
     fp->x8A4_animBlendFrames = 0.0F;
     fp->x8A8_anim_frame = 0.0F;
-#ifndef MSL_CORE_NATIVE
+#ifndef MSL_POSE_ENGINE
     ftParts_8007462C(fighter_gobj);
 #endif
 }
@@ -1109,7 +1123,7 @@ void ftAnim_8006FE9C(Fighter* fp, Fighter_Part start, float t, float t_inv)
             }
         }
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_lb_blend_jobj_batch(first, second, blend_count, t, t_inv);
 #endif
 }
@@ -1157,7 +1171,7 @@ void ftAnim_80070010(Fighter* fp, Fighter_Part start, float t, float t_inv,
         i++;
         ftAnim_GetNextJointInTree(&joint, &sp1C);
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_lb_blend_joint_batch(authored, live, blend_count, t, t_inv);
 #endif
 }
@@ -1179,7 +1193,7 @@ void ftAnim_80070108(Fighter* fp, Fighter_Part start, float t, float t_inv,
         }
 
         if (msl_fighter_part_can_animate(fp, i)) {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
             // Presentation-only parts share a placeholder, not a live pose.
             if (fp->parts[i].x4_jobj2->flags & JOBJ_MSL_GAMEPLAY_COLD) {
                 goto next_joint;
@@ -1205,7 +1219,7 @@ void ftAnim_80070108(Fighter* fp, Fighter_Part start, float t, float t_inv,
         i++;
         ftAnim_GetNextJointInTree(&joint, &sp1C);
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_lb_blend_joint_batch(authored, live, blend_count, t, t_inv);
 #endif
 }
@@ -1213,7 +1227,7 @@ void ftAnim_80070108(Fighter* fp, Fighter_Part start, float t, float t_inv,
 void ftAnim_80070200(Fighter* fp, ftData_x8_x8* r4, CostumeTObjList* r5,
                      DObjList* r6)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD
     // Costume MObj/TObj animation is renderer-only: the fighter's own call
     // (ftAnim_80070308) is omitted from Fighter_80068FC0 and the headless
     // DAT translation nulls every HSD_Joint draw-object union, so the DObj
@@ -1255,7 +1269,13 @@ void ftAnim_80070308(Fighter_GObj* fighter_gobj)
                            .costume_list[fp->x619_costume_id]
                            .x4,
                        NULL);
+#if MSL_FULL_FIGHTER_MODELS
+    // The joints' own animation belongs to the pose engine (their AObj slot holds its node): the request is for the
+    // material animation just added.
+    HSD_JObjReqAnimAllByFlags(jobj, 0x7FE, 0.0F);
+#else
     HSD_JObjReqAnimAll(jobj, 0.0F);
+#endif
     ftAnim_80070200(fp, &fp->ft_data->x8->x8, &fp->tobj_list, &fp->dobj_list);
 }
 
@@ -1273,7 +1293,7 @@ static inline void tobjAnim(HSD_TObj** temp_r30, f32 frame)
 void ftAnim_80070458(Fighter* fp, CostumeTObjList* tobj_list, u32 tobj_idx,
                      float frame)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD
     // Texture animation only mutates renderer-owned TObj/AObj state. Action
     // script advancement and the fighter's x221E_b7 lifetime remain owned by
     // ftAction_800726F4, ftAnim_800704F0, and ftAnim_80070654.
@@ -1302,11 +1322,14 @@ void ftAnim_800704F0(Fighter_GObj* gobj, int tobj_idx, float frame)
         ftData_UnkCallbackPairs0[fp->kind].x4(gobj, tobj_idx, frame);
     }
     fp->x221E_b7 = true;
+    if (msl_viewer_track_on) {
+        msl_viewer_track_tex(gobj, tobj_idx, frame);
+    }
 }
 
 void ftAnim_800705E0(CostumeTObjList* tobj_list)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD
     // Paired renderer-only reset for the hosted omission above.
     // refs/melee/src/melee/ft/ftanim.c::ftAnim_800705E0
     (void) tobj_list;
@@ -1330,11 +1353,14 @@ void ftAnim_80070654(Fighter_GObj* fighter_gobj)
         ftData_UnkCallbackPairs0[fp->kind].x0(fighter_gobj);
     }
     fp->x221E_b7 = false;
+    if (msl_viewer_track_on) {
+        msl_viewer_track_tex(fighter_gobj, -1, 0.0F);
+    }
 }
 
 void ftAnim_80070710(HSD_JObj* jobj, float frame)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_fighter_pose_request_tree(jobj, frame);
 #else
     HSD_JObjReqAnimAllByFlags(jobj, 1, frame);
@@ -1343,7 +1369,7 @@ void ftAnim_80070710(HSD_JObj* jobj, float frame)
 
 void ftAnim_80070734(HSD_JObj* jobj, float frame)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_fighter_pose_request_joint(jobj, frame);
 #else
     HSD_JObjReqAnimByFlags(jobj, 1, frame);
@@ -1352,7 +1378,7 @@ void ftAnim_80070734(HSD_JObj* jobj, float frame)
 
 void ftAnim_80070758(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_fighter_pose_remove_tree(jobj);
 #else
     HSD_JObjRemoveAnimAllByFlags(jobj, 1);
@@ -1428,7 +1454,7 @@ void ftAnim_80070904(Fighter* fp, Fighter_Part start, HSD_AnimJoint* animjoint)
         }
         if (!msl_fighter_part_flag_b0(fp, i) && animjoint->aobjdesc != NULL) {
             HSD_JObj* jobj = fp->parts[i].x4_jobj2;
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
             msl_fighter_pose_attach_anim_joint(jobj, animjoint);
 #else
             HSD_JObjAddAnim(jobj, animjoint, NULL, NULL);

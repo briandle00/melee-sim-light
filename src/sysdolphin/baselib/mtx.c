@@ -181,6 +181,57 @@ void HSD_MtxInverseConcat(Mtx inv, Mtx src, Mtx dest)
     }
 }
 
+#if MSL_GX_RECORD
+/* the retail routine's fused operations (80379A20): x*y - z*w is fmsubs(x, y, fmuls(z, w)), its negation fnmsubs */
+static inline float msl_fms(float a, float b, float c, float d)
+{
+    return fmaf(a, b, -(c * d));
+}
+
+static inline float msl_fnms(float a, float b, float c, float d)
+{
+    return fmaf(-a, b, c * d);
+}
+
+void HSD_MtxInverseTranspose(Mtx src, Mtx dest)
+{
+    Mtx tempMatrix;
+    float(*m)[4] = src;
+    float det;
+
+    {
+        float t1 = m[2][0] * (m[0][1] * m[1][2]);
+        float t2 = fmaf(m[2][2], m[0][0] * m[1][1], t1);
+        float t3 = fmaf(m[2][1], m[0][2] * m[1][0], t2);
+        float t4 = fmaf(-m[0][2], m[2][0] * m[1][1], t3);
+        float t5 = fmaf(-m[2][2], m[1][0] * m[0][1], t4);
+        det = fmaf(-m[1][2], m[0][0] * m[2][1], t5);
+    }
+    if (fabsf_bitwise(det) < EPSILON) {
+        if (m != dest) {
+            MTXCopy(m, dest);
+        }
+        return;
+    }
+    if (m == dest) {
+        MTXCopy(m, tempMatrix);
+        m = tempMatrix;
+    }
+    det = 1.0f / det;
+    dest[0][0] = det * msl_fms(m[1][1], m[2][2], m[2][1], m[1][2]);
+    dest[1][0] = det * msl_fnms(m[0][1], m[2][2], m[2][1], m[0][2]);
+    dest[2][0] = det * msl_fms(m[0][1], m[1][2], m[1][1], m[0][2]);
+    dest[0][1] = det * msl_fnms(m[1][0], m[2][2], m[2][0], m[1][2]);
+    dest[1][1] = det * msl_fms(m[0][0], m[2][2], m[2][0], m[0][2]);
+    dest[2][1] = det * msl_fnms(m[0][0], m[1][2], m[1][0], m[0][2]);
+    dest[0][2] = det * msl_fms(m[1][0], m[2][1], m[2][0], m[1][1]);
+    dest[1][2] = det * msl_fnms(m[0][0], m[2][1], m[2][0], m[0][1]);
+    dest[2][2] = det * msl_fms(m[0][0], m[1][1], m[1][0], m[0][1]);
+    dest[0][3] = 0;
+    dest[1][3] = 0;
+    dest[2][3] = 0;
+}
+#else
 void HSD_MtxInverseTranspose(Mtx src, Mtx dest)
 {
     Mtx* m;
@@ -226,6 +277,7 @@ void HSD_MtxInverseTranspose(Mtx src, Mtx dest)
         dest[2][3] = 0;
     }
 }
+#endif
 
 inline f32 calcVal(f32 x, f32 y)
 {
@@ -506,6 +558,13 @@ void HSD_MtxScaledAdd(Mtx arg0, Mtx arg1, Mtx arg2, f32 arg3)
     f32* arr1 = (f32*) &arg1[0][0];
     f32* arr2 = (f32*) &arg2[0][0];
 
+#if MSL_GX_RECORD
+    /* the retail HSD_MtxScaledAdd is twelve fmadds (arg1 + arg3 * arg0, one rounding) */
+    int i;
+    for (i = 0; i < 12; i++) {
+        arr2[i] = fmaf(arg3, arr0[i], arr1[i]);
+    }
+#else
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
@@ -520,6 +579,7 @@ void HSD_MtxScaledAdd(Mtx arg0, Mtx arg1, Mtx arg2, f32 arg3)
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
     *(arr2)++ = *(arr1)++ + (arg3 * *(arr0)++);
+#endif
 }
 
 void* HSD_VecAlloc(void)

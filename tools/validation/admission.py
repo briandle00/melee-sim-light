@@ -80,6 +80,14 @@ def stadium_is_frozen(start: dict, codes: dict[int, bytes]) -> bool:
 
 # wire.h MSL_PATCH_*.
 PATCH_FD_BACKGROUND_FROZEN = 1 << 0
+PATCH_PREVENT_WOBBLING = 1 << 1
+PATCH_RETAIL_SPAWNS = 1 << 2
+PATCH_POST_FRAME_AT_MAP = 1 << 3
+PATCH_UCF_TUMBLE_ABSENT = 1 << 4
+PATCH_UCF_DASHBACK_ABSENT = 1 << 5
+PATCH_UCF_SHIELD_DROP_ABSENT = 1 << 6
+PATCH_UCF_ABSENT = (PATCH_UCF_TUMBLE_ABSENT | PATCH_UCF_DASHBACK_ABSENT |
+                    PATCH_UCF_SHIELD_DROP_ABSENT)
 
 
 def slippi_patches(codes: dict[int, bytes]) -> int:
@@ -87,11 +95,79 @@ def slippi_patches(codes: dict[int, bytes]) -> int:
     patches = 0
     if codes.get(0x0421AAE4, b"")[4:8] == bytes.fromhex("60000000"):
         patches |= PATCH_FD_BACKGROUND_FROZEN
+    if all(a in codes for a in (0xC208F090, 0xC20DB880, 0xC20DBBD4)):
+        patches |= PATCH_PREVENT_WOBBLING
+    if codes and 0xC216E510 not in codes:
+        patches |= PATCH_RETAIL_SPAWNS
+    # Slippi 3.3's SendGamePostFrame injection at the end of Fighter_procMap.
+    if 0xC206C5D8 in codes:
+        patches |= PATCH_POST_FRAME_AT_MAP
+    # The UCF injections the list lacks (UCF Tumble.asm 0x800908F4, the
+    # dashback 0x800C9A44, the shield drop 0x800998A4). No list at all
+    # reports none.
+    if codes:
+        if 0xC20908F4 not in codes:
+            patches |= PATCH_UCF_TUMBLE_ABSENT
+        if 0xC20C9A44 not in codes:
+            patches |= PATCH_UCF_DASHBACK_ABSENT
+        if 0xC20998A4 not in codes:
+            patches |= PATCH_UCF_SHIELD_DROP_ABSENT
     return patches
 
 
+def raw_player_levels(raw: bytes) -> list[int] | None:
+    """Each port's level byte from the raw Game Start event (offset
+    0x74 + 0x24 * port), or None when the file cannot be walked. Slippi
+    records it for every port, humans included; peppi reports it only for
+    CPU players. A human Ice Climber's Nana sets her AI up from it."""
+    try:
+        at = raw.index(b"raw[$U#l") + 8
+        size = struct.unpack(">I", raw[at:at + 4])[0]
+        body = raw[at + 4:at + 4 + size]
+        if body[0] != 0x35:
+            return None
+        sizes = {}
+        for k in range(2, 1 + body[1], 3):
+            sizes[body[k]] = struct.unpack(">H", body[k + 1:k + 3])[0]
+        start = 1 + body[1]
+        if body[start] != 0x36 or sizes.get(0x36, 0) < 0x74 + 0x24 * 3:
+            return None
+        return [body[start + 0x74 + 0x24 * port] for port in range(4)]
+    except (ValueError, IndexError, struct.error):
+        return None
+
+
+# wire.h MSL_STADIUM_*.
+STADIUM_FROZEN, STADIUM_PRELOADED, STADIUM_ONLINE_LOADED = 0, 1, 2
+
+
+def stadium_transformations(start: dict, codes: dict[int, bytes]) -> int | None:
+    """MslCoreMatchConfig.stadium_transformations for this capture, or None
+    for an unfrozen Pokemon Stadium no deterministic patch set owns.
+
+    Frozen is the console toggle, the legacy online bypass (stadium_is_frozen)
+    or Online/Core/Hacks/Stadium/IngameCheckIfFrozen.asm at 0x801D457C, whose
+    static byte is the toggle. Unfrozen transformations are deterministic under
+    Common/Preload Stadium Transformations (the choice and the archive read
+    happen on the first frame of each wait) or under Slippi Online 3.18+'s
+    StadiumFileLoad.asm (a synchronous read at the retail decision). Without
+    either, the archive streamed from the disc and the file does not say when
+    it arrived."""
+    if start.get("stage") != 3 or stadium_is_frozen(start, codes):
+        return STADIUM_FROZEN
+    toggle = codes.get(0xC21D457C, b"")
+    if len(toggle) > 16 and toggle[16] != 0:
+        return STADIUM_FROZEN
+    preloaded = 0xC21D45EC in codes
+    online = 0xC20165AC in codes
+    if preloaded != online:
+        return STADIUM_PRELOADED if preloaded else STADIUM_ONLINE_LOADED
+    return None
+
+
 def capture_issues(game, raw: bytes, *, played_on: str | None = None,
-                   fnmsubs_profile: str | None = None) -> list[str]:
+                   fnmsubs_profile: str | None = None,
+                   jit_arithmetic: str | None = None) -> list[str]:
     """Return property violations without running or consulting simulator output."""
     issues = []
     identity = hashlib.sha256(raw).hexdigest()
@@ -116,7 +192,7 @@ def capture_issues(game, raw: bytes, *, played_on: str | None = None,
         start.get("damage_ratio", 0) <= 0 or start.get("timer") != 480 or
         start.get("bitfield") not in ([50, 1, 134, 76], [50, 1, 142, 76])):
         issues.append("unsupported-settings")
-    if start.get("stage") == 3 and not stadium_is_frozen(start, codes):
+    if stadium_transformations(start, codes) is None:
         issues.append("unfrozen-stadium")
     players = start["players"]
     if len(players) not in (2, 3, 4) or (len(players) > 2 and not start.get("is_teams")):
@@ -141,6 +217,14 @@ def capture_issues(game, raw: bytes, *, played_on: str | None = None,
     if fnmsubs_profile is not None:
         profiles = json.loads((ROOT / "agent_docs/validation/arithmetic_provenance.json").read_text())
         if not any(r["sha256_slp"] == identity and r["fnmsubs_profile"] == fnmsubs_profile
+                   for r in profiles["captures"]):
+            issues.append("unestablished-arithmetic")
+    # A capture made without host FMA3 is a claim about the recording machine
+    # that the file cannot carry; like the fnmsubs profile, it needs a
+    # reviewed provenance record.
+    if jit_arithmetic not in (None, "fma"):
+        profiles = json.loads((ROOT / "agent_docs/validation/arithmetic_provenance.json").read_text())
+        if not any(r["sha256_slp"] == identity and r.get("jit_arithmetic") == jit_arithmetic
                    for r in profiles["captures"]):
             issues.append("unestablished-arithmetic")
 
@@ -200,8 +284,10 @@ def capture_issues(game, raw: bytes, *, played_on: str | None = None,
 
 
 def require_admissible(game, path: Path, *, played_on: str | None = None,
-                       fnmsubs_profile: str | None = None) -> None:
+                       fnmsubs_profile: str | None = None,
+                       jit_arithmetic: str | None = None) -> None:
     issues = capture_issues(game, path.read_bytes(), played_on=played_on,
-                            fnmsubs_profile=fnmsubs_profile)
+                            fnmsubs_profile=fnmsubs_profile,
+                            jit_arithmetic=jit_arithmetic)
     if issues:
         raise ValueError("ineligible capture: " + ", ".join(issues))

@@ -136,9 +136,25 @@ static float msl_acos_seed(float radicand)
 }
 #endif
 
+#if MSL_GX_RECORD
+/* One Newton step of the reciprocal square root as the retail code has it (GALE01 acosf 0x80022D1C, lbRefract_80022DF8 0x80022DF8):
+ * fmuls g*g, fmuls 0.5*g, fnmsubs 3 - x*(g*g), fmuls. A fused multiply-subtract does not depend on the host compiler's contraction
+ * (WebAssembly has none), so the viewer build, native or wasm, rounds as the console does. */
+static inline float msl_rsqrt_step(float guess, float x)
+{
+    float g2 = guess * guess;
+    float half = 0.5f * guess;
+    return half * __fnmsubs(x, g2, 3.0f);
+}
+#endif
+
 float acosf(float x)
 {
+#if MSL_GX_RECORD
+    float result = __fnmsubs(x, x, 1.0F);   /* fnmsubs 1 - x*x */
+#else
     float result = 1.0F - x * x;
+#endif
     if (result > 0) {
         float guess;
 #ifdef MSL_CORE_NATIVE
@@ -146,9 +162,15 @@ float acosf(float x)
 #else
         guess = __frsqrte(result);
 #endif
+#if MSL_GX_RECORD
+        guess = msl_rsqrt_step(guess, result);
+        guess = msl_rsqrt_step(guess, result);
+        guess = msl_rsqrt_step(guess, result);
+#else
         guess = 0.5f * guess * (3.0f - guess * guess * result);
         guess = 0.5f * guess * (3.0f - guess * guess * result);
         guess = 0.5f * guess * (3.0f - guess * guess * result);
+#endif
         result = guess;
     } else if (result) {
         result = NAN;
@@ -160,13 +182,22 @@ float acosf(float x)
 
 float asinf(float x)
 {
+#if MSL_GX_RECORD
+    return atanf(x * lbRefract_80022DF8(__fnmsubs(x, x, 1.0f)));   /* fnmsubs 1 - x*x (0x80022DD4) */
+#else
     return atanf(x * lbRefract_80022DF8(-(x * x - 1.0f)));
+#endif
 }
 
 static inline float lbRefract_80022DF8(float x)
 {
     if (x > 0.0f) {
-#ifdef MSL_CORE_NATIVE
+#if MSL_GX_RECORD
+        float guess = msl_acos_seed(x);   /* frsqrte, frsp */
+        guess = msl_rsqrt_step(guess, x);
+        guess = msl_rsqrt_step(guess, x);
+        return msl_rsqrt_step(guess, x);
+#elif defined(MSL_CORE_NATIVE)
         return 1.0F / sqrtf(x);
 #else
         float guess;
@@ -283,6 +314,18 @@ float atanf(float x)
         lookup_ptr = &msl_atanf_lookup[lookup_index];
 
         // clang-format off
+#if MSL_GX_RECORD
+        // GALE01 atanf 0x80022FB8..0x80022FEC: Horner with fmadds, then fmadds(result * result_squared, poly, result)
+        {
+            float cube = result * result_squared;
+            float poly = __fmadds(result_squared, msl_atanf_lookup[6], msl_atanf_lookup[5]);
+            poly = __fmadds(result_squared, poly, msl_atanf_lookup[4]);
+            poly = __fmadds(result_squared, poly, msl_atanf_lookup[3]);
+            poly = __fmadds(result_squared, poly, msl_atanf_lookup[2]);
+            poly = __fmadds(result_squared, poly, msl_atanf_lookup[1]);
+            result = __fmadds(cube, poly, result);
+        }
+#else
         result = result *
             result_squared * (
                 result_squared * (
@@ -298,6 +341,7 @@ float atanf(float x)
                 ) + msl_atanf_lookup[1]
             ) + result;
         // clang-format on
+#endif
 
         result += lookup_ptr[27];
         result += lookup_ptr[20];
@@ -322,14 +366,23 @@ static u32 msl_math_float_order_key(float value)
                                               : bits ^ UINT32_C(0x80000000);
 }
 
+#if MSL_GX_RECORD
+extern float msl_gx_len_sq(float x, float y, float z);
+#define MSL_DYNAMICS_LEN_SQ(v) msl_gx_len_sq((v)->x, (v)->y, (v)->z)
+extern float msl_w4_vec_len(Vec3* v);
+// the console's inline sqrtf (frsqrte plus three fused Newton steps), as lbVector_Angle has it
+#define MSL_DYNAMICS_LEN(v) msl_w4_vec_len(v)
+#else
+#define MSL_DYNAMICS_LEN_SQ(v) ((v)->x * (v)->x + (v)->y * (v)->y + (v)->z * (v)->z)
+#define MSL_DYNAMICS_LEN(v) sqrtf(MSL_DYNAMICS_LEN_SQ(v))
+#endif
+
 #define MSL_DYNAMICS_ANGLE_COSINE(a_arg, b_arg, cosine_out, valid_out)        \
     do {                                                                      \
         Vec3* msl_a = (a_arg);                                                \
         Vec3* msl_b = (b_arg);                                                \
-        float msl_lena = sqrtf(msl_a->x * msl_a->x +                         \
-                               msl_a->y * msl_a->y + msl_a->z * msl_a->z);   \
-        float msl_lenb = sqrtf(msl_b->x * msl_b->x +                         \
-                               msl_b->y * msl_b->y + msl_b->z * msl_b->z);   \
+        float msl_lena = MSL_DYNAMICS_LEN(msl_a);                             \
+        float msl_lenb = MSL_DYNAMICS_LEN(msl_b);                             \
         float msl_lena_lenb = msl_lena * msl_lenb;                            \
         (valid_out) = msl_lena_lenb > 0.0000000001F;                          \
         if (valid_out) {                                                      \

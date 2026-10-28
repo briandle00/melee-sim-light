@@ -75,6 +75,8 @@ typedef struct MslCoreStreamFrame {
 
 enum { MSL_FACING_AUTO_FLAG = 0x10 };
 
+enum { MSL_CORE_HUMAN_LEVEL = 0x80 };
+
 typedef struct MslCoreMatchPlayerConfig {
     uint8_t char_id;
     uint8_t team_id;
@@ -85,7 +87,10 @@ typedef struct MslCoreMatchPlayerConfig {
     uint8_t costume_id;
     uint8_t handicap;
     uint8_t start_percent;
-    uint8_t cpu_level; // Zero selects a controller; 1..9 retain a CPU slot.
+    // Zero selects a controller; 1..9 retain a CPU slot. A controller slot
+    // whose player level byte is 1..9 (Slippi records it for humans too)
+    // is MSL_CORE_HUMAN_LEVEL | level.
+    uint8_t cpu_level;
 } MslCoreMatchPlayerConfig;
 
 typedef struct MslCoreMatchConfig {
@@ -138,17 +143,80 @@ typedef struct MslCoreMatchConfig {
     // Bit 0: Slippi 3.18+ FoD platform events; bit 1: Dream Land Whispy
     // direction events. A present stream is authoritative even on frames with
     // no event, where the last published value remains active.
+    // Bit 2: the recording has Frame Start events (Slippi 2.2+), so the frame
+    // seeds of the tape are the recording's real frame-start seeds. Without it
+    // the tape's frame seed is the first fighter's pre-frame record, the only
+    // observation, and the viewer build restores it at the fighters' point too.
     uint8_t stage_event_streams;
     // Online/Core/WhispyBlowDirFix excludes death animations from the vote.
     uint8_t whispy_dead_fighter_fix;
     // MSL_PATCH_* capabilities from the replay code list.
     uint8_t slippi_patches;
+    // How the capturing Dolphin's JIT computed floating point where hosts
+    // differ (MSL_JIT_*). Zero is a host with FMA3, like the retail CPU's
+    // fused multiply-adds.
+    uint8_t jit_arithmetic;
+    // Pokemon Stadium's transformations, named by the patch set that owns
+    // them (MSL_STADIUM_*). Zero keeps the stage frozen, which every other
+    // stage ignores. The two unfrozen patch sets decide and load differently
+    // and are not interchangeable.
+    uint8_t stadium_transformations;
     MslCoreMatchPlayerConfig players[MSL_CORE_MAX_PLAYERS];
 } MslCoreMatchConfig;
 
 enum {
     // External/Frozen All/Core/2.asm: nop the call at 0x8021AAE4.
     MSL_PATCH_FD_BACKGROUND_FROZEN = 1 << 0,
+    // External/PreventWobbling: Init Wobble Count at 0x800DB880/0x800DBBD4,
+    // Wobble Check at 0x8008F090.
+    MSL_PATCH_PREVENT_WOBBLING = 1 << 1,
+    // No External/NeutralSpawn (0x8016E510): each port at its own spawn point.
+    MSL_PATCH_RETAIL_SPAWNS = 1 << 2,
+    // Slippi 3.3's recorder sends the post-frame event from the end of
+    // Fighter_procMap (its injection at 0x8006C5D8), before the damage,
+    // shield and hit procs run; later versions send it at 0x8006DA34. The
+    // recorded post-frame lanes are the fighter as it stood at that point.
+    // Local (Slippi 3.3, closed #57): bit 3, after the open PRs' bits 1 and 2.
+    MSL_PATCH_POST_FRAME_AT_MAP = 1 << 3,
+    // UCF routines the capture's code list lacks (Local: #69's absent
+    // routines, which its rebuild left out; its recording is Slippi 3.3 and
+    // needs bit 3). The UCF 0.74 toggle set has no tumble fix, and a
+    // console game without UCF has none of the three. Each absent routine
+    // keeps the vanilla behavior; clear, every routine the other UCF flags
+    // select runs.
+    // UCF Tumble.asm (0x800908F4): the tumble wiggle's one-frame swing test.
+    MSL_PATCH_UCF_TUMBLE_ABSENT = 1 << 4,
+    // UCF dashback (0x800C9A44).
+    MSL_PATCH_UCF_DASHBACK_ABSENT = 1 << 5,
+    // UCF shield drop (0x800998A4).
+    MSL_PATCH_UCF_SHIELD_DROP_ABSENT = 1 << 6,
+    // The recording has no raw C-stick bytes (Slippi before 3.17), so its tape
+    // carries a reconstructed or fitted raw C-stick. Only the viewer build's
+    // "slippi" playback option reads this bit (scalar.c, msl_playback_set_name).
+    MSL_PATCH_RAW_CSTICK_ABSENT = 1 << 7,
+};
+
+enum {
+    // Jit64 on a host without FMA3 (older x86 CPUs, and x86 Dolphin under
+    // Rosetta on Apple silicon) runs the double-precision fmadd family as a
+    // rounded multiply and then a rounded add. Single-precision operands give
+    // an exact product either way, so only double-precision sites move.
+    MSL_JIT_NO_HOST_FMA = 1 << 0,
+};
+
+enum {
+    // Frozen: External/Frozen PS/Core/FreezePokemon.asm, the online toggle
+    // (Online/Core/Hacks/Stadium/IngameCheckIfFrozen.asm), or the legacy
+    // online bypass at 0x801D4578.
+    MSL_STADIUM_FROZEN = 0,
+    // Common/Preload Stadium Transformations: the next transformation is
+    // chosen and read on the first frame of each wait, and the timer's end
+    // publishes the already-read archive in the same frame.
+    MSL_STADIUM_PRELOADED = 1,
+    // Slippi Online 3.18+: the retail decision at the timer's end, with
+    // Online/Core/Hacks/Stadium/{StadiumFileLoad,GrPsxIsValid}.asm reading
+    // the archive synchronously in place of the DVD.
+    MSL_STADIUM_ONLINE_LOADED = 2,
 };
 
 // Native validation workers keep immutable GameData alive across jobs. The
@@ -359,9 +427,9 @@ _Static_assert(sizeof(MslCoreInputPlayer) == 13, "MslCoreInputPlayer wire size")
 _Static_assert(sizeof(MslCoreInput) == 52, "MslCoreInput wire size");
 _Static_assert(sizeof(MslCoreStageEvents) == 132, "stage events wire size");
 _Static_assert(sizeof(MslCoreStreamFrame) == 188, "stream frame wire size");
-_Static_assert(sizeof(MslCoreMatchConfig) == 64,
+_Static_assert(sizeof(MslCoreMatchConfig) == 66,
                "MslCoreMatchConfig wire size");
-_Static_assert(sizeof(MslCoreStreamJobHeader) == 120,
+_Static_assert(sizeof(MslCoreStreamJobHeader) == 122,
                "stream job header wire size");
 _Static_assert(sizeof(MslCoreItem) == 48, "MslCoreItem wire size");
 _Static_assert(sizeof(MslCoreCompare) == 1302, "MslCoreCompare wire size");

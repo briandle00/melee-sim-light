@@ -9,8 +9,14 @@
 #include <math.h>
 #endif
 
+// The high word of a double (the game is big-endian: the word at the lower address).
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define MSL_HI(x) *(1 + (int*) &x)
+#define MSL_LO(x) *(int*) &x
+#else
 #define MSL_HI(x) *(int*) &x
 #define MSL_LO(x) *(1 + (int*) &x)
+#endif
 
 #define M_PI 3.14159265358979323846
 #define M_TAU 6.283185307179586

@@ -25,6 +25,16 @@
 
 HSD_MObjInfo ftMObj = { ftMaterial_800BF260 };
 
+#if MSL_GX_RECORD
+// (the source reads the two templates below as the fields of one struct that starts at ftMObj, the statics being laid out
+// one after another; a host keeps them apart)
+#define MSL_FT_TEXP_TMPL ftMaterial_803C6A44
+#define MSL_FT_TEVDESC_TMPL ftMaterial_803C69D0
+#else
+#define MSL_FT_TEXP_TMPL info->texp_tmpl
+#define MSL_FT_TEVDESC_TMPL info->tevdesc_tmpl
+#endif
+
 struct ft_MObjInfo {
     HSD_MObjInfo parent;
     HSD_TevDesc tevdesc_tmpl;
@@ -58,7 +68,8 @@ void ftMaterial_800BF260(void)
     ftMObj.setup = (HSD_MObjSetupFunc) (Event) ftMaterial_800BF2B8;
 }
 
-void ftMaterial_800BF2B8(HSD_MObj* mobj, u32 rendermode, u32 unused)
+/* (two parameters: the class's setup method is called with two, and a WebAssembly indirect call must match the signature) */
+void ftMaterial_800BF2B8(HSD_MObj* mobj, u32 rendermode)
 {
     Fighter* fp;
     HSD_TObj* tobj;
@@ -167,7 +178,7 @@ HSD_TExp* ftMaterial_800BF534(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp,
 
     if (overlay->x7C_flag2 && overlay->x7C_light_enable) {
         if (!(rendermode & RENDER_XLU) && !fp->x2223_b2) {
-            texp->cnst = info->texp_tmpl;
+            texp->cnst = MSL_FT_TEXP_TMPL;
             chk = lbGetFreeColorRegister(0, mobj, NULL);
             reg = chk;
             if (reg == -1) {
@@ -177,7 +188,7 @@ HSD_TExp* ftMaterial_800BF534(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp,
             texp->cnst.val = &overlay->x50_light_color;
             HSD_TExpSetReg(texp);
 
-            sp_tevdesc = info->tevdesc_tmpl;
+            sp_tevdesc = MSL_FT_TEVDESC_TMPL;
             sp_tevdesc.stage = HSD_StateAssignTev();
             sp_tevdesc.color = 2;
             sp_tevdesc.u.tevconf.clr_a = GX_CC_ZERO;
@@ -287,7 +298,7 @@ void ftMaterial_800BF6BC(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp)
             sp168 = overlay->x2C_hex;
         }
         if (chk1 != 0) {
-            sp_cnst1 = info->texp_tmpl;
+            sp_cnst1 = MSL_FT_TEXP_TMPL;
             reg1 = lbGetFreeColorRegister(0, mobj, texp);
             if (reg1 == -1) {
                 HSD_ASSERTREPORT(352, 0, "can't find free color register!\n");
@@ -312,7 +323,7 @@ void ftMaterial_800BF6BC(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp)
                                  "can't find free color ratio register!\n");
             }
             if ((u8) fp->x61D != 0xFF) {
-                sp_cnst2 = info->texp_tmpl;
+                sp_cnst2 = MSL_FT_TEXP_TMPL;
                 sp_cnst2.reg = (u8) reg2;
                 sp_cnst2.comp = 5;
                 sp_cnst2.idx = 3;
@@ -323,8 +334,14 @@ void ftMaterial_800BF6BC(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp)
             }
             sp_cnst1.reg = (u8) reg2;
             {
+#if MSL_GX_RECORD
+                // (the source writes the ratio color into the four bytes before sp_tevdesc, stack padding on the console)
+                static _Thread_local GXColor ratio_color;
+                GXColor* color = &ratio_color;
+#else
                 // @todo Fix this stack pointer arithmetic
                 GXColor* color = (GXColor*) ((u8*) &sp_tevdesc - 4);
+#endif
                 u8 alpha = sp168.a;
 
                 color->r = alpha;
@@ -333,7 +350,7 @@ void ftMaterial_800BF6BC(Fighter* fp, HSD_MObj* mobj, HSD_TExp* texp)
                 sp_cnst1.val = color;
             }
             HSD_TExpSetReg((HSD_TExp*) &sp_cnst1);
-            sp_tevdesc = info->tevdesc_tmpl;
+            sp_tevdesc = MSL_FT_TEVDESC_TMPL;
             sp_tevdesc.stage = HSD_StateAssignTev();
             sp_tevdesc.u.tevconf.clr_b = lb_8000CC8C(reg1);
             sp_tevdesc.u.tevconf.clr_c = lb_8000CC8C(reg2);

@@ -243,6 +243,25 @@ int HSD_RObjGetGlobalPosition(HSD_RObj* robj, int type, Vec3* p)
     return n;
 }
 
+#if MSL_GX_RECORD
+/* the inline sqrtf the game's code has (math_ppc.h: frsqrte, three fused Newton steps; GALE01 0x8037B454 and 0x8037B4D8) where libc's is correctly rounded */
+extern double __frsqrte(double);
+static inline float robj_gekko_sqrtf(float x)
+{
+    if (x > 0.0F) {
+        double g = __frsqrte((double) x);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        g = (0.5 * g) * __builtin_fma(-(double) x, g * g, 3.0);
+        return (float) ((double) x * g);
+    }
+    return x;
+}
+#define ROBJ_SQRTF(x) robj_gekko_sqrtf(x)
+#else
+#define ROBJ_SQRTF(x) sqrtf(x)
+#endif
+
 static void set_dirup_matrix(Vec3* dir_ptr, Vec3* uv_ptr, Vec3* scale_ptr,
                              void* obj, HSD_ObjUpdateFunc update_func)
 {
@@ -252,10 +271,11 @@ static void set_dirup_matrix(Vec3* dir_ptr, Vec3* uv_ptr, Vec3* scale_ptr,
     f32 kdir;
 
     PSVECCrossProduct(dir_ptr, uv_ptr, &z_vec);
-    kdir =
-        sqrtf(1.0F / (1.00000001335e-10f + PSVECDotProduct(dir_ptr, dir_ptr)));
+    kdir = ROBJ_SQRTF(
+        1.0F / (1.00000001335e-10f + PSVECDotProduct(dir_ptr, dir_ptr)));
     PSVECScale(dir_ptr, dir_ptr, kdir);
-    kz = sqrtf(1.0F / (1.00000001335e-10f + PSVECDotProduct(&z_vec, &z_vec)));
+    kz = ROBJ_SQRTF(
+        1.0F / (1.00000001335e-10f + PSVECDotProduct(&z_vec, &z_vec)));
     PSVECScale(&z_vec, &z_vec, kz);
     PSVECCrossProduct(&z_vec, dir_ptr, uv_ptr);
     v.x = dir_ptr->x * scale_ptr->x;

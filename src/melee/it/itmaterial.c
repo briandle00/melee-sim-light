@@ -64,7 +64,7 @@ void it_80277D08(void)
     it_mobj.make_texp = hsdMObj.make_texp;
 }
 
-void fn_80277D8C(HSD_MObj* mobj, u32 rendermode_arg, u32 unused_arg)
+void fn_80277D8C(HSD_MObj* mobj, u32 rendermode_arg)
 {
     HSD_TObj* tobj2;
     HSD_TExp sp38;
@@ -287,7 +287,13 @@ void it_80278108(Item* item, HSD_MObj* mobj, HSD_TExp* texp)
         }
         spFC.reg = reg2;
         {
+#if MSL_GX_RECORD
+            // (the source writes the ratio color into the four bytes before sp1C, stack padding on the console; ftmaterial.c has the same)
+            static _Thread_local GXColor ratio_color;
+            GXColor* color = &ratio_color;
+#else
             GXColor* color = (GXColor*) ((u8*) &sp1C - 4);
+#endif
             u8 alpha = sp168.a;
 
             color->r = alpha;

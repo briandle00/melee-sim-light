@@ -37,7 +37,7 @@ static s32 lb_803BA030[] = { 7, 4, 5, 6 };
 
 bool lb_8000B074(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_is_animating(jobj);
     }
@@ -53,7 +53,7 @@ bool lb_8000B074(HSD_JObj* jobj)
 
 bool lb_8000B09C(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_tree_is_animating(jobj);
     }
@@ -87,7 +87,7 @@ bool lb_8000B09C(HSD_JObj* jobj)
 
 bool lb_8000B134(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_tree_rewound(jobj);
     }
@@ -136,7 +136,7 @@ void lb_8000B1CC(HSD_JObj* arg0, Vec3* pos0, Vec3* pos1)
         *pos1 = *pos0;
         return;
     }
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (msl_fighter_pose_transform_point(arg0, pos0, pos1)) {
         return;
     }
@@ -337,7 +337,7 @@ static HSD_JObj* lbFindJObjWithAObj(HSD_JObj* jobj)
 
 float lbGetJObjFramerate(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_tree_rate(jobj);
     }
@@ -351,7 +351,7 @@ float lbGetJObjFramerate(HSD_JObj* jobj)
 
 float lbGetJObjCurrFrame(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_tree_frame(jobj);
     }
@@ -365,7 +365,7 @@ float lbGetJObjCurrFrame(HSD_JObj* jobj)
 
 float lbGetJObjEndFrame(HSD_JObj* jobj)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     if (jobj != NULL && msl_fighter_pose_owns_animation(jobj->aobj)) {
         return msl_fighter_pose_tree_end(jobj);
     }
@@ -719,7 +719,7 @@ void lb_8000C868(HSD_Joint* arg0, HSD_JObj* arg1, HSD_JObj* arg2, float arg8,
     HSD_JObjSetFlags(arg2, 0x40U);
 }
 
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
 enum {
     MSL_LB_BLEND_MAX_JOINTS = 140,
     MSL_LB_BLEND_MAX_EULERS = MSL_LB_BLEND_MAX_JOINTS * 2,

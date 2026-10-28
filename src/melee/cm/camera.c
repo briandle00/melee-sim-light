@@ -938,7 +938,7 @@ void Camera_8002A28C(CameraBounds* arg0)
 
     test = -1;
 
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     // Hosted camera-effect producers retain their source ordering and bounded
     // lifetime below, but the quake frame is consumed only by the renderer.
     for (i = 0; i < 2; ++i) {
@@ -1439,7 +1439,7 @@ void Camera_8002B3D4(void* arg0)
 
     Camera_80030DF8();
     Camera_800293E0();
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     Camera_8002B0E0();
 #endif
     Camera_8002958C(&bounds, &cm_80452C68.transform);
@@ -1483,7 +1483,7 @@ void Camera_8002B3D4(void* arg0)
         }
     }
 
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     /// @remarks permuter jank
     distance.y = cm_80452C68.transform.target_position.y -
                  cm_80452C68.transform.target_interest.y;
@@ -3915,6 +3915,12 @@ void Camera_SetModeToStandard(void)
     cm_80452C68.mode = CAMERA_STANDARD;
 }
 
+/* The camera mode's callback is called as void (*)(Camera_x2D0*); the functions return s32 and take other pointer types, which a WebAssembly
+ * indirect call does not allow (it traps on any other signature). */
+static void msl_cam_cb_SetBounds(Camera_x2D0* p);
+static void msl_cam_cb_8002F908(Camera_x2D0* p);
+static void msl_cam_cb_8002FBA0(Camera_x2D0* p);
+
 s32 Camera_SetBounds(Vec4* arg0)
 {
     arg0->z = Stage_GetCamBoundsLeftOffset();
@@ -3955,7 +3961,7 @@ void Camera_SetUpPauseCamera(s8 pauserSlot, s8 pauserId, s32 arg2)
     cm_80452C68.x2D0.unk28 = Stage_GetPauseCamZPosMin();
     cm_80452C68.x2D0.unk2C = Stage_GetPauseCamZPosMax();
     cm_80452C68.x2D0.callback =
-        (void (*)(Camera_x2D0*))(Event) Camera_SetBounds;
+        msl_cam_cb_SetBounds;
 
     switch (arg2) {
     case 0:
@@ -4145,7 +4151,7 @@ void Camera_8002F9E4(s8 arg0, s8 arg1)
     scale = cm_80452C68.x32C * cm_803BCCA0.x8C + cm_803BCCA0.x90;
     cm_80452C68.x2D0.unk28 = scale * cm_803BCCA0.x94;
     cm_80452C68.x2D0.unk2C = scale * cm_803BCCA0.x98;
-    cm_80452C68.x2D0.callback = (void (*)(Camera_x2D0*))(Event) fn_8002F908;
+    cm_80452C68.x2D0.callback = msl_cam_cb_8002F908;
 
     {
         s8 slot = cm_80452C68.x304;
@@ -4227,7 +4233,7 @@ void Camera_8002FC7C(s8 arg0, s8 arg1)
     temp_f2 = (cm_80452C68.x32C * (*new_var).x8C) + (*new_var).x90;
     cm_80452C68.x2D0.unk28 = temp_f2 * (*new_var).x94;
     cm_80452C68.x2D0.unk2C = temp_f2 * (*new_var).x98;
-    cm_80452C68.x2D0.callback = (void (*)(Camera_x2D0*))(Event) fn_8002FBA0;
+    cm_80452C68.x2D0.callback = msl_cam_cb_8002FBA0;
     x304_ptr = &cm_80452C68.x304;
     x304_check = *x304_ptr;
     cm_80452C68.x314.z = 0.0f;
@@ -4925,7 +4931,7 @@ void Camera_80030E44(enum_t arg0, Vec3* arg1)
 
     cm_80452C68._8C[arg0] = result;
 
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     {
         s32 i;
         for (i = 0; i < 16; i++) {
@@ -5106,3 +5112,17 @@ void Camera_800313E0(HSD_GObj* gobj, u64 prios)
     }
     HSD_GObj_80390ED0(gobj, 4);
 }
+
+// Viewer track (runtime/viewer_track.c): the quake translation and the
+// background colour, read only.
+void msl_camera_track_extras(Vec2* translation, u8* background_rgb)
+{
+    *translation = cm_80452C68.translation;
+    background_rgb[0] = cm_80452C68.background_r;
+    background_rgb[1] = cm_80452C68.background_g;
+    background_rgb[2] = cm_80452C68.background_b;
+}
+
+static void msl_cam_cb_SetBounds(Camera_x2D0* p) { (void) Camera_SetBounds((Vec4*) p); }
+static void msl_cam_cb_8002F908(Camera_x2D0* p) { (void) fn_8002F908((HSD_RectF32*) p); }
+static void msl_cam_cb_8002FBA0(Camera_x2D0* p) { (void) fn_8002FBA0((HSD_RectF32*) p); }

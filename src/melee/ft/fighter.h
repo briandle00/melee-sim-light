@@ -12,7 +12,7 @@
 #include <dolphin/mtx.h>
 #include <baselib/objalloc.h>
 
-#if defined(MSL_CORE_NATIVE) && !defined(MSL_CORE_WASM)
+#if defined(MSL_POSE_ENGINE) && !defined(MSL_CORE_WASM)
 #include "runtime/fighter_pose.h"
 #endif
 
@@ -22,7 +22,7 @@ enum {
     FIGHTER_X2040_ALLOC_COUNT = 0x80 / 4,
 };
 
-#if defined(MSL_CORE_NATIVE) && !defined(MSL_CORE_WASM)
+#if defined(MSL_POSE_ENGINE) && !defined(MSL_CORE_WASM)
 #define msl_fighter_part_anim_flags(fp, part)                                \
     (((fp)->parts[(part)].joint->flags & JOBJ_MSL_GAMEPLAY_COLD)             \
          ? 0                                                                 \

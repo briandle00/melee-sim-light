@@ -346,7 +346,7 @@ extern char* ftYs_Unk2_804D3E78;
 /// https://decomp.me/scratch/ufrFK
 void ftYs_Init_8012B6E8(Fighter* fp, struct S_UNK_YOSHI1* unk_struct_arg)
 {
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     u8 _[12];
 
     struct S_UNK_YOSHI1* unk_struct1;
@@ -357,8 +357,18 @@ void ftYs_Init_8012B6E8(Fighter* fp, struct S_UNK_YOSHI1* unk_struct_arg)
     float zero_float;
 
     attr_r26 = fp->ft_data->ext_attr;
+#if MSL_GX_RECORD
+    // S_UNK_YOSHI1 is an FtPartsVisLookup and S_UNK_YOSHI2 its TempS[2]: x8_end_index and xC_start_index are the second
+    // TempS's count and index list. The host's pointers are wider than the console's, so the console's field offsets
+    // (x8, xC) are read through the host types.
+    // refs/melee/src/melee/ft/ftparts.c::ftParts_80074D7C
+    unk_struct1 = unk_struct_arg;
+    index = ((FtPartsVisLookup*) unk_struct1)->x4[1].x4;
+    ptr2EndIndex = (s32*) &((FtPartsVisLookup*) unk_struct1)->x4[1].x0;
+#else
     index = (unk_struct1 = unk_struct_arg)->unk_struct->xC_start_index;
     ptr2EndIndex = (&unk_struct1->unk_struct->x8_end_index);
+#endif
     zero_float = 0.0f;
 
     for (i = 0; i < *ptr2EndIndex; i++) {
@@ -393,17 +403,23 @@ void ftYs_Init_8012B6E8(Fighter* fp, struct S_UNK_YOSHI1* unk_struct_arg)
 void ftYs_Init_8012B804(Fighter* fp, struct S_UNK_YOSHI1* unk_struct_arg,
                         float start_frame)
 {
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     u8 _[8];
 
     if (unk_struct_arg) {
-        struct S_UNK_YOSHI2* unk_struct = unk_struct_arg->unk_struct;
         s32* ptr2EndIndex;
         u8* index;
         s32 i;
 
+#if MSL_GX_RECORD
+        // (as in ftYs_Init_8012B6E8: the second TempS of the lookup)
+        index = ((FtPartsVisLookup*) unk_struct_arg)->x4[1].x4;
+        ptr2EndIndex = (s32*) &((FtPartsVisLookup*) unk_struct_arg)->x4[1].x0;
+#else
+        struct S_UNK_YOSHI2* unk_struct = unk_struct_arg->unk_struct;
         index = unk_struct->xC_start_index;
         ptr2EndIndex = (&unk_struct->x8_end_index);
+#endif
 
         for (i = 0; i < *ptr2EndIndex; i++) {
             HSD_DObj* dobj_r3 = fp->dobj_list.data[index[i]];
@@ -480,7 +496,7 @@ void ftYs_Init_OnLoad(HSD_GObj* gobj)
     }
 #endif
 
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     // xC is the shield material animation duration, not collision geometry.
     other_attr->xC = 0.0f;
     ftYs_Init_8012B6E8(fp, temp_r27);

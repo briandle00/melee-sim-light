@@ -29,7 +29,24 @@ volatile PPCWGPipe GXWGFifo : GXFIFO_ADDR;
 #define GXWGFifo (*(volatile PPCWGPipe *)GXFIFO_ADDR)
 #endif
 
-#if DEBUG
+#if MSL_GX_RECORD
+
+// the viewer build: the pipe is a memory buffer (src/gx/msl_gx.h)
+#include "gx/msl_gx.h"
+
+#define FUNC_1PARAM(name, T) static inline void name##1##T(T x) { msl_gx_wg_##T(x); }
+
+#define FUNC_2PARAM(name, T) static inline void name##2##T(T x, T y) { msl_gx_wg_##T(x); msl_gx_wg_##T(y); }
+
+#define FUNC_3PARAM(name, T) static inline void name##3##T(T x, T y, T z) { msl_gx_wg_##T(x); msl_gx_wg_##T(y); msl_gx_wg_##T(z); }
+
+#define FUNC_4PARAM(name, T) static inline void name##4##T(T x, T y, T z, T w) { msl_gx_wg_##T(x); msl_gx_wg_##T(y); msl_gx_wg_##T(z); msl_gx_wg_##T(w); }
+
+#define FUNC_INDEX8(name) static inline void name##1x8(u8 x) { msl_gx_wg_u8(x); }
+
+#define FUNC_INDEX16(name) static inline void name##1x16(u16 x) { msl_gx_wg_u16(x); }
+
+#elif DEBUG
 
 // external functions
 

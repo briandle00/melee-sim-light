@@ -182,7 +182,8 @@ HSD_JObj* msl_core_HSD_JObjLoadJointFiltered(HSD_Joint* joint,
                                              const u8* keep_by_node,
                                              size_t node_count,
                                              HSD_JObj** jobj_by_node,
-                                             u8* depth_by_node);
+                                             u8* depth_by_node,
+                                             bool with_dobj);
 #endif
 void HSD_JObjAddAnimAll(HSD_JObj*, HSD_AnimJoint*, HSD_MatAnimJoint*,
                         HSD_ShapeAnimJoint*);

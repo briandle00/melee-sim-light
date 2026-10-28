@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "ground.h"
 
 #ifdef MSL_CORE_NATIVE
@@ -1194,7 +1195,7 @@ void Ground_801C1E94(void)
         temp_r30_2 = GObj_Create(0xA, 0xB, 0);
         temp_r29_2 = HSD_FogLoadDesc(phi_r0);
         HSD_GObjObject_80390A70(temp_r30_2, HSD_GObj_804D7848, temp_r29_2);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
         GObj_SetupGXLink(temp_r30_2, Ground_801C1E2C, 0, 0);
 #endif
         temp_r3 = stageinfo->param;
@@ -2684,6 +2685,17 @@ static void Ground_801C4640(HSD_GObj* gobj, int unused)
     HSD_LObjSetupInit(HSD_CObjGetCurrent());
 }
 
+#if MSL_GX_RECORD
+/* the first map of the stage file whose callbacks carry the light flag (Ground_801C466C_inline's choice) */
+int msl_ground_map_has_lights(int map_index)
+{
+    extern StageData* msl_core_selected_stage_data_if_bound(void);
+    StageData* data = msl_core_selected_stage_data_if_bound();
+    StageCallbacks* callbacks = data != NULL ? data->callbacks : NULL;
+    return callbacks != NULL && (callbacks[map_index].flags & 0x80000000) != 0;
+}
+#endif
+
 static LightList** Ground_801C466C_inline(void)
 {
     StageCallbacks* var_r26;
@@ -2697,6 +2709,12 @@ static LightList** Ground_801C466C_inline(void)
     for (i = 0; i < temp_r28; i++) {
         if (var_r26->flags & 0x80000000) {
             UnkArchiveStruct* archive = grDatFiles_801C6330(i);
+#if MSL_GX_RECORD
+            if (archive->unk4->unk8[i].x18 == NULL) {
+                fprintf(stderr, "stage lights: map %d of the stage file names none the viewer build can read" "%c", i, 10);
+                return NULL;
+            }
+#endif
             return Ground_801C20E0(archive, archive->unk4->unk8[i].x18);
         }
         var_r26++;

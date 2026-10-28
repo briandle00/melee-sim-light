@@ -29,7 +29,11 @@
 #include <melee/lb/lbrefract.h>
 #define MAX_FT_PARTS 140
 
-#ifdef MSL_CORE_NATIVE
+#if defined(MSL_CORE_NATIVE) && !defined(MSL_POSE_ENGINE)
+#include "runtime/context.h"
+#include "runtime/source_state.h"
+#endif
+#ifdef MSL_POSE_ENGINE
 #include "runtime/fighter_pose.h"
 #include "runtime/context.h"
 #include "runtime/source_state.h"
@@ -328,6 +332,15 @@ static const u8 gameplay_part_masks[FTKIND_MAX][MAX_FT_PARTS] = {
 
 const u8* ftParts_HeadlessGameplayMask(FighterKind kind)
 {
+#if MSL_FULL_FIGHTER_MODELS
+    // The viewer build draws: every part of the model is live.
+    static u8 all_parts[MAX_FT_PARTS];
+    if (all_parts[0] == 0) {
+        memset(all_parts, 1, sizeof(all_parts));
+    }
+    (void) kind;
+    return all_parts;
+#endif
     HSD_ASSERT(27, (unsigned) kind < FTKIND_MAX &&
                        gameplay_part_masks[kind][0] != 0);
     return gameplay_part_masks[kind];
@@ -701,7 +714,11 @@ void ftParts_80074194(Fighter* fighter, FighterBone* bone, HSD_JObj* jobj,
     bone->flags2_b6 = dobj_count != 0 ? true : false;
 }
 
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
+#if MSL_FULL_FIGHTER_MODELS
+static int msl_full_dobj_total;   // (the draw objects the last main model load made, for ftParts_SetupParts)
+#endif
+
 static HSD_JObj* ftParts_HeadlessLoadCompact(Fighter* fp, HSD_Joint* joint,
                                              bool interpolation)
 {
@@ -717,6 +734,7 @@ static HSD_JObj* ftParts_HeadlessLoadCompact(Fighter* fp, HSD_Joint* joint,
     int node_count = 0;
     int part;
     int node;
+    int dobj_total = 0;   // (the draw objects of the whole model, in the order its parts are visited)
 
     HSD_ASSERT(498, part_count <= MAX_FT_PARTS);
     for (part = 0; part < part_count; ++part) {
@@ -744,9 +762,14 @@ static HSD_JObj* ftParts_HeadlessLoadCompact(Fighter* fp, HSD_Joint* joint,
         node_count += 1;
     }
     HSD_ASSERT(500, node_count > 0 && keep_by_node[0]);
+#if !MSL_FULL_FIGHTER_MODELS
     HSD_ASSERT(500, has_cold_node);
+#else
+    (void) has_cold_node;
+#endif
     root = msl_core_HSD_JObjLoadJointFiltered(
-        joint, keep_by_node, node_count, jobj_by_node, depth_by_node);
+        joint, keep_by_node, node_count, jobj_by_node, depth_by_node,
+        !interpolation);
     for (node = 0; node < node_count; ++node) {
         HSD_JObj* jobj = jobj_by_node[node];
         part = part_by_node[node];
@@ -777,11 +800,15 @@ static HSD_JObj* ftParts_HeadlessLoadCompact(Fighter* fp, HSD_Joint* joint,
         if (interpolation) {
             fp->parts[part].x4_jobj2 = jobj;
         } else {
-            int dobj_count = 0;
-            ftParts_80074194(fp, &fp->parts[part], jobj, &dobj_count,
+            ftParts_80074194(fp, &fp->parts[part], jobj, &dobj_total,
                             depth_by_node[node]);
         }
     }
+#if MSL_FULL_FIGHTER_MODELS
+    if (!interpolation) {
+        msl_full_dobj_total = dobj_total;
+    }
+#endif
     return root;
 }
 
@@ -830,7 +857,11 @@ void ftParts_SetupParts(Fighter_GObj* fighter_obj)
 
 #ifdef MSL_CORE_NATIVE
     if (fp->dobj_list.count == UINT32_MAX) {
+#if MSL_FULL_FIGHTER_MODELS
+        fp->dobj_list.count = (u32) msl_full_dobj_total;
+#else
         fp->dobj_list.count = 0;
+#endif
         return;
     }
 #endif
@@ -947,7 +978,7 @@ HSD_JObj* ftParts_8007482C(HSD_Joint* joint)
 void ftParts_8007487C(FtPartsDesc* desc, FtPartsVis* vis, u32 costume_id,
                       DObjList* arg3, DObjList* arg4)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_FULL_FIGHTER_MODELS
     int i;
 
     // The visibility tables below address DObjs and only control rendered
@@ -1390,8 +1421,14 @@ void ftParts_800753D4(Fighter* arg0, struct Fighter_804D6540_x0_t* arg1,
 
     ftParts_80075304(arg1->x2, arg0->parts[arg1->x1].joint, temp_r30);
     ftParts_80075304(arg1->x2, arg0->parts[arg1->x1].x4_jobj2, temp_r31);
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
+#if MSL_GX_RECORD
+    // The viewer build draws the accessory: it joins the pose engine like any other joint, so that its parent's moves mark it dirty
+    // (a cold joint outside the engine keeps its first matrix).
+    if (0) {
+#else
     if (from_reserve) {
+#endif
         // Kirby's copy-hat accessories (Jigglypuff, Mewtwo, Falco) load
         // mid-match. No gameplay owner reads their parts (the copies spawn
         // from Kirby's own parts 0/6/12/39/44), and the pose array is shared
@@ -1423,7 +1460,7 @@ void ftParts_800753D4(Fighter* arg0, struct Fighter_804D6540_x0_t* arg1,
 void ftParts_800755E8(Fighter* fp, u8* arg1)
 {
     FighterBone* bone = &fp->parts[*arg1];
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     // ftParts_800753D4 registered both accessory JObjs with the compact pose
     // (their aobj slot holds the pose node); erase them before the HSD
     // release would treat that node as an AObj.

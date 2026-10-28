@@ -15,12 +15,22 @@ HSD_TExpType HSD_TExpGetType(HSD_TExp* texp)
     if (texp == NULL) {
         return HSD_TE_ZERO;
     }
+#if MSL_GX_RECORD
+    // (the sentinels are the pointers -1 and -2 as the source's 32-bit words: on a 64-bit host they widen)
+    if (texp == HSD_TEXP_TEX) {
+        return HSD_TE_TEX;
+    }
+    if (texp == HSD_TEXP_RAS) {
+        return HSD_TE_RAS;
+    }
+#else
     if ((uintptr_t) texp == -1U) {
         return HSD_TE_TEX;
     }
     if ((uintptr_t) texp == -2U) {
         return HSD_TE_RAS;
     }
+#endif
     return texp->type;
 }
 
@@ -1038,7 +1048,12 @@ static inline int clamp_color(int c)
 void HSD_TExpSetReg(HSD_TExp* texp)
 {
     int i;
+#if MSL_GX_RECORD
+    /* (the console leaves the parts of a color that no constant names as the stack held them; the viewer build must not depend on the host's stack) */
+    GXColor reg[8] = { 0 };
+#else
     GXColor reg[8];
+#endif
     u32 changed;
     HSD_TECnst* clist;
 

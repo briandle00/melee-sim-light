@@ -50,6 +50,7 @@
 #endif
 #ifdef MSL_CORE_NATIVE
 #include <platform/memory.h>
+#include "runtime/viewer_track.h"
 
 bool msl_dynamics_angle_greater(Vec3* a, Vec3* b, float threshold,
                                 u32 cutoff);
@@ -156,10 +157,50 @@ void lb_8000FCDC(void)
     lb_8000FA94();
 }
 
+// A chain's copy for the viewer track (msl_viewer_track_keep_dynamics): its
+// links in one array of the match's memory, typed as the pool's are (so a
+// savestate or a match copy carries it), and not the pool's: lb_8000FD18
+// lets go of it without putting it on the free list.
+struct DynamicsData* msl_viewer_track_copy_dynamics(
+    const struct DynamicsData* head)
+{
+    const struct DynamicsData* link;
+    struct DynamicsData* out;
+    uint32_t count = 0;
+    uint32_t i;
+    for (link = head; link != NULL; link = link->next) {
+        ++count;
+    }
+    if (count == 0) {
+        return NULL;
+    }
+#ifdef MSL_CORE_NATIVE
+    out = HSD_MemAllocReloc(count * sizeof(*out), MSL_RELOC_LB_DYNAMICS_DATA,
+                            count, sizeof(*out), 0);
+#else
+    out = HSD_MemAlloc(count * sizeof(*out));
+#endif
+    if (out == NULL) {
+        return NULL;
+    }
+    for (link = head, i = 0; link != NULL; link = link->next, ++i) {
+        out[i] = *link;
+        out[i].next = i + 1 < count ? &out[i + 1] : NULL;
+    }
+    return out;
+}
+
 void lb_8000FD18(DynamicsDesc* desc)
 {
     struct DynamicsData *temp, *cur, *next;
 
+    if (msl_viewer_track_on && desc->data != NULL &&
+        (desc->data < &lb_804D63A0->entries[0] ||
+         desc->data >= &lb_804D63A0->entries[LB_DYNAMICS_ENTRY_COUNT]))
+    {
+        desc->data = NULL;
+        return;
+    }
     for (cur = desc->data; cur != NULL; cur = next) {
         next = cur->next;
         temp = cur_data;
@@ -255,11 +296,11 @@ void lb_8000FD48(HSD_JObj* jobj, DynamicsDesc* desc, size_t max_count)
                 double xd = (double) dist_sq;
                 double guess = __frsqrte(xd);
                 guess = (.5 * guess) *
-                        __builtin_fma(-xd, guess * guess, 3.0);
+                        msl_ppc_fma(-xd, guess * guess, 3.0);
                 guess = (.5 * guess) *
-                        __builtin_fma(-xd, guess * guess, 3.0);
+                        msl_ppc_fma(-xd, guess * guess, 3.0);
                 guess = (.5 * guess) *
-                        __builtin_fma(-xd, guess * guess, 3.0);
+                        msl_ppc_fma(-xd, guess * guess, 3.0);
 #else
                 double guess = __frsqrte((double) dist_sq);
                 guess = .5 * guess * (3.0 - guess * guess * dist_sq);
@@ -564,6 +605,13 @@ static void msl_dynamics_parent_axis(Mtx parent, const Vec3* world,
     }
 }
 
+#if MSL_GX_RECORD
+// (the console inlines MWCC's sqrtf in the solver and its quaternion helpers: the Gekko frsqrte sequence, msl_gekko_sqrtf)
+#define W4_SQRT(x) msl_gekko_sqrtf(x)
+#else
+#define W4_SQRT(x) sqrtf(x)
+#endif
+
 static void msl_dynamics_rotate_euler(Vec3* rotate, const Vec3* axis,
                                       float angle, Mtx matrix)
 {
@@ -591,8 +639,9 @@ static void msl_dynamics_rotate_euler(Vec3* rotate, const Vec3* axis,
     // Exact source sequence from the O0 quaternion helpers. Keeping this
     // dynamics-only chain in its optimized owner avoids admitting the shared
     // interpolation paths to a compiler profile that changes their results.
-    len = sqrtf(axis->x * axis->x + axis->y * axis->y +
-                axis->z * axis->z);
+    // (HSD_QuatLib_8037ECE0, GALE01 0x8037ED30)
+    len = W4_SQRT(axis->x * axis->x + axis->y * axis->y +
+                  axis->z * axis->z);
     inv_len = 1.0F / len;
     half_angle = 0.5F * angle;
     angle_quat.w = cosf(half_angle);
@@ -609,11 +658,32 @@ static void msl_dynamics_rotate_euler(Vec3* rotate, const Vec3* axis,
     sz = sinf(0.5F * euler.z);
     ss = sy * sz;
     cc = cy * cz;
+#if MSL_GX_RECORD
+    // EulerToQuat as the console runs it (GALE01 0x8037EED0..0x8037EEF0): each sum or difference of two products is an fmadds/fmsubs against
+    // the other product, rounded once.
+    euler_quat.w = __fmadds(cx, cc, sx * ss);
+    euler_quat.x = __fmsubs(sx, cc, cx * ss);
+    euler_quat.y = __fmadds(cz, cx * sy, sz * (sx * cy));
+    euler_quat.z = __fmsubs(sz, cx * cy, cz * (sx * sy));
+#else
     euler_quat.w = cx * cc + sx * ss;
     euler_quat.x = sx * cc - cx * ss;
     euler_quat.y = cz * (cx * sy) + sz * (sx * cy);
     euler_quat.z = sz * (cx * cy) - cz * (sx * sy);
+#endif
 
+#if MSL_GX_RECORD
+    // HSD_QuatLib_8037EC4C (GALE01 0x8037EC64..0x8037ECD0): p = angle_quat, q = euler_quat; fused as the console has it.
+    x = __fmadds(euler_quat.w, angle_quat.x, angle_quat.w * euler_quat.x) +
+        __fmsubs(angle_quat.y, euler_quat.z, euler_quat.y * angle_quat.z);
+    y = __fmadds(euler_quat.w, angle_quat.y, angle_quat.w * euler_quat.y) +
+        __fmsubs(euler_quat.x, angle_quat.z, angle_quat.x * euler_quat.z);
+    z = __fmadds(euler_quat.w, angle_quat.z, angle_quat.w * euler_quat.z) +
+        __fmsubs(angle_quat.x, euler_quat.y, euler_quat.x * angle_quat.y);
+    w = __fmsubs(angle_quat.w, euler_quat.w,
+                 __fmadds(angle_quat.z, euler_quat.z,
+                          __fmadds(angle_quat.x, euler_quat.x, angle_quat.y * euler_quat.y)));
+#else
     x = euler_quat.w * angle_quat.x +
         angle_quat.w * euler_quat.x +
         (angle_quat.y * euler_quat.z - euler_quat.y * angle_quat.z);
@@ -626,14 +696,16 @@ static void msl_dynamics_rotate_euler(Vec3* rotate, const Vec3* axis,
     w = angle_quat.w * euler_quat.w -
         (angle_quat.z * euler_quat.z +
          (angle_quat.x * euler_quat.x + angle_quat.y * euler_quat.y));
+#endif
     result_quat.x = x;
     result_quat.y = y;
     result_quat.z = z;
     result_quat.w = w;
 
     PSMTXQuat(matrix, &result_quat);
-    len = sqrtf(matrix[0][0] * matrix[0][0] +
-                matrix[1][0] * matrix[1][0]);
+    // (HSD_QuatLib_8037EB28, GALE01 0x8037EB68)
+    len = W4_SQRT(matrix[0][0] * matrix[0][0] +
+                  matrix[1][0] * matrix[1][0]);
     if (len > 1e-05F) {
         euler.x = atan2f(matrix[2][1], matrix[2][2]);
         euler.y = atan2f(-matrix[2][0], len);
@@ -696,6 +768,44 @@ static u32 msl_load_acos_cutoff(const float* storage)
 }
 
 #endif
+#endif
+
+
+#if MSL_GX_RECORD
+extern int msl_w4_cur_step;
+// MSL_W4_CALL=<step> or <first>:<last>: the solver call dump runs on those steps
+static int w4_call_on(void)
+{
+    extern char* getenv(const char*);
+    extern int sscanf(const char*, const char*, ...);
+    static int lo = -2, hi = -1;
+    if (lo == -2) {
+        const char* v = getenv("MSL_W4_CALL");
+        lo = hi = -1;
+        if (v != NULL && sscanf(v, "%d:%d", &lo, &hi) < 2) {
+            hi = lo;
+        }
+    }
+    return lo >= 0 && msl_w4_cur_step >= lo && msl_w4_cur_step <= hi;
+}
+#endif
+
+#if MSL_GX_RECORD
+extern int msl_w4_cur_step;
+static void w4_stage(int st, int idx, const Vec3* v)
+{
+    extern char* getenv(const char*);
+    extern int atoi(const char*);
+    static int want = -2;
+    if (want == -2) { want = getenv("MSL_W4_CALL") ? atoi(getenv("MSL_W4_CALL")) : -1; }
+    if (w4_call_on()) {
+        const unsigned* w = (const unsigned*) v;
+        fprintf(stderr, "wstg %d %d %08x %08x %08x\n", idx, st, w[0], w[1], w[2]);
+    }
+}
+#define W4_STAGE(st, idx, v) w4_stage(st, (int) (idx), &(v))
+#else
+#define W4_STAGE(st, idx, v) ((void) 0)
 #endif
 
 void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
@@ -781,9 +891,65 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
 
     jobj = cur->desc.lb_unk0.jobj;
 
+#if MSL_GX_RECORD
+    {
+        extern int msl_w4_cur_step;
+        extern char* getenv(const char*);
+        extern int atoi(const char*);
+        static int wantc = -2;
+        if (wantc == -2) { wantc = getenv("MSL_W4_CALL") ? atoi(getenv("MSL_W4_CALL")) : -1; }
+        if (w4_call_on()) {
+            unsigned k;
+            const unsigned* pw = (const unsigned*) parent_mtx;
+            const unsigned* cw = (const unsigned*) colliders_raw;
+            const unsigned* rw = (const unsigned*) &jobj->rotate;
+            const unsigned* tw = (const unsigned*) &cur->desc.lb_unk0.unk_2C;
+            unsigned pyb;
+            memcpy(&pyb, &pos_y, 4);
+            fprintf(stderr, "wstep %d\n", msl_w4_cur_step);
+            fprintf(stderr, "wcall part %d nc %d posy %08x floorfn %d first %d ground %d\n", (int) part, num_colliders, pyb, (int) use_floor_fn, first_active, (int) ground_check);
+            { unsigned dc = desc->count, dx, dy, dz; memcpy(&dx, &desc->pos.x, 4); memcpy(&dy, &desc->pos.y, 4); memcpy(&dz, &desc->pos.z, 4); fprintf(stderr, "wdesc %08x %08x %08x %08x\n", 0u, dc, dx, dy, dz); }
+            fprintf(stderr, "wpar");
+            for (k = 0; k < 12; ++k) fprintf(stderr, " %08x", pw[k]);
+            fprintf(stderr, "\nwrot %08x %08x %08x pos %08x %08x %08x\n", rw[0], rw[1], rw[2], tw[0], tw[1], tw[2]);
+            {
+                struct DynamicsData* dd = desc->data;
+                int li = 0;
+                for (; dd != NULL; dd = dd->next, ++li) {
+                    const unsigned* r3 = (const unsigned*) &dd->desc.lb_unk0.jobj->rotate;
+                    const unsigned* p3 = (const unsigned*) &dd->desc.lb_unk0.unk_2C;
+                    const unsigned* a3 = (const unsigned*) &dd->desc.lb_unk0.unk_38;
+                    const unsigned* v1 = (const unsigned*) &dd->desc.lb_unk0.unk_44;
+                    {
+                        const unsigned* sw = (const unsigned*) &dd->desc.lb_unk0.unk_48;
+                        int q;
+                        fprintf(stderr, "wst %d", li);
+                        for (q = 0; q < 18; ++q) fprintf(stderr, " %08x", sw[q]);
+                        fprintf(stderr, "\n");
+                    }
+                    {
+                        const unsigned* tj = (const unsigned*) &dd->desc.lb_unk0.jobj->translate;
+                        const unsigned* sj = (const unsigned*) &dd->desc.lb_unk0.jobj->scale;
+                        const unsigned* cj = dd->desc.lb_unk0.jobj->child != NULL ? (const unsigned*) &dd->desc.lb_unk0.jobj->child->translate : tj;
+                        fprintf(stderr, "wjo %d %08x %08x %08x %08x %08x %08x %08x %08x %08x\n", li, tj[0], tj[1], tj[2], sj[0], sj[1], sj[2], cj[0], cj[1], cj[2]);
+                    }
+                    fprintf(stderr, "wpre %d %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n", li, r3[0], r3[1], r3[2], p3[0], p3[1], p3[2], a3[0], a3[1], a3[2], v1[0]);
+                }
+            }
+            for (k = 0; (int) k < num_colliders; ++k) {
+                unsigned q;
+                fprintf(stderr, "wcol");
+                for (q = 0; q < 10; ++q) fprintf(stderr, " %08x", cw[k * 10 + q]);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+#endif
+
     while (cur->next != NULL) {
         f32 angle_diff;
         f32 force_mag;
+        unsigned w4m = 0;
 
         /* Build translation matrix and concat */
 #ifdef MSL_CORE_HOSTED
@@ -862,6 +1028,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
             if (cur->desc.lb_unk0.unk_4C * desc->pos.x < 1.0) {
                 f32 stiff_angle = ABS(lbVector_Angle(&link_dir, &current_dir));
                 if (stiff_angle != 0.0f) {
+                    w4m |= 1;
                     PSVECCrossProduct(&link_dir, &current_dir, &cross_vec);
                     lbVector_Normalize(&cross_vec);
                     lbVector_RotateAboutUnitAxis(
@@ -872,11 +1039,13 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(1, idx, link_dir);
             /* Apply gravity influence */
             {
                 Vec3 grav_dir = lb_803B7280.v0;
                 f32 grav_angle = lbVector_Angle(&link_dir, &grav_dir);
                 if (grav_angle != 0.0f) {
+                    w4m |= 2;
                     f32 grav_rot = cur->desc.lb_unk0.unk_8C * sinf(grav_angle);
                     if (grav_rot < 0.0f) {
                         grav_rot = -grav_rot;
@@ -888,9 +1057,11 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(2, idx, link_dir);
             /* Apply interaction force */
             force_mag = 0.0f;
             if (lb_804D63B0 != NULL && first_active <= idx) {
+                w4m |= 4;
                 struct DynamicsData* next_node = cur->next;
                 Vec3 next_pos = next_node->desc.lb_unk0.unk_2C;
                 Vec3 force_dir;
@@ -911,13 +1082,16 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(3, idx, link_dir);
             /* Apply angular velocity rotation */
             if (0.0 != cur->desc.lb_unk0.unk_44) {
+                w4m |= 8;
                 lbVector_RotateAboutUnitAxis(&link_dir,
                                              &cur->desc.lb_unk0.unk_38,
                                              cur->desc.lb_unk0.unk_44);
             }
 
+            W4_STAGE(4, idx, link_dir);
             /* Apply max angle constraint */
             if (force_mag <
                 cur->desc.lb_unk0.unk_8C * cur->desc.lb_unk0.unk_48)
@@ -933,6 +1107,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                     cur->desc.lb_unk0.unk_88)
 #endif
                 {
+                    w4m |= 128;
                     PSVECCrossProduct(&clamp_dir, &link_dir, &cross_vec);
                     lbVector_Normalize(&cross_vec);
                     lbVector_RotateAboutUnitAxis(&clamp_dir, &cross_vec,
@@ -941,8 +1116,10 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(5, idx, link_dir);
             /* Apply convergence limit */
             if (cur->desc.lb_unk0.unk_50 > 0.0) {
+                w4m |= 16;
 #ifdef MSL_CORE_NATIVE
                 if (msl_dynamics_angle_less(
                         &natural_dir, &link_dir, cur->desc.lb_unk0.unk_50,
@@ -953,6 +1130,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                     cur->desc.lb_unk0.unk_50)
 #endif
                 {
+                    w4m |= 256;
                     link_dir = natural_dir;
                 } else {
                     PSVECCrossProduct(&link_dir, &natural_dir, &cross_vec);
@@ -962,6 +1140,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(6, idx, link_dir);
             /* Apply max angle deviation */
             {
 #ifdef MSL_CORE_NATIVE
@@ -978,6 +1157,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
 #ifdef MSL_CORE_NATIVE
                 {
 #endif
+                    w4m |= 512;
                     PSVECCrossProduct(&link_dir, &natural_dir, &cross_vec);
                     lbVector_Normalize(&cross_vec);
                     lbVector_RotateAboutUnitAxis(&link_dir, &cross_vec,
@@ -986,8 +1166,10 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(7, idx, link_dir);
             /* Collider avoidance */
             if (num_colliders != 0) {
+                w4m |= 32;
                 lbVector_Normalize(&link_dir);
                 collider = (struct lb_Collider*) colliders_raw;
                 {
@@ -1016,7 +1198,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                                             (coll_dir.x * coll_dir.x +
                                              coll_dir.y * coll_dir.y);
                             if (coll_dist > 0.0f) {
-                                coll_dist = sqrtf(coll_dist);
+                                coll_dist = W4_SQRT(coll_dist);
                             }
 
                             if (coll_dist > collider->radius &&
@@ -1035,7 +1217,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                                         __fmsubs(coll_dist, coll_dist,
                                                  adj_radius * adj_radius);
                                     if (side_sq > 0.0f) {
-                                        side_sq = sqrtf(side_sq);
+                                        side_sq = W4_SQRT(side_sq);
                                     }
                                     {
                                         f32 avoidance_angle =
@@ -1060,8 +1242,10 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+            W4_STAGE(8, idx, link_dir);
             /* Ground collision */
             if (ground_check != 0) {
+                w4m |= 64;
                 if (on_ground != 0) {
                     gnd_norm = lb_803B7280.v1;
                     lbVector_Normalize(&link_dir);
@@ -1158,7 +1342,7 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                                 horiz_sq = __fnmsubs(height_diff, height_diff,
                                                      bone_len * bone_len);
                                 if (horiz_sq > 0.0f) {
-                                    horiz_sq = sqrtf(horiz_sq);
+                                    horiz_sq = W4_SQRT(horiz_sq);
                                 }
                                 {
                                     f32 ground_angle =
@@ -1183,8 +1367,24 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
                 }
             }
 
+#if MSL_GX_RECORD
+            {
+                extern int msl_w4_cur_step;
+                extern char* getenv(const char*);
+                extern int atoi(const char*);
+                static int wantd = -2;
+                if (wantd == -2) { wantd = getenv("MSL_W4_CALL") ? atoi(getenv("MSL_W4_CALL")) : -1; }
+                if (w4_call_on()) {
+                    const unsigned* n = (const unsigned*) &natural_dir;
+                    const unsigned* c = (const unsigned*) &current_dir;
+                    const unsigned* l = (const unsigned*) &link_dir;
+                    const unsigned* s = (const unsigned*) &saved_dir;
+                    fprintf(stderr, "wdir %d nat %08x %08x %08x cur %08x %08x %08x link %08x %08x %08x saved %08x %08x %08x g %d\n", (int) idx, n[0], n[1], n[2], c[0], c[1], c[2], l[0], l[1], l[2], s[0], s[1], s[2], (int) on_ground);
+                }
+            }
+#endif
             /* Compute angular difference and rotation axis */
-            angle_diff = lbVector_Angle(&current_dir, &link_dir);
+            angle_diff =lbVector_Angle(&current_dir, &link_dir);
             PSVECCrossProduct(&current_dir, &link_dir, &cross_vec);
             lbVector_Normalize(&cross_vec);
 
@@ -1292,6 +1492,18 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
         PSMTXConcat(parent_mtx, scale_mtx, parent_mtx);
 #endif
 
+#if MSL_GX_RECORD
+        {
+            extern int msl_w4_cur_step;
+            extern char* getenv(const char*);
+            extern int atoi(const char*);
+            static int want = -2;
+            if (want == -2) { want = getenv("MSL_W4_DYNTRACE") ? atoi(getenv("MSL_W4_DYNTRACE")) : -1; }
+            if (w4_call_on()) {
+                fprintf(stderr, "dyntrace step %d idx %d mask %x ad %.9g on_ground %d av %.9g\n", want, (int) idx, w4m, (double) angle_diff, (int) on_ground, (double) cur->desc.lb_unk0.unk_44);
+            }
+        }
+#endif
         jobj = jobj->child;
         idx += 1;
         cur = cur->next;
@@ -1312,6 +1524,26 @@ void lb_8001044C(DynamicsDesc* desc, void* colliders_raw, int num_colliders,
     cur->desc.lb_unk0.unk_2C.x = parent_mtx[0][3];
     cur->desc.lb_unk0.unk_2C.y = parent_mtx[1][3];
     cur->desc.lb_unk0.unk_2C.z = parent_mtx[2][3];
+#endif
+#if MSL_GX_RECORD
+    {
+        extern int msl_w4_cur_step;
+        extern char* getenv(const char*);
+        extern int atoi(const char*);
+        static int wanto = -2;
+        if (wanto == -2) { wanto = getenv("MSL_W4_CALL") ? atoi(getenv("MSL_W4_CALL")) : -1; }
+        if (w4_call_on()) {
+            struct DynamicsData* d = desc->data;
+            int li = 0;
+            for (; d != NULL; d = d->next, ++li) {
+                const unsigned* rw = (const unsigned*) &d->desc.lb_unk0.jobj->rotate;
+                const unsigned* pw = (const unsigned*) &d->desc.lb_unk0.unk_2C;
+                const unsigned* aw = (const unsigned*) &d->desc.lb_unk0.unk_38;
+                const unsigned* vw = (const unsigned*) &d->desc.lb_unk0.unk_44;
+                fprintf(stderr, "wout %d %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n", li, rw[0], rw[1], rw[2], pw[0], pw[1], pw[2], aw[0], aw[1], aw[2], vw[0]);
+            }
+        }
+    }
 #endif
 }
 
@@ -2100,7 +2332,7 @@ static struct {
     HSD_Chan chan1;
 } lb_803BA1C0;
 
-void fn_80013614(HSD_GObj* gobj)
+void fn_80013614(HSD_GObj* gobj, int pass)   /* (a render callback: called with the pass, as a WebAssembly indirect call needs) */
 {
     struct CameraBlurData* data = gobj->user_data;
     u8 pad4[4];
@@ -2274,7 +2506,7 @@ void lb_800138EC(s32 arg0, GObj_RenderFunc render_func, u32 arg2, s8 arg3,
     GObj_InitUserData(gobj, 0, fn_800138AC, data);
 
     if (render_func == NULL) {
-        GObj_SetupGXLinkMax(gobj, (GObj_RenderFunc) (Event) fn_80013614, arg2);
+        GObj_SetupGXLinkMax(gobj, fn_80013614, arg2);
     } else {
         GObj_SetupGXLinkMax(gobj, render_func, arg2);
     }
@@ -2679,3 +2911,52 @@ bool lb_800149E0(Mtx arg0, u32 arg1)
     }
     return false;
 }
+
+#if MSL_GX_RECORD
+// (test hook for tools/difftest.py: the solver's rotation update, to compare with the console's helpers run on the Gekko interpreter)
+void msl_w4_rotate_euler_test(Vec3* rotate, const Vec3* axis, float angle, float (*m)[4])
+{
+    msl_dynamics_rotate_euler(rotate, axis, angle, m);
+}
+#endif
+
+#if MSL_GX_RECORD && defined(MSL_CORE_HOSTED)
+// (test hooks for tools/difftest.py)
+void msl_w4_test_origin(float (*parent)[4], Vec3* translate, Vec3* origin)
+{
+    msl_dynamics_transform_origin(parent, translate, origin);
+}
+void msl_w4_test_basis(float (*parent)[4], Vec3* translate, Vec3* rotate, Vec3* scale, float (*out)[4])
+{
+    msl_dynamics_build_basis(parent, translate, rotate, scale, NULL, out);
+}
+void msl_w4_test_direction(float (*parent)[4], Vec3* rotate, Vec3* scale, Vec3* origin, Vec3* local, Vec3* dir)
+{
+    msl_dynamics_build_direction(parent, rotate, scale, origin, local, dir);
+}
+void msl_w4_test_parent_axis(float (*parent)[4], Vec3* world, Vec3* local)
+{
+    msl_dynamics_parent_axis(parent, world, local);
+}
+#endif
+
+#if MSL_GX_RECORD && defined(MSL_CORE_HOSTED)
+// (test hook: how many cosines near the boundary the compiled cutoff classifies differently from acosf(c) > threshold)
+int msl_w4_test_cutoff(float threshold, int strict_less, int span)
+{
+    u32 cutoff = msl_compile_acos_cutoff(threshold, strict_less != 0);
+    int bad = 0;
+    int k;
+    for (k = -span; k <= span; ++k) {
+        float c = msl_float_from_order_key((u32) ((long long) cutoff + k));
+        int cut_says = msl_float_order_key(c) < cutoff;     /* angle (strictly) beyond the threshold */
+        int real = strict_less ? (acosf(c) < threshold) : (acosf(c) > threshold);
+        if (strict_less) {
+            cut_says = msl_float_order_key(c) >= cutoff;
+        }
+        if (c != c || c > 1.0F || c < -1.0F) continue;
+        if (cut_says != real) ++bad;
+    }
+    return bad;
+}
+#endif

@@ -748,6 +748,15 @@ bool ftColl_80076ED8(Fighter* fp0, HitCapsule* hit0, Fighter* fp1,
 
         return true;
     }
+#if MSL_GX_RECORD
+    else {
+        // GALE01 0x80077258..0x80077420: a victim that cannot be hit now (x1988, x198C: invincible or intangible, x221D_b6, or a live hit1) skips the damage
+        // block and still reaches the contact flash (r30 = 0 from 0x80077208, inner_ret false) and the function returns true; the decomp's C returned false
+        // without the flash. Viewer build only: the production build keeps the decomp's gameplay.
+        efSync_Spawn(1052, NULL, &hit0->hurt_coll_pos);
+        return true;
+    }
+#endif
 retfalse:
 
     return false;
@@ -2451,8 +2460,15 @@ void ftColl_8007A06C(Fighter_GObj* gobj, void* dmg_ptr, void* log, size_t idx,
 
                 switch (sfx_id) {
                 case 0x3E8:
+#if MSL_GX_RECORD
+                    /* GALE01 0x8007A170-0x8007A1FC: the DmgLog damage goes through __cvt_fp2unsigned and back to a float before the
+                     * hit effect takes it (it sizes the hit flash: 0x3E8's scale = 0.04 * damage + 0.3) */
+                    ftColl_80078538(gobj, &entry->pos, hit->sfx_severity,
+                                    (float) (u32) entry->x20, kb);
+#else
                     ftColl_80078538(gobj, &entry->pos, hit->sfx_severity,
                                     entry->x20, kb);
+#endif
                     break;
                 case 0x3E9:
                 case 0x3EA:
@@ -2553,8 +2569,15 @@ void ftColl_8007A06C(Fighter_GObj* gobj, void* dmg_ptr, void* log, size_t idx,
 
                 switch (sfx_id) {
                 case 0x3E8:
+#if MSL_GX_RECORD
+                    /* GALE01 0x8007A170-0x8007A1FC: the DmgLog damage goes through __cvt_fp2unsigned and back to a float before the
+                     * hit effect takes it (it sizes the hit flash: 0x3E8's scale = 0.04 * damage + 0.3) */
+                    ftColl_80078538(gobj, &entry->pos, hit->sfx_severity,
+                                    (float) (u32) entry->x20, kb);
+#else
                     ftColl_80078538(gobj, &entry->pos, hit->sfx_severity,
                                     entry->x20, kb);
+#endif
                     break;
                 case 0x3E9:
                 case 0x3EA:
@@ -2770,6 +2793,13 @@ void ftColl_8007A06C(Fighter_GObj* gobj, void* dmg_ptr, void* log, size_t idx,
     out->source = best_entry->gobj;
     out->damage = best_entry->x20;
     out->sfx_severity = sfx_severity;
+    if (dmg_ptr == &fp->dmg.facing_dir_1) {
+        // PPC fp+0x1868 is the packed overlay's source; hosted x1868_source is
+        // at +0x28. Publish both words where Fighter declares them.
+        f32 damage = best_entry->x20;
+        fp->dmg.x1868_source = best_entry->gobj;
+        memcpy(&fp->dmg.x186c, &damage, sizeof(damage));
+    }
 
     switch (best_entry->x0) {
     case 1: {

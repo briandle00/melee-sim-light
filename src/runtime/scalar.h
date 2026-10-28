@@ -66,6 +66,38 @@ typedef struct MslCoreGameData {
 #endif
 } MslCoreGameData;
 
+// A fighter's post-frame lanes (the MslCoreCompare fields read from Fighter).
+typedef struct MslCorePostFrameLanes {
+    int32_t frame_id;
+    float pos_x;
+    float pos_y;
+    float self_vel_x;
+    float gr_vel;
+    float self_vel_y;
+    float kb_vel_x;
+    float kb_vel_y;
+    float percent;
+    float shield;
+    uint16_t motion_id;
+    uint16_t anim_frame;
+    uint16_t hitlag;
+    uint16_t hitstun;
+    uint16_t ground_id;
+    uint16_t instance_hit_by;
+    uint16_t instance_id;
+    uint32_t anim_id;
+    uint8_t kind;
+    uint8_t facing;
+    uint8_t on_ground;
+    uint8_t jumps_left;
+    uint8_t l_cancel;
+    uint8_t hurtbox;
+    uint8_t last_attack_landed;
+    uint8_t combo_count;
+    uint8_t last_hit_by;
+    uint8_t state_flags[5];
+} MslCorePostFrameLanes;
+
 typedef struct MslCoreMatch {
     const MslCoreGameData* game_data;
     Fighter_GObj* fighters[MSL_CORE_MAX_PLAYERS];
@@ -118,6 +150,9 @@ typedef struct MslCoreMatch {
     float follower_output_pos_y[MSL_CORE_MAX_PLAYERS];
     uint8_t follower_output_render_visibility[MSL_CORE_MAX_PLAYERS];
     uint32_t random_seed;
+    // MSL_PATCH_POST_FRAME_AT_MAP: each fighter's lanes as they stood at the
+    // end of its Fighter_procMap this frame ([slot][0] leader, [1] Nana).
+    MslCorePostFrameLanes post_frame_at_map[MSL_CORE_MAX_PLAYERS][2];
     MslCoreCompare output;
 } MslCoreMatch;
 
@@ -150,7 +185,18 @@ HSD_GObjEvent msl_core_match_scheduler_invoke_owner(MslCoreMatch* match,
                                                     HSD_GObjEvent owner);
 int msl_core_match_step_finish(MslCoreMatch* match, uint32_t frame_seed);
 const MslCoreCompare* msl_core_match_output(const MslCoreMatch* match);
+// Pokemon Stadium's transformation phase and kind (the main ground's xDC and
+// xDE), the pair Slippi 3.18+ records as a stadium_transformation event.
+// Returns 0 on any other stage.
+int msl_core_stadium_state(const MslCoreMatch* match, int* phase, int* kind);
 int msl_core_write_items_into_zeroed(
     const MslCoreMatch* match, MslCoreItem items[MSL_CORE_MAX_ITEMS]);
+
+#if MSL_GX_RECORD
+/* The viewer build's playback option: "slippi" (the default: Slippi Dolphin's playback hook stores at game frame -123) or "original"
+   (follow the recording). 0 on success, -1 for any other name. Set before the first step; env MSL_PLAYBACK also sets it. */
+int msl_playback_set_name(const char* name);
+const char* msl_playback_get_name(void);
+#endif
 
 #endif

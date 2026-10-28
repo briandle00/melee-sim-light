@@ -13,7 +13,12 @@
 enum {
     // Construction retains at most 256 main/interpolation nodes per configured
     // player slot, including Sheik/Zelda's transform pair and Popo's follower.
+#if MSL_GX_RECORD
+    // (the viewer build runs every joint of the model through the engine)
+    MSL_FIGHTER_POSE_JOINTS_PER_PLAYER = 1024,
+#else
     MSL_FIGHTER_POSE_JOINTS_PER_PLAYER = 256,
+#endif
     MSL_FIGHTER_POSE_JOINT_CAPACITY =
         MSL_FIGHTER_POSE_JOINTS_PER_PLAYER * 4,
     // Live animation tracks are per-fighter state too: each Ice Climbers
@@ -22,7 +27,11 @@ enum {
     // against the former flat 1024 and aborted in allocate_tracks. Zelda,
     // the next-widest port at 446 across a four-port mirror, fits well
     // inside the same per-player figure.
+#if MSL_GX_RECORD
+    MSL_FIGHTER_POSE_TRACKS_PER_PLAYER = 2048,
+#else
     MSL_FIGHTER_POSE_TRACKS_PER_PLAYER = 384,
+#endif
     MSL_FIGHTER_POSE_TRACK_CAPACITY =
         MSL_FIGHTER_POSE_TRACKS_PER_PLAYER * 4,
     MSL_FIGHTER_POSE_ECB_CAPACITY = 8,

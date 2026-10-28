@@ -42,6 +42,13 @@
 #include <baselib/jobj.h>
 #include <MetroTRK/intrinsics.h>
 
+
+#if MSL_GX_RECORD
+extern int msl_w4_cur_step;
+#define W4_POSY(tag, fp) do { extern char* getenv(const char*); extern int atoi(const char*); static int on = -2; if (on == -2) { on = getenv("MSL_W4_POSY") ? atoi(getenv("MSL_W4_POSY")) : -1; } if (on == msl_w4_cur_step && (fp)->player_id == 0) { unsigned yb; memcpy(&yb, &(fp)->cur_pos.y, 4); fprintf(stderr, "posy %s %08x\n", tag, yb); } } while (0)
+#else
+#define W4_POSY(tag, fp) ((void) 0)
+#endif
 /* 0C63BC */ static void fn_800C63BC(Fighter_GObj* gobj);
 /* 0C63E0 */ static void fn_800C63E0(Fighter_GObj* gobj);
 
@@ -207,6 +214,7 @@ void ftCo_EntryStart_Phys(Fighter_GObj* gobj)
         Fighter_GObj* gobj = Player_GetEntityAtIndex(temp_r31->player_id, 0);
         temp_r31->cur_pos.y = GET_FIGHTER(gobj)->cur_pos.y;
     }
+    W4_POSY("entrystart_phys_end", temp_r31);
 }
 
 void ftCo_EntryStart_Coll(Fighter_GObj* gobj)
@@ -220,11 +228,13 @@ void ftCo_EntryStart_Coll(Fighter_GObj* gobj)
         Fighter* fp2 = GET_FIGHTER(gobj);
         fp->mv.co.entry.x2C.bottom = -fp2->mv.co.entry.x28;
     }
+    W4_POSY("entrystart_coll_begin", fp);
     if (fp->ground_or_air == GA_Air) {
         ft_80083E64(gobj, &fp->mv.co.entry.x2C, fn_800C63BC);
     } else {
         ft_800846B0(gobj, &fp->mv.co.entry.x2C, fn_800C63E0);
     }
+    W4_POSY("entrystart_coll_end", fp);
 }
 
 void fn_800C69F4(Fighter_GObj* gobj)

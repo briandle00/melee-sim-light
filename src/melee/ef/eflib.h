@@ -117,6 +117,9 @@ efLib_CreateGenerator_AppSRT_SetFacingDirScale(s32 gfx_id, va_list vlist);
                                                             Vec3* vec);
 
 extern EF_ParamEntry efLib_AnimQueue[0x10];
+#if MSL_GX_RECORD
+extern HSD_JObj* efLib_AnimQueue_jobj[32]; /* the viewer build's queue (retail used 32 four-byte slots of the array above) */
+#endif
 extern EF_ParamEntry efLib_ParamTable[0x8];
 
 #endif

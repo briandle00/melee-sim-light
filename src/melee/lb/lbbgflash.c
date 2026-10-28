@@ -16,7 +16,12 @@
 
 #include "lb/lbspdisplay.h"
 
-#ifndef MSL_CORE_HOSTED
+#ifdef MSL_CORE_HOSTED
+// (the ground-IK half below names Fighter's IKState)
+#include "ft/types.h"
+#endif
+
+#if !defined(MSL_CORE_HOSTED) || MSL_STAGE_PRESENTATION
 
 typedef struct BgFlashState {
     u8 active : 1;
@@ -42,7 +47,11 @@ typedef struct BgFlashData {
     /* 0x44 */ HSD_GObj* x44;
 } BgFlashData;
 
+#if MSL_GX_RECORD
+BgFlashData lbl_80433658; /* .bss 0x80433658 */
+#else
 extern BgFlashData lbl_80433658;
+#endif
 
 #include <dolphin/gx.h>
 #include <baselib/cobj.h>
@@ -309,7 +318,7 @@ void fn_8001FEC4(HSD_GObj* gobj, s32 code)
     }
 }
 
-void fn_800204C8(void)
+void fn_800204C8(HSD_GObj* gobj)
 {
     BgFlashData* data = &lbl_80433658;
     s32 mode = data->state.mode;
@@ -750,6 +759,13 @@ typedef struct IKChainData {
 typedef IKState IKChainData;
 #endif
 
+#if MSL_GX_RECORD
+// GALE01 lbBgFlash_80021410: the reciprocal-square-root refinement is fnmsub (one rounding) in double; see the asm at 0x800215dc.
+#define W4_REFINE(e, v) ((e) = __builtin_fma(-(f64) (v), (e) * (e), 3.0) * (0.5 * (e)))
+#else
+#define W4_REFINE(e, v) ((e) = 0.5 * (e) * -(((f64) (v) * ((e) * (e))) - 3.0))
+#endif
+
 void lbBgFlash_80021410(void* arg0)
 {
     IKChainData* data = arg0;
@@ -795,6 +811,41 @@ void lbBgFlash_80021410(void* arg0)
     axis.z = data->jobj1->mtx[2][2];
     lbVector_Normalize(&axis);
 
+#if MSL_GX_RECORD
+    // GALE01 0x800214b0..0x800215a0: every a*b + c here is a fused multiply-add; the first product of each sum is a plain fmuls.
+    {
+        f32 nx = axis.x;
+        f32 ny = axis.y;
+        f32 nz = axis.z;
+        f32 dot;
+        f32 d;
+        f32 p;
+
+        dot = -__builtin_fmaf(nz, data->pos1.z,
+                              __builtin_fmaf(nx, data->pos1.x, ny * data->pos1.y));
+
+        p = __builtin_fmaf(data->pos4.z, nz,
+                           __builtin_fmaf(data->pos4.x, nx, data->pos4.y * ny));
+        d = -(dot + p);
+        data->pos4.x = __builtin_fmaf(d, nx, data->pos4.x);
+        data->pos4.y = __builtin_fmaf(d, ny, data->pos4.y);
+        data->pos4.z = __builtin_fmaf(d, nz, data->pos4.z);
+
+        p = __builtin_fmaf(data->pos0.z, nz,
+                           __builtin_fmaf(data->pos0.x, nx, data->pos0.y * ny));
+        d = -(dot + p);
+        data->pos0.x = __builtin_fmaf(d, nx, data->pos0.x);
+        data->pos0.y = __builtin_fmaf(d, ny, data->pos0.y);
+        data->pos0.z = __builtin_fmaf(d, nz, data->pos0.z);
+
+        p = __builtin_fmaf(data->pos1.z, nz,
+                           __builtin_fmaf(data->pos1.x, nx, data->pos1.y * ny));
+        d = -(dot + p);
+        data->pos1.x = __builtin_fmaf(d, nx, data->pos1.x);
+        data->pos1.y = __builtin_fmaf(d, ny, data->pos1.y);
+        data->pos1.z = __builtin_fmaf(d, nz, data->pos1.z);
+    }
+#else
     {
         f32 nx = axis.x;
         f32 nz = axis.z;
@@ -830,13 +881,21 @@ void lbBgFlash_80021410(void* arg0)
         data->pos1.z = (d * nz) + data->pos1.z;
     }
 
+#endif
+
     pDiff = lbVector_Diff(&data->pos0, &data->pos1, &diff_pos0_pos1);
+#if MSL_GX_RECORD
+    dot = __builtin_fmaf(axis.z, pDiff->z,
+                         __builtin_fmaf(axis.x, pDiff->x, axis.y * pDiff->y));
+    if ((sin_val = -__builtin_fmaf(dot, dot, -1.0f)) > 0.0f) {
+#else
     dot = (axis.z * pDiff->z) + ((axis.x * pDiff->x) + (axis.y * pDiff->y));
     if ((sin_val = 1.0f - (dot * dot)) > 0.0f) {
+#endif
         f64 e = __frsqrte(sin_val);
-        e = 0.5 * e * -(((f64) sin_val * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) sin_val * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) sin_val * (e * e)) - 3.0);
+        W4_REFINE(e, sin_val);
+        W4_REFINE(e, sin_val);
+        W4_REFINE(e, sin_val);
         sin_mag = (f32) ((f64) sin_val * e);
         sin_val = sin_mag;
     }
@@ -859,9 +918,9 @@ void lbBgFlash_80021410(void* arg0)
     dz *= dz;
     if ((len_ab = dz + (dx + dy)) > 0.0f) {
         f64 e = __frsqrte(len_ab);
-        e = 0.5 * e * -(((f64) len_ab * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_ab * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_ab * (e * e)) - 3.0);
+        W4_REFINE(e, len_ab);
+        W4_REFINE(e, len_ab);
+        W4_REFINE(e, len_ab);
         len_ab_mag = (f32) ((f64) len_ab * e);
         len_ab = len_ab_mag;
     }
@@ -875,9 +934,9 @@ void lbBgFlash_80021410(void* arg0)
     dz *= dz;
     if ((len_bc = dz + (dx + dy)) > 0.0f) {
         f64 e = __frsqrte(len_bc);
-        e = 0.5 * e * -(((f64) len_bc * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_bc * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_bc * (e * e)) - 3.0);
+        W4_REFINE(e, len_bc);
+        W4_REFINE(e, len_bc);
+        W4_REFINE(e, len_bc);
         len_bc_mag = (f32) ((f64) len_bc * e);
         len_bc = len_bc_mag;
     }
@@ -892,9 +951,9 @@ void lbBgFlash_80021410(void* arg0)
     dz *= dz;
     if ((len_ac = dz + (dx + dy)) > 0.0f) {
         f64 e = __frsqrte(len_ac);
-        e = 0.5 * e * -(((f64) len_ac * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_ac * (e * e)) - 3.0);
-        e = 0.5 * e * -(((f64) len_ac * (e * e)) - 3.0);
+        W4_REFINE(e, len_ac);
+        W4_REFINE(e, len_ac);
+        W4_REFINE(e, len_ac);
         len_ac_mag = (f32) ((f64) len_ac * e);
         len_ac = len_ac_mag;
     }
@@ -964,9 +1023,13 @@ void lbBgFlash_80021410(void* arg0)
     fn_8002113C(data->jobj1, &axis, acos2);
 }
 
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_STAGE_PRESENTATION
 
+#if MSL_GX_RECORD
+HSD_ObjAllocData lbl_804336A0; /* .bss 0x804336A0 */
+#else
 extern HSD_ObjAllocData lbl_804336A0;
+#endif
 
 void fn_800219E4(void* arg0)
 {
@@ -980,8 +1043,13 @@ typedef struct {
     void* x2C;
 } BgFlashGlobal;
 
+#if MSL_GX_RECORD
+BgFlashGlobal* lbl_804D63E0; /* .sbss */
+struct Fighter_804D653C_t* lbl_804D63DC;
+#else
 extern BgFlashGlobal* lbl_804D63E0;
 extern struct Fighter_804D653C_t* lbl_804D63DC;
+#endif
 
 void lbBgFlash_80021A10(f32 arg8)
 {
@@ -993,7 +1061,8 @@ void lbBgFlash_80021A18(int arg0)
     HSD_GObj* gobj;
     u8* user_data;
 
-    HSD_ObjAllocInit(&lbl_804336A0, 0x84, 4);
+    // (0x84 is the PPC size: a word and the ColorOverlay, whose pointers widen on the host)
+    HSD_ObjAllocInit(&lbl_804336A0, (4 + sizeof(ColorOverlay) + 7) & ~7, 4);
     gobj = GObj_Create(0xE, 0xE, 0);
     if (gobj != NULL) {
         user_data = HSD_ObjAlloc(&lbl_804336A0);
@@ -1064,7 +1133,7 @@ void lbBgFlash_80021C48(u32 arg0, u32 arg1)
     struct {
         u8 unk0[4];
         ColorOverlay x4;
-    }* data = lbl_804D63E0->x2C;
+    }* data = ((HSD_GObj*) lbl_804D63E0)->user_data; /* (the PPC overlay BgFlashGlobal puts user_data at 0x2C) */
     lb_800144C8(&data->x4, lbl_804D63DC, arg0, arg1);
 }
 

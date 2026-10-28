@@ -6,6 +6,7 @@
 #include "baselib/memory.h"
 #include "platform/memory.h"
 #include "runtime/context.h"
+#include "lb/lblanguage.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -61,8 +62,51 @@ static void make_path(char* path, size_t capacity, const char* basename)
     }
 }
 
+/* The DVD layer completes a name that ends with a dot by the language: the English game reads "PlCaRe." as PlCaRe.usd (Captain Falcon's red costume,
+ * whose chest says Blood Hawk; the Japanese file, PlCaRe.dat, says Hell Hawk), the Japanese game as PlCaRe.dat (refs/melee/src/melee/ft/chara/ftCaptain/
+ * ftCa_Init.c: re_dat is "PlCaRe." in the retail game). A data folder without the .usd keeps the .dat. */
+static int file_present(const char* basename)
+{
+    char path[1024];
+    FILE* file;
+#ifdef MSL_CORE_NATIVE
+    if (raw_file_find(basename) != NULL) {
+        return 1;
+    }
+    if (msl_core_file_context()->sealed) {
+        return 0;
+    }
+#endif
+    make_path(path, sizeof(path), basename);
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return 0;
+    }
+    fclose(file);
+    return 1;
+}
+
+static const char* complete_name(const char* basename, char* buffer, size_t capacity)
+{
+    size_t length = strlen(basename);
+    if (length == 0 || basename[length - 1] != '.' || length + 4 >= capacity) {
+        return basename;
+    }
+    memcpy(buffer, basename, length);
+    if (lbLang_IsSettingUS()) {
+        memcpy(buffer + length, "usd", 4);
+        if (file_present(buffer)) {
+            return buffer;
+        }
+    }
+    memcpy(buffer + length, "dat", 4);
+    return buffer;
+}
+
 s32 lbFile_800163D8(const char* basename)
 {
+    char completed[1024];
+    basename = complete_name(basename, completed, sizeof(completed));
 #ifdef MSL_CORE_NATIVE
     MslRawFileEntry* cached = raw_file_find(basename);
     if (cached != NULL) {
@@ -94,6 +138,8 @@ s32 lbFile_800163D8(const char* basename)
 
 void lbFile_8001668C(const char* basename, u32* destination, u32* length)
 {
+    char completed[1024];
+    basename = complete_name(basename, completed, sizeof(completed));
 #ifdef MSL_CORE_NATIVE
     MslRawFileEntry* cached = raw_file_find(basename);
     if (cached != NULL) {
@@ -143,6 +189,8 @@ void lbFile_8001668C(const char* basename, u32* destination, u32* length)
 
 bool lbFile_800168A0(s32 heap, const char* basename, u32* source, u32* length)
 {
+    char completed[1024];
+    basename = complete_name(basename, completed, sizeof(completed));
 #ifdef MSL_CORE_NATIVE
     MslRawFileEntry* cached = raw_file_find(basename);
     if (cached != NULL) {
@@ -191,6 +239,29 @@ void lbHeap_80015CA8(int heap, void* ptr)
 HSD_Archive* lbDvd_8001819C(const char* basename)
 {
     return msl_host_archive_find(basename);
+}
+
+int msl_host_file_exists(const char* basename)
+{
+    char completed[1024];
+    basename = complete_name(basename, completed, sizeof(completed));
+    char path[1024];
+    FILE* file;
+#ifdef MSL_CORE_NATIVE
+    if (raw_file_find(basename) != NULL) {
+        return 1;
+    }
+    if (msl_core_file_context()->sealed) {
+        return 0;
+    }
+#endif
+    make_path(path, sizeof(path), basename);
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return 0;
+    }
+    fclose(file);
+    return 1;
 }
 
 HSD_Archive* msl_host_archive_find(const char* basename)

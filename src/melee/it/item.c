@@ -792,7 +792,7 @@ extern HSD_DObj* HSD_JObjGetDObj(HSD_JObj*);
 
 static void Item_8026814C(HSD_GObj* gobj)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD
     // Material subclassing only changes item rendering. Pose/animation remains
     // owned by the source JObj tree in the headless runtime.
     (void) gobj;
@@ -999,6 +999,48 @@ static void foobar3(HSD_GObj* gobj)
     }
 }
 
+#if MSL_GX_RECORD
+// The viewer build draws items: the render callback of each item's GObj is the game's. The simulator's tables
+// (runtime/items.c) hold none, so the entries are the decomp's own values.
+//   refs/melee/src/melee/it/it_3F14.c::it_803F1418 (common items), it_279C.c::{it_803F2F28 (character items),
+//   it_803F2310 (Pokemon), it_803F4CA8 (stage items)}
+extern void it_80284E10(HSD_GObj*, int);
+extern void it_8029CD18(Item_GObj*, int);
+extern void it_8029FDDC(Item_GObj*, int);
+extern void it_802A7D8C(HSD_GObj*, int);
+extern int msl_gx_skip;   /* MSL_GX_SKIP bits: 4 the items (a bring-up switch) */
+static GObj_RenderFunc msl_item_render_func(int table, int idx, GObj_RenderFunc table_value)
+{
+    if (msl_gx_skip & 4) {
+        return NULL;
+    }
+    if (table_value != NULL) {
+        return table_value;
+    }
+    if (table == 0 && idx == 11) {
+        return (GObj_RenderFunc) it_80284E10;
+    }
+    if (table == 1) {
+        switch (idx) {
+        case 13:
+        case 14:
+            return (GObj_RenderFunc) it_8029CD18;
+        case 17:
+        case 18:
+            return (GObj_RenderFunc) it_8029FDDC;
+        case 21:
+        case 22:
+        case 97:
+        case 98:
+            return (GObj_RenderFunc) it_802A7D8C;
+        }
+    }
+    return (GObj_RenderFunc) it_8026EECC;
+}
+#else
+#define msl_item_render_func(table, idx, value) (value)
+#endif
+
 static HSD_GObj* Item_8026862C(SpawnItem* spawnItem)
 {
     HSD_GObj* gobj;
@@ -1013,20 +1055,20 @@ static HSD_GObj* Item_8026862C(SpawnItem* spawnItem)
     }
     if (spawnItem->kind < It_Kind_Kuriboh) {
         // Common items
-        GObj_SetupGXLink(gobj, it_803F1418[spawnItem->kind].x0_renderFunc, 6,
+        GObj_SetupGXLink(gobj, msl_item_render_func(0, spawnItem->kind, it_803F1418[spawnItem->kind].x0_renderFunc), 6,
                          0);
     } else if (spawnItem->kind < Pokemon_Tosakinto) {
         // Character items
         int idx = spawnItem->kind - It_Kind_Kuriboh;
-        GObj_SetupGXLink(gobj, it_803F2F28[idx].x0_renderFunc, 6, 0);
+        GObj_SetupGXLink(gobj, msl_item_render_func(1, idx, it_803F2F28[idx].x0_renderFunc), 6, 0);
     } else if (spawnItem->kind < It_Kind_Old_Kuri) {
         // Pokemon
         int idx = spawnItem->kind - Pokemon_Tosakinto;
-        GObj_SetupGXLink(gobj, it_803F2310[idx].x0_renderFunc, 6, 0);
+        GObj_SetupGXLink(gobj, msl_item_render_func(2, idx, it_803F2310[idx].x0_renderFunc), 6, 0);
     } else {
         // Stage items
         int idx = spawnItem->kind - It_Kind_Old_Kuri;
-        GObj_SetupGXLink(gobj, it_803F4CA8[idx].x0_renderFunc, 6, 0);
+        GObj_SetupGXLink(gobj, msl_item_render_func(3, idx, it_803F4CA8[idx].x0_renderFunc), 6, 0);
     }
     user_data = HSD_ObjAlloc(&item_alloc_data);
     if (user_data == NULL) {

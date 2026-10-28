@@ -40,6 +40,7 @@
 #include <baselib/wobj.h> // IWYU pragma: keep
 #ifdef MSL_CORE_HOSTED
 #include <runtime/context.h>
+#include "runtime/viewer_track.h"
 #include <runtime/source_state.h>
 #endif
 
@@ -204,7 +205,7 @@ void grIzumi_801CBB88(void)
 
 void grIzumi_OnLoad(void)
 {
-#ifdef MSL_CORE_HOSTED
+#if defined(MSL_CORE_HOSTED) && !MSL_GX_RECORD
     // Lighting animation is render-only in the headless runtime.
     // refs/melee/src/melee/gr/grizumi.c::grIzumi_OnLoad
     return;
@@ -316,7 +317,7 @@ void grIzumi_801CBE60(Ground_GObj* gobj)
 
 void grIzumi_801CBE64(Ground_GObj* gobj)
 {
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     HSD_TObj* tobj;
 #endif
     Ground* gp = GET_GROUND(gobj);
@@ -327,7 +328,7 @@ void grIzumi_801CBE64(Ground_GObj* gobj)
     gp->x10_flags.b5 = 1;
     gp->gv.izumi.xD0 = Ground_801C3FA4(gobj, 1);
     gp->gv.izumi.xD4 = Ground_801C3FA4(gobj, 2);
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     gp->gv.izumi.xC8 = grIzumi_801CCD98();
     tobj = grIzumi_801CD090(gobj, GET_REFLECTION(gp->gv.izumi.xC8)->image);
     if (tobj != NULL) {
@@ -359,11 +360,30 @@ void grIzumi_801CBE64(Ground_GObj* gobj)
     gp->gv.izumi.xC4 = NULL;
     gp->gv.izumi.xC8 = NULL;
     gp->gv.izumi.xCC = NULL;
+    // (the two generators the block above makes are the game's all the
+    // same: one of them counts at random every frame. grlib.c's hosted
+    // branch writes them to the viewer track and makes none)
+    {
+        Vec3 x = { 0, 0, 0 };
+        grLib_801C96F8(0x7534, 0x1E, &x);
+    }
+    {
+        Vec3 y = { 0, 1, -27 };
+        y.x *= Ground_801C0498();
+        y.y *= Ground_801C0498();
+        y.z *= Ground_801C0498();
+        grLib_801C96F8(0x7536, 0x1E, &y);
+    }
 #endif
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
     gp->gv.izumi.xCC = grIzumi_801CBCE8(2);
+#if MSL_GX_RECORD
+    /* (the source writes the user data's +0x18: the Ground's x18, which a 64-bit host places elsewhere) */
+    GET_GROUND(gp->gv.izumi.xCC)->x18 = gp->gv.izumi.xC8;
+#else
     ((IzumiUnkCC*) HSD_GObjGetUserData(gp->gv.izumi.xCC))->x18 =
         gp->gv.izumi.xC8;
+#endif
 #endif
     jobj = Ground_801C3FA4(gobj, 4);
     { // this looks like inlines, but there's a lot of small differences
@@ -585,6 +605,25 @@ void grIzumi_801CC358(Ground_GObj* gobj)
         // The recording owns height publication, while the source machine
         // owns platform timers and RNG before item callbacks run.
         msl_grizumi_apply_replay_platform_height(gobj, replay_height, changed);
+        // The water column's stretch below (the r29 block), which this
+        // return skips: without it the column keeps the stretch of its
+        // first frame, and the viewer track's "sp" writes that. The game
+        // sets it whenever its platform moves, from the height it moved
+        // to, so it always matches the height; it is set here from the
+        // recording's height on every frame for the same result. Only the
+        // track build does it, and only with a track on.
+        // refs/melee/src/melee/gr/grizumi.c::grIzumi_801CC358
+        if (msl_viewer_track_on) {
+            HSD_JObj* jobj2 = HSD_JObjGetChild(jobj);
+            if (jobj2 != NULL) {
+                float f = gp->gv.izumi3.xD0 / (double) gp->gv.izumi3.xD8;
+                if (f < 0.01f) {
+                    f = 0.01f;
+                }
+                HSD_JObjSetScaleX(jobj2, 0.5f * f + 0.5f);
+                HSD_JObjSetScaleY(jobj2, f);
+            }
+        }
         return;
     }
 #endif

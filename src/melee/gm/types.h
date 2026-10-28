@@ -404,7 +404,7 @@ struct gmm_x0 {
 STATIC_ASSERT(sizeof(struct gmm_x0) == 0x8518);
 
 struct lbl_8046B6A0_24C_t {
-    UNK_T x0;
+    u32 x0; /* (the scene tick the standings were made at; a pointer-sized UNK_T moved every field after it by 4 on a 64-bit host, away from MatchEnd's, the same memory) */
     u8 x4; ///< MatchOutcome
     u8 x5; ///< match mode
     u8 is_teams;

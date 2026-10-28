@@ -24,7 +24,8 @@ from tools.validation.slpz import (
     resolve_replay_path,
     set_native_unorder_events,
 )
-from tools.validation.admission import gecko_codes, require_admissible, slippi_patches
+from tools.validation.admission import (gecko_codes, raw_player_levels, require_admissible,
+                                        slippi_patches, stadium_transformations)
 from tools.validation.suite_io import ReplaySuite, display_path_under_repo, load_suite
 
 
@@ -67,6 +68,7 @@ class ReplayCase:
     ucf_shield_drop_084_enabled: bool = True
     played_on: str | None = None
     fnmsubs_profile: str | None = None
+    jit_arithmetic: str | None = None
 
 
 @dataclass(frozen=True)
@@ -319,6 +321,7 @@ def validate_one(
     ucf_shield_drop_084_enabled: bool = True,
     played_on: str | None = None,
     fnmsubs_profile: str | None = None,
+    jit_arithmetic: str | None = None,
     runner: _NativeRunner | None = None,
     diagnostic: bool = False,
 ) -> dict[str, object]:
@@ -329,15 +332,23 @@ def validate_one(
     with replay_path_for_peppi(replay) as peppi_path:
         game = _read_slippi(str(peppi_path), False)
         if not diagnostic:
-            require_admissible(game, peppi_path, played_on=played_on, fnmsubs_profile=fnmsubs_profile)
+            require_admissible(game, peppi_path, played_on=played_on, fnmsubs_profile=fnmsubs_profile,
+                               jit_arithmetic=jit_arithmetic)
         codes = gecko_codes(peppi_path.read_bytes())
+        start = with_human_levels(game.start, peppi_path)
+        # Pokemon Stadium runs under the patch set its gecko list names. One
+        # unfrozen outside both is inadmissible; a diagnostic run keeps it
+        # frozen.
+        stadium = 0
+        if game.start.get("stage") == 3:
+            stadium = stadium_transformations(game.start, codes) or 0
         metadata = game.metadata
         if played_on is not None:
             metadata = dict(metadata)
             metadata["playedOn"] = played_on
         result = native.validate_replay(
             game.frames,
-            game.start,
+            start,
             metadata,
             qemu=str(QEMU),
             sysroot=str(SYSROOT),
@@ -357,12 +368,32 @@ def validate_one(
             runner_stdin=runner.stdin_fd if runner is not None else -1,
             runner_stdout=runner.stdout_fd if runner is not None else -1,
             slippi_patches=slippi_patches(codes),
+            jit_arithmetic=1 if jit_arithmetic == "no-host-fma" else 0,
+            stadium_transformations=stadium,
         )
     result["admitted"] = not diagnostic
     result["diagnostic"] = diagnostic or signed_zero_equal or frames != 0 or start_frame is not None
     result["fnmsubs_profile"] = fnmsubs_profile or "metadata"
+    result["jit_arithmetic"] = jit_arithmetic or "fma"
     result["end_to_end_seconds"] = time.perf_counter() - started
     return result
+
+
+def with_human_levels(start: dict, path: Path) -> dict:
+    """The start block with each human port's recorded level byte as
+    "human_level" (a human Ice Climber's Nana sets her AI up from it)."""
+    levels = raw_player_levels(path.read_bytes())
+    if levels is None:
+        return start
+    start = dict(start)
+    players = []
+    for player in start.get("players", []):
+        player = dict(player)
+        if player.get("type") == "Human":
+            player["human_level"] = levels["P1P2P3P4".index(str(player["port"])) // 2]
+        players.append(player)
+    start["players"] = players
+    return start
 
 
 def _parse_characters(value: str) -> frozenset[str]:
@@ -466,6 +497,7 @@ def load_suite_cases(
                 ),
                 played_on=entry.played_on,
                 fnmsubs_profile=entry.fnmsubs_profile,
+                jit_arithmetic=entry.jit_arithmetic,
             )
         )
     if not cases:
@@ -532,6 +564,7 @@ def _validate_case(
                 ucf_shield_drop_084_enabled=case.ucf_shield_drop_084_enabled,
                 played_on=case.played_on,
                 fnmsubs_profile=case.fnmsubs_profile,
+                jit_arithmetic=case.jit_arithmetic,
                 runner=runner,
                 diagnostic=diagnostic,
             )
@@ -599,7 +632,11 @@ def run_cases(
 
 
 def _case_scope(case: ReplayCase) -> str:
-    profile = f"fnmsubs={case.fnmsubs_profile}" if case.fnmsubs_profile else ""
+    profile = " ".join(
+        part for part in (
+            f"fnmsubs={case.fnmsubs_profile}" if case.fnmsubs_profile else "",
+            f"jit={case.jit_arithmetic}" if case.jit_arithmetic else "",
+        ) if part)
     if case.stage_id is None:
         return profile
     stage = STAGE_NAMES.get(case.stage_id, f"stage {case.stage_id}")
@@ -760,6 +797,10 @@ def main() -> int:
         "--fnmsubs-profile", choices=("retail", "dolphin-legacy"),
         help="Explicit recording arithmetic profile; omission uses replay metadata defaults.",
     )
+    parser.add_argument(
+        "--jit-arithmetic", choices=("fma", "no-host-fma"),
+        help="The capturing Dolphin's host arithmetic; omission is a host with FMA3.",
+    )
     parser.add_argument("--backend", choices=("ppc", "native", "both"), default="native")
     parser.add_argument(
         "--timing", action="store_true", help="Print per-replay runner timing."
@@ -836,6 +877,8 @@ def main() -> int:
             cases = _manual_cases(args.replay)
         if args.fnmsubs_profile is not None:
             cases = [replace(case, fnmsubs_profile=args.fnmsubs_profile) for case in cases]
+        if args.jit_arithmetic is not None:
+            cases = [replace(case, jit_arithmetic=args.jit_arithmetic) for case in cases]
         if args.write_output_locks and suite is not None and suite.name == "melee_core_aggregate":
             selected = {entry.replay for entry in suite.replays}
             output_locks = {key: lock for key, lock in output_locks.items() if key in selected}

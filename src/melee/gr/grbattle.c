@@ -207,7 +207,7 @@ static HSD_GObj* grBattle_80219D84(int gobj_id)
         Ground* gp = GET_GROUND(gobj);
         gp->x8_callback = NULL;
         gp->xC_callback = NULL;
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
         GObj_SetupGXLink(gobj, grDisplay_801C5DB0, 3, 0);
 #endif
 
@@ -310,7 +310,7 @@ static void grBattle_8021A20C(Ground_GObj* gobj)
     HSD_JObj* jobj = GET_JOBJ(gobj);
 
     grAnime_801C8138(gobj, gp->map_id, 0);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     grMaterial_801C94D8(jobj);
 #endif
     gp->x11_flags.b012 = 2;
@@ -330,7 +330,7 @@ static void grBattle_8021A274(Ground_GObj* gobj)
     Ground* gp = GET_GROUND(gobj);
     HSD_JObj* jobj = GET_JOBJ(gobj);
     grAnime_801C8138(gobj, gp->map_id, 0);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     grMaterial_801C94D8(jobj);
 #endif
     gp->x11_flags.b012 = 2;
@@ -350,7 +350,7 @@ static void grBattle_8021A2DC(Ground_GObj* gobj)
     Ground* gp = GET_GROUND(gobj);
     HSD_JObj* jobj = GET_JOBJ(gobj);
     grAnime_801C8138(gobj, gp->map_id, 0);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     grMaterial_801C94D8(jobj);
 #endif
     gp->x11_flags.b012 = 2;

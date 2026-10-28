@@ -141,6 +141,11 @@ void* HSD_ObjAlloc(HSD_ObjAllocData* data)
     u32 size;
 
     data = HSD_ObjAllocResolve(data);
+    // (the particle probe's own models: from the C heap, none of the match's
+    // memory - runtime/ps_probe.h)
+    if (msl_probe_heap) {
+        return calloc(1, data->size);
+    }
     if (data->num_limit_flag && data->used >= data->num_limit) {
         return NULL;
     }
@@ -199,6 +204,12 @@ void* HSD_ObjAlloc(HSD_ObjAllocData* data)
 
 void HSD_ObjFree(HSD_ObjAllocData* data, void* obj)
 {
+    // (the particle probe's own models: from the C heap, none of the match's
+    // memory - runtime/ps_probe.h)
+    if (msl_probe_heap) {
+        free(obj);
+        return;
+    }
     data = HSD_ObjAllocResolve(data);
     HSD_ObjAllocLink* link = obj;
     link->next = data->freehead;

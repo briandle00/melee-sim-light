@@ -9,10 +9,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools.build.generate_native_dat_layout import DAT_ROOT_NAMES, Dwarf  # noqa: E402
+from tools.build.generate_native_dat_layout import (  # noqa: E402
+    DAT_ROOT_NAMES, PRESENT_ROOT_NAMES, Dwarf, scene_member_pointee,
+)
 
 
-def snapshot(dwarf: Dwarf) -> str:
+def snapshot(dwarf: Dwarf, present: bool = False) -> str:
     if dwarf.address_size != 4:
         raise ValueError("PPC disk layouts require 32-bit pointers")
     nodes = []
@@ -46,6 +48,11 @@ def snapshot(dwarf: Dwarf) -> str:
 
     for name in [*DAT_ROOT_NAMES, "CmdUnion", "ColorOverlay_x8_t"]:
         visit(dwarf.named(name))
+    if present:
+        # the viewer build's extra roots (tools/build/ppc_layout_gx.json)
+        for name in PRESENT_ROOT_NAMES:
+            visit(dwarf.named(name))
+        visit(scene_member_pointee(dwarf, "models"))
     # One node per line keeps regenerated layout changes reviewable without
     # retaining compiler-specific DIE offsets, paths or debug-string tables.
     return (
@@ -60,8 +67,10 @@ def main() -> None:
     parser.add_argument("--object", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--check", action="store_true")
+    # the viewer build's layout: also the presentation roots (written to ppc_layout_gx.json)
+    parser.add_argument("--present", action="store_true")
     args = parser.parse_args()
-    result = snapshot(Dwarf(args.object))
+    result = snapshot(Dwarf(args.object), args.present)
     if args.check:
         if args.output.read_text() != result:
             raise SystemExit("PPC layout is stale; regenerate with make ppc-layout")

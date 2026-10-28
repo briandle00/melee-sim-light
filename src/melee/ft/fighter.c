@@ -116,6 +116,7 @@
 #include <MSL/math.h>
 #include <MSL/math_ppc.h>
 #include <MSL/trigf.h>
+#include "runtime/viewer_track.h"
 
 #ifndef MSL_CORE_HOSTED
 extern struct UnkCostumeList CostumeListsForeachCharacter[FTKIND_MAX];
@@ -186,12 +187,12 @@ void Fighter_800679B0(void)
     Fighter_LoadCommonData();
 #endif
     ft_8008549C();
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     // This owner initializes the scene light rig; the headless port has no
     // LObj graph and none of its writes are consumed by locomotion.
     ftCo_8009F4A4();
 #endif
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     // This model supplies only the metal-fighter renderer's material.
     ftCo_800C8064();
     // This source owner only installs the alternate renderer material used by
@@ -654,7 +655,7 @@ void Fighter_UnkUpdateCostumeJoint_800686E4(Fighter_GObj* gobj)
                                  .costume_list[fp->x619_costume_id]
                                  .joint;
     ftPartsPObjSetDefaultClass();
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     jobj = ftParts_HeadlessLoadMain(fp, fp->x108_costume_joint);
 #else
     jobj = HSD_JObjLoadJoint(fp->x108_costume_joint);
@@ -831,7 +832,14 @@ void Fighter_UnkInitLoad_80068914(Fighter_GObj* gobj,
     Fighter_UnkInitLoad_80068914_Inner1(gobj);
 
     fp->x594_s32 = 0;
+#if MSL_GX_RECORD
+    // (the source writes the byte 1 into a bitfield whose last bit its compiler counts from the other end: the bit the
+    // drawing reads as b7)
+    fp->x21FC_flag.u8 = 0;
+    fp->x21FC_flag.b7 = 1;
+#else
     fp->x21FC_flag.u8 = 1;
+#endif
 
     fp->invisible = false;
     fp->x221E_b1 = 0;
@@ -930,7 +938,7 @@ static void Fighter_Create_Inline2(Fighter_GObj* gobj)
     }
 }
 
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
 static void Fighter_HeadlessMarkPoseCold(HSD_JObj* jobj)
 {
     HSD_JObj* child;
@@ -1000,12 +1008,12 @@ Fighter_GObj* Fighter_Create(struct plAllocInfo* input)
 {
     Fighter_GObj* gobj;
     Fighter* fp;
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     HSD_JObj* jobj;
 #endif
 
     gobj = GObj_Create(HSD_GOBJ_CLASS_FIGHTER, 8, 0);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     GObj_SetupGXLink(gobj, &ftDrawCommon_80080E18, 5U, 0U);
 #endif
     fp = HSD_ObjAlloc(&fighter_alloc_data);
@@ -1036,7 +1044,7 @@ Fighter_GObj* Fighter_Create(struct plAllocInfo* input)
     ftParts_80074E58(fp);
 #endif
     ftParts_SetupParts(gobj);
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     // Costume MObj/TObj animation is renderer-only. The gameplay skeleton and
     // Figa animation owners are initialized by the surrounding calls.
     // refs/melee/src/melee/ft/ftanim.c::ftAnim_80070308
@@ -1053,7 +1061,7 @@ Fighter_GObj* Fighter_Create(struct plAllocInfo* input)
 
     Fighter_UnkUpdateVecFromBones_8006876C(fp);
 
-#ifndef MSL_CORE_HOSTED
+#ifndef MSL_HEADLESS
     ftCo_8009F578(fp);
 #endif
 
@@ -1064,18 +1072,28 @@ Fighter_GObj* Fighter_Create(struct plAllocInfo* input)
     Fighter_Create_Inline2(gobj);
 
     ftColl_8007B320(gobj);
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     // The immutable ftParts admission table closes every gameplay consumer
     // over its skeleton ancestors. Make the remaining presentation-only
     // subtrees cold after source initialization.
     Fighter_HeadlessPrunePose(gobj);
 #endif
 #ifdef MSL_CORE_HOSTED
+    // With a viewer track the chains the prune drops (hair, capes, dresses:
+    // no gameplay reader is on or under one) are solved too, as copies kept
+    // apart from the dynamics pool, for the track's poses.
+    if (msl_viewer_track_on || MSL_FULL_FIGHTER_MODELS) {
+        msl_viewer_track_keep_dynamics(fp);
+    } else
     ftCo_HeadlessPruneDynamics(fp);
     // Retain the source camera subject and callback slot: the renderer itself
     // is headless, but ftLib_80086A8C publishes gameplay-visible x221F_b0 from
     // the updated subject. See runtime/camera.c.
     fp->x890_cameraBox = Camera_80029020();
+#if MSL_GX_RECORD
+    // (the drop shadow's render-to-texture owner: the non-hosted tail below)
+    lbShadow_8000ED54(&fp->x20A4, GET_JOBJ(gobj));
+#endif
     ftCamera_80076064(fp);
     HSD_GObj_SetupProc(gobj, &Fighter_8006A1BC, 0);
     HSD_GObj_SetupProc(gobj, &Fighter_8006A360, 1);
@@ -2148,6 +2166,12 @@ void Fighter_Spaghetti_8006AD10(Fighter_GObj* gobj)
                 extern void msl_slippi_apply_cpu_input(Fighter*);
                 msl_slippi_apply_cpu_input(fp);
             }
+#if MSL_GX_RECORD
+            {
+                extern void msl_slippi_first_frame_camera(Fighter*);
+                msl_slippi_first_frame_camera(fp);
+            }
+#endif
 #endif
             Fighter_Spaghetti_8006AD10_Inner1(fp);
 
@@ -2404,6 +2428,9 @@ void Fighter_procUpdate(Fighter_GObj* gobj)
 {
     Fighter* fp = GET_FIGHTER(gobj);
     Vec3 windOffset;
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "procUpdate_begin"); }
+#endif
 
     if (fp->x221F_b3) {
         return;
@@ -2436,6 +2463,9 @@ void Fighter_procUpdate(Fighter_GObj* gobj)
 #endif
         }
 
+#if MSL_GX_RECORD
+        { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_phys_cb"); }
+#endif
         p_kb_vel = &fp->x8c_kb_vel;
         if ((kb_vel_x = p_kb_vel->x) != 0 || p_kb_vel->y != 0) {
             if (fp->ground_or_air == GA_Air) {
@@ -2764,7 +2794,7 @@ void Fighter_UnkApplyTransformation_8006C0F0(Fighter_GObj* gobj)
 
 static inline void Fighter_SetRootPosition(HSD_JObj* root, const Vec3* pos)
 {
-#ifdef MSL_CORE_NATIVE
+#ifdef MSL_POSE_ENGINE
     msl_fighter_pose_set_root_position(root, pos);
 #else
     HSD_JObjSetTranslate(root, (Vec3*) pos);
@@ -2784,6 +2814,9 @@ static inline float Fighter_GetPosY(Fighter* fp)
 void Fighter_procMap(Fighter_GObj* gobj)
 {
     Fighter* fp = (Fighter*) HSD_GObjGetUserData(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "procMap_begin"); }
+#endif
 
     if (!fp->x221F_b3) {
         if (fp->ecb_lock) {
@@ -2813,6 +2846,9 @@ void Fighter_procMap(Fighter_GObj* gobj)
 #endif
             ftKb_SpecialN_800F1D24(gobj);
         }
+#if MSL_GX_RECORD
+        { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_coll_cb"); }
+#endif
 
         if (fp->ground_or_air == GA_Ground) {
             pl_80041280(fp->player_id, fp->x221F_b4);
@@ -2833,19 +2869,35 @@ void Fighter_procMap(Fighter_GObj* gobj)
 
         Fighter_SetRootPosition(gobj->hsd_obj, &fp->cur_pos);
     }
+#ifdef MSL_CORE_HOSTED
+    // Slippi 3.3's post-frame recorder ran here (0x8006C5D8), on every path
+    // out of procMap, before the damage, shield and hit procs.
+    if (msl_slippi_patch(MSL_PATCH_POST_FRAME_AT_MAP)) {
+        msl_core_capture_post_frame_at_map(gobj);
+    }
+#endif
 }
 
 void Fighter_8006C5F4(Fighter_GObj* gobj)
 {
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_procMap"); }
+#endif
     Fighter* fp = GET_FIGHTER(gobj);
     if (!fp->x221F_b3) {
         ft_80089B08(gobj);
+#if MSL_GX_RECORD
+        { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_ft_80089B08"); }
+#endif
     }
 }
 
 void Fighter_CallAcessoryCallbacks_8006C624(Fighter_GObj* gobj)
 {
     Fighter* fp = GET_FIGHTER(gobj);
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "accessory_begin"); }
+#endif
 
     u8 _[4];
 
@@ -2859,18 +2911,33 @@ void Fighter_CallAcessoryCallbacks_8006C624(Fighter_GObj* gobj)
 
         if (fp->accessory2_cb) {
             fp->accessory2_cb(gobj);
+#if MSL_GX_RECORD
+            { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_accessory2_cb"); }
+#endif
             Fighter_SetRootPosition(gobj->hsd_obj, &fp->cur_pos);
+#if MSL_GX_RECORD
+            { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_accessory2_setroot"); }
+#endif
         }
 
         if (fp->accessory1_cb) {
             fp->accessory1_cb(gobj);
+#if MSL_GX_RECORD
+            { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_accessory1_cb"); }
+#endif
             Fighter_SetRootPosition(gobj->hsd_obj, &fp->cur_pos);
+#if MSL_GX_RECORD
+            { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_accessory1_setroot"); }
+#endif
         }
     }
 }
 
 void Fighter_8006C80C(Fighter_GObj* gobj)
 {
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "after_accessory_callbacks"); }
+#endif
     Fighter* fp = GET_FIGHTER(gobj);
 
     if (!fp->x221F_b3) {
@@ -3409,6 +3476,27 @@ void Fighter_8006D9AC(Fighter_GObj* gobj)
         return;
     }
 
+#if MSL_GX_RECORD
+    {
+        extern int msl_w4_cur_step;
+        extern char* getenv(const char*);
+        extern int atoi(const char*);
+        static int on = -2;
+        if (on == -2) {
+            on = getenv("MSL_W4_POSY") ? atoi(getenv("MSL_W4_POSY")) : -1;
+        }
+        if (on == msl_w4_cur_step && fp->player_id == 0) {
+            unsigned yb;
+            unsigned tb;
+            memcpy(&yb, &fp->cur_pos.y, 4);
+            memcpy(&tb, &GET_JOBJ(gobj)->translate.y, 4);
+            fprintf(stderr, "posy dynamics_proc cur_pos %08x root_translate %08x\n", yb, tb);
+        }
+    }
+#endif
+#if MSL_GX_RECORD
+    { extern void msl_w4_stale_probe(Fighter_GObj*, const char*); msl_w4_stale_probe(gobj, "before_dynamics"); }
+#endif
     ftCo_8009E0A8(gobj);
 #ifdef MSL_CORE_HOSTED
     // Retail's end-of-frame render recomputes every bone matrix after this
@@ -3430,7 +3518,7 @@ void Fighter_UnkCallCameraCallback_8006D9EC(Fighter_GObj* gobj)
     Fighter* fp = GET_FIGHTER(gobj);
 
     if (!fp->x221F_b3) {
-#ifndef MSL_CORE_HOSTED
+#if !defined(MSL_CORE_HOSTED) || MSL_GX_RECORD
         ftCommon_8008021C(gobj);
 #endif
         if (fp->cam_cb) {

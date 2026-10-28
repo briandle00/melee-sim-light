@@ -8,11 +8,14 @@
 
 #include <baselib/archive.h>
 #include <baselib/debug.h>
+#include <baselib/mobj.h>
 #include <baselib/particle.h>
 #include <baselib/psstructs.h>
 #ifdef MSL_CORE_HOSTED
 #include <runtime/context.h>
 #include <runtime/source_state.h>
+#include <runtime/wire.h>
+extern int msl_stadium_transformations(void);
 #endif
 
 /// @todo Bad split?
@@ -118,6 +121,14 @@ static void grDatFiles_801C6228(UnkStageDat* arg0)
     if (arg0 != NULL && arg0->unk28 != NULL && arg0->unk2C != 0) {
         s32 i;
         for (i = 0; i < arg0->unk2C; i++) {
+#if MSL_GX_RECORD
+            // (the viewer build holds these as the MObjDescs they are, see native_dat.c::translate_target)
+            HSD_MObjDesc* mdesc = (HSD_MObjDesc*) arg0->unk28[i];
+            if (mdesc != NULL && !(mdesc->rendermode & 0x4000000)) {
+                mdesc->rendermode |= 0x4000000;
+            }
+            continue;
+#endif
             UnkStageDatInternal* temp_r4 = arg0->unk28[i];
             if (temp_r4 != NULL && !(temp_r4->unk4 & 0x4000000)) {
                 // The native GameData graph is shared by every match and
@@ -191,6 +202,51 @@ UnkArchiveStruct* grDatFiles_801C6478(void* data, s32 length)
 
     return arc;
 }
+
+#ifdef MSL_CORE_HOSTED
+// Pokemon Stadium's transformation archives. Retail reads one into a DVD
+// buffer when it is needed and parses it into a fresh heap archive
+// (grStadium_801D42B8 -> grDatFiles_801C6478, or Slippi's synchronous
+// StadiumFileLoad). A hosted match cannot read or allocate after GameData
+// seals, so GameData reads and translates all four once, and a load takes a
+// slot pointing at the shared archive. Slot word unk8 = 2 marks it
+// GameData-owned: grAnime_801C65B0 frees only words 0 and 1, so releasing the
+// slot clears it and nothing else, exactly as retail's release leaves no
+// trace in gameplay state.
+// refs/melee/src/melee/gr/{grpstadium.c::grStadium_801D42B8,
+//   grdatfiles.c::grDatFiles_801C6478,granime.c::grAnime_801C65B0}
+// refs/slippi-ssbm-asm/Online/Core/Hacks/Stadium/StadiumFileLoad.asm
+void msl_grdatfiles_prepare_archive(HSD_Archive* archive)
+{
+#if MSL_GX_RECORD
+    /* (the shadow-receiver flags the call below sets are the draw pass's; the match that loads the archive decides whether they are set: msl_grdatfiles_publish_archive) */
+    (void) HSD_ArchiveGetPublicAddress(archive, "map_head"); /* (the symbol lookup is cached while GameData is built) */
+#else
+    grDatFiles_801C6228(HSD_ArchiveGetPublicAddress(archive, "map_head"));
+#endif
+}
+
+UnkArchiveStruct* msl_grdatfiles_publish_archive(HSD_Archive* archive)
+{
+    UnkArchiveStruct* arc = grDatFiles_801C62B4();
+    HSD_ASSERT(290, arc);
+    arc->unk0 = archive;
+    arc->unk4 = HSD_ArchiveGetPublicAddress(archive, "map_head");
+    arc->unk8 = 2;
+#if MSL_GX_RECORD
+    /* Slippi's online StadiumFileLoad (0x800165AC, which the replays of an online client carry as a code) ends with `addi r3, MDATA, 4; bl 0x801C6228`:
+       it hands grDatFiles_801C6228 the ADDRESS of the slot's map_head word where the function wants the map_head, so it reads the slot's neighbors and finds
+       no material list: the transformation's materials never get the shadow-receiver flag. The preloaded patch set (Common/Preload Stadium Transformations)
+       and the unpatched game go through grDatFiles_801C6478, which passes the right pointer. */
+    if (msl_stadium_transformations() != MSL_STADIUM_ONLINE_LOADED) {
+        grDatFiles_801C6228(arc->unk4);
+    }
+#else
+    grDatFiles_801C6228(arc->unk4);
+#endif
+    return arc;
+}
+#endif
 
 static UnkBgmStruct grDatFiles_803E07E4 = {
     0, -1, -1, 0, 0, 0, 0, 0, { 0 },
