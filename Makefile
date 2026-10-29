@@ -453,6 +453,19 @@ ppc: $(BINARY)
 
 native: $(NATIVE_BINARY)
 
+# The headless build must stay the same with every viewer-only change: build
+# the native objects of FLAG_OFF_BASE and of HEAD in one tree, at one path, and
+# compare them with their debug information stripped. FLAG_OFF_EXPECT names
+# objects a change is meant to alter (a fix of the headless build itself).
+FLAG_OFF_BASE ?= origin/main
+FLAG_OFF_JOBS ?= 4
+FLAG_OFF_EXPECT ?=
+.PHONY: flag-off-check
+flag-off-check:
+	@"$(PY)" "$(ROOT)/tools/build/flag_off_check.py" run --base "$(FLAG_OFF_BASE)" \
+		--jobs "$(FLAG_OFF_JOBS)" --host-cc "$(HOST_CC)" \
+		$(foreach o,$(FLAG_OFF_EXPECT),--expect "$(o)")
+
 python-library: $(PYTHON_LIBRARY)
 
 .PHONY: python-release strict-release-flags
