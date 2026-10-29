@@ -1060,6 +1060,12 @@ int main(int argc, char** argv)
                 fprintf(stderr, "--playback takes slippi or original%c", 10);
                 return 2;
             }
+        } else if (strcmp(argv[arg], "--hud-layout") == 0) {
+            /* viewer build: "game" (default) or "outer", see src/present/gm_state.c */
+            if (msl_hud_layout_set_name(argv[arg + 1]) != 0) {
+                fprintf(stderr, "--hud-layout takes game or outer%c", 10);
+                return 2;
+            }
 #endif
         } else {
             break;

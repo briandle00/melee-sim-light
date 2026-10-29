@@ -14,6 +14,7 @@
 
 #if MSL_GX_RECORD
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -56,6 +57,62 @@ static int tape_match_seconds;
 void msl_present_set_match_seconds(int seconds)
 {
     tape_match_seconds = seconds;
+}
+
+/* The HUD layout option: which of ifAll_804A0FD8.x18's slots (ifAll_802F343C(4): the four-player layout, rules.x0_3 = 4 by gm_80167A64)
+ * each player's display is bound to. "game" (default): the player's own port, as the game does. "outer": in a game of exactly two players
+ * the lower port's HUD is bound to slot 1 (x18[0]) and the higher port's to slot 4 (x18[3]); the HUD's own code (ifStatus_802F61FC,
+ * ifStock, if_2F72, ifcoget, the names) then draws at that slot's position unchanged, as it does for a game played in ports 1 and 4.
+ * Set before the first step: env MSL_HUD_LAYOUT=game|outer, `--hud-layout <name>` on the replay driver, msl_gxw_set_hud_layout (wasm). */
+static int hud_layout_outer;
+static int hud_layout_explicit;
+static int hud_slot_of[6] = {0, 1, 2, 3, 4, 5};
+
+int msl_hud_layout_set_name(const char* name)
+{
+    if (name == NULL) {
+        return -1;
+    }
+    if (strcmp(name, "game") == 0) {
+        hud_layout_outer = 0;
+    } else if (strcmp(name, "outer") == 0) {
+        hud_layout_outer = 1;
+    } else {
+        return -1;
+    }
+    hud_layout_explicit = 1;
+    return 0;
+}
+
+const char* msl_hud_layout_get_name(void)
+{
+    return hud_layout_outer ? "outer" : "game";
+}
+
+int msl_present_hud_slot(int idx)
+{
+    return idx >= 0 && idx < 6 ? hud_slot_of[idx] : idx;
+}
+
+/* binds the players' displays to their slots at the HUD's start (before ifStatus_802F665C makes them) */
+static void hud_layout_bind(void)
+{
+    const char* e = getenv("MSL_HUD_LAYOUT");
+    int i, n = 0, ports[6];
+
+    if (e != NULL && !hud_layout_explicit && msl_hud_layout_set_name(e) != 0) {
+        fprintf(stderr, "MSL_HUD_LAYOUT=%s: not game or outer; staying on %s%c", e, msl_hud_layout_get_name(), 10);
+    }
+    for (i = 0; i < 6; i++) {
+        hud_slot_of[i] = i;
+        if (Player_GetPlayerSlotType(i) != Gm_PKind_NA) {
+            ports[n++] = i;
+        }
+    }
+    if (hud_layout_outer && n == 2) {
+        hud_slot_of[ports[0]] = 0;
+        hud_slot_of[ports[1]] = 3;
+    }
 }
 
 /* fn_8016DCC0 without its player setup (the simulator has made the players) */
@@ -198,6 +255,7 @@ void msl_present_hud_start(void)
         ifStatus_802F6EA4(3, -1, -1, 0, (Event) overlay_begin, (Event) overlay_ready_end);
     }
     ifTime_CreateTimers();
+    hud_layout_bind();
     ifStatus_802F665C(state->x24C8.x0_3);
     msl_slippi_show_player_names(); /* Slippi playback's code at the end of gm_Scene_Vs_OnEnter (0x8016E9B4) */
 }

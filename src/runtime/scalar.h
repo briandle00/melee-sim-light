@@ -197,6 +197,10 @@ int msl_core_write_items_into_zeroed(
    (follow the recording). 0 on success, -1 for any other name. Set before the first step; env MSL_PLAYBACK also sets it. */
 int msl_playback_set_name(const char* name);
 const char* msl_playback_get_name(void);
+/* The viewer build's HUD layout option: "game" (default: each player's HUD at their port's slot) or "outer" (a two-player game's lower port in
+   slot 1, the higher in slot 4). 0 on success, -1 for any other name. Set before the first step; env MSL_HUD_LAYOUT also sets it. */
+int msl_hud_layout_set_name(const char* name);
+const char* msl_hud_layout_get_name(void);
 #endif
 
 #endif

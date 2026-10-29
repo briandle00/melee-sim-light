@@ -17,12 +17,18 @@
  *                                         (a frame was stepped already). Call it before the first step (before or after open).
  *                                         slippi: Slippi Dolphin's playback hook stores at game frame -123 (src/runtime/scalar.c);
  *                                         original: the recording. msl_gxw_playback() returns the current name.
+ *   msl_gxw_set_hud_layout(name)          "game" (default: each player's HUD at their port's slot) or "outer" (a two-player game's lower
+ *                                         port in HUD slot 1, the higher in slot 4). 0 set, -1 unknown name, -2 too late. Call it BEFORE msl_gxw_open (the
+ *                                         HUD binds its slots when the match opens; playback has no such limit).
+ *                                         msl_gxw_hud_layout() returns the current name. Binds the displays to the slots in the
+ *                                         game's own HUD code (src/present/gm_state.c); nothing is moved after drawing.
  */
 #define main replay_drive_main
 #include "replay_drive.c"
 #undef main
 
 #include <emscripten.h>
+#include <unistd.h>
 
 static TapeConfig api_tape;
 static MslCoreGameData api_game_data;
@@ -34,6 +40,10 @@ static int api_open;
 /* msl_gxw_set_display(0): the steps run no display pass and record no GX stream (only the gameplay rows matter: the C-stick fit's drives), as the
    native driver steps when no recording is asked for (gx_display.c msl_gx_frame returns first without MSL_GX_RECORD_OUT) */
 static int api_display = 1;
+/* msl_gxw_restart_stream(): the next display pass starts the stream again, as the native recorder starts at MSL_GX_RECORD_FRAMES' first frame
+   (msl_gx_recording_start: every register file as the game has set them so far is msl_gxw_initial_state, and every memory block a frame reads
+   is sent again); the page draws from there on a renderer started fresh: after a fast seek, or after putting back a saved state */
+static int api_restart;
 static uint8_t* api_rec;           /* msl_gxw_set_recorded */
 static int api_rec_row;
 static void api_resync_frame(uint32_t index);
@@ -110,7 +120,8 @@ EMSCRIPTEN_KEEPALIVE int msl_gxw_step_frame(const uint8_t* packed)
         api_resync_frame(api_index);
     }
     if (api_display) {
-        msl_gx_stream_frame(&api_match, api_index == 0);
+        msl_gx_stream_frame(&api_match, api_index == 0 || api_restart);
+        api_restart = 0;
     }
     api_index++;
     return 0;
@@ -135,6 +146,16 @@ EMSCRIPTEN_KEEPALIVE int msl_gxw_set_playback(const char* name)
     return msl_playback_set_name(name);
 }
 EMSCRIPTEN_KEEPALIVE const char* msl_gxw_playback(void) { return msl_playback_get_name(); }
+
+EMSCRIPTEN_KEEPALIVE int msl_gxw_set_hud_layout(const char* name)
+{
+    /* the HUD binds its slots when the match opens (msl_present_hud_start), so unlike the playback option this is too late once opened */
+    if (api_open || api_index > 0) {
+        return -2;
+    }
+    return msl_hud_layout_set_name(name);
+}
+EMSCRIPTEN_KEEPALIVE const char* msl_gxw_hud_layout(void) { return msl_hud_layout_get_name(); }
 
 /* The C-stick fit of a recording without raw C-stick bytes (Slippi before 3.17), for playback "original" (tools/replay/cstick_fit.c; the python's
  * drive_fitted decisions). The page builds the tape with the raw bytes msl_gxw_cfit_raw gives, drives it, and feeds back the first frame that
@@ -191,6 +212,10 @@ EMSCRIPTEN_KEEPALIVE int msl_gxw_cfit_flips(void) { return api_cfit != NULL ? cf
  * Before the first step; (NULL, 0) clears it; the bytes are copied. 0 set, -2 too late. */
 static size_t api_rec_size, api_rec_pos;
 static OutFrame api_out_row;
+EMSCRIPTEN_KEEPALIVE void msl_gxw_restart_stream(void) { api_restart = 1; }
+/* msl_gxw_heap_top(): the end of the memory in use (sbrk(0)). Everything the module holds between calls is in memory[0, top) (the stack
+   pointer is back at its base), so the page saves the state as those bytes and rewinds by writing them back, then restarts the stream */
+EMSCRIPTEN_KEEPALIVE uintptr_t msl_gxw_heap_top(void) { return (uintptr_t) sbrk(0); }
 EMSCRIPTEN_KEEPALIVE int msl_gxw_set_display(int on)
 {
     if (api_index > 0) {

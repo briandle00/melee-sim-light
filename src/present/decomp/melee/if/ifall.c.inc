@@ -66,9 +66,11 @@ Vec3* ifAll_802F3414(void)
     return &ifAll_804A0FD8.xC;
 }
 
+/* Viewer build: the HUD slot a player's display is bound to (gm_state.c, the HUD layout option; the game's own slot is the port) */
+extern int msl_present_hud_slot(int idx);
 Vec3* ifAll_802F3424(int idx)
 {
-    return &ifAll_804A0FD8.x18[idx];
+    return &ifAll_804A0FD8.x18[msl_present_hud_slot(idx)];
 }
 
 static inline void ifAll_802F343C_inline(int i)
