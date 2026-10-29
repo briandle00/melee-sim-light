@@ -9,8 +9,16 @@
 #include <math.h>
 #endif
 
+// The high and low words of a double. The console is big-endian, so the high
+// word is the one at the lower address; on a little-endian host it is the
+// one after it.
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define MSL_HI(x) *(1 + (int*) &x)
+#define MSL_LO(x) *(int*) &x
+#else
 #define MSL_HI(x) *(int*) &x
 #define MSL_LO(x) *(1 + (int*) &x)
+#endif
 
 #define M_PI 3.14159265358979323846
 #define M_TAU 6.283185307179586
