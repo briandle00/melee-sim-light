@@ -99,9 +99,10 @@ until the leader's Rebirth. Otherwise, and for every other character, it is
 zeroed.
 
 `stored[k]` is what the player in `slots[k]` keeps between moves, in the game's
-own units. Slippi does not record it. A character with nothing to keep, an
-unused slot and an absent player read zero, with `copied_char` at
-`MSL_COPIED_NONE` and both `judge` numbers at `MSL_JUDGE_NONE`.
+own units (Slippi 3.20.0 records most of it, see below). A character with
+nothing to keep, an unused slot and an absent player read zero, with
+`copied_char` at `MSL_COPIED_NONE` and both `judge` numbers at
+`MSL_JUDGE_NONE`.
 
 `stored[k].charge` is a stored move's count:
 
@@ -221,6 +222,19 @@ leaves out of the next roll: `judge[0]` is the most recent, `judge[1]` the one
 before. Each is the hammer's number minus one (`0..8`), as the game stores it.
 A match and every new stock start with `1` and `0`, so the first hammer is
 never a 1 or a 2. Everyone else reads `MSL_JUDGE_NONE` (`255`) in both.
+
+Slippi 3.20.0 records most of `stored[k]` in its post-frame row (offsets
+`0x55` to `0x5C`), read from the same game variables but encoded differently:
+
+| here | Slippi | difference |
+| --- | --- | --- |
+| `charge` | Stored Charge | the same; Zelda reads `0` in both |
+| `spent` | Spent Bit Flags | bits `1` to `16` are the same; Slippi's `32` is the air item catch, which this record does not have. Nana's Ice Shot is `MSL_SPENT_FOLLOWER_NEUTRAL_LIFT` here and `1` in her own row there |
+| `wall_jumps` | Wall Jumps Used | the same |
+| `copied_char` | Character Byte (Kirby) | `MSL_CHARACTER_*` here, `MSL_COPIED_NONE` without one; Slippi has the internal character id, `4` without one |
+| `judge` | Character Byte (Mr. Game & Watch) | two bytes here; one nibble each there (low: the most recent) |
+| `gauge[0]` | Character Value | a float here. Slippi has Mr. Game & Watch's damage as an int32, and Peach's float frames as the game leaves them outside a float (`0` here) |
+| `gauge[1]` | none | Fire Breath's flame size is not recorded |
 
 Top-level fields:
 

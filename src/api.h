@@ -234,8 +234,9 @@ enum {
   MSL_SPENT_FOLLOWER_NEUTRAL_LIFT = 1 << 5,
 };
 
-// What a fighter keeps between moves, in the game's own units. Slippi records
-// none of it. API.md lists each character's meaning and range; a character
+// What a fighter keeps between moves, in the game's own units. Slippi 3.20.0
+// records most of it in its post-frame row, encoded differently: API.md lists
+// how they differ, and each character's meaning and range. A character
 // without one, and an absent player, reads 0, MSL_COPIED_NONE and
 // MSL_JUDGE_NONE.
 typedef struct MslObservationStored {
