@@ -101,8 +101,14 @@ def transform_function(lines, rules, need, loc):
         intr = 'llvm.fma.f32' if ty == 'float' else 'llvm.fma.f64'
         need.add(ty)
         indent = re.match(r'^(\s*)', l).group(1)
-        if op == 'fadd' and ismul(a) and ismul(b) and a in pos and b in pos and pos[b] < pos[a]:
-            a, b = b, a    # (the optimizer may have swapped the operands of a sum of two products: the one written first in the source is fused)
+        if op == 'fadd' and ismul(a) and ismul(b) and a in pos and b in pos:
+            if nm in pos and (pos[a][0] == pos[nm][0]) != (pos[b][0] == pos[nm][0]):
+                # (a product written in an earlier statement is a variable to the console's compiler, not a part of this expression: the one written in the sum's own
+                # statement is fused, and the other, rounded first: angle = 0.5f * x + offset, with offset = c * r on its own line, is fmadds(0.5, x, offset))
+                if pos[b][0] == pos[nm][0]:
+                    a, b = b, a
+            elif pos[b] < pos[a]:
+                a, b = b, a    # (the optimizer may have swapped the operands of a sum of two products: the one written first in the source is fused)
         if ismul(a):
             x, y = defs[a][3][:2]
             dead.add(a)

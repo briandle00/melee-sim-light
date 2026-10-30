@@ -118,7 +118,11 @@ echo "${#SRCS[@]} translation units"
 # tools/build/float_rules.json -> object), the same pipeline the WebAssembly build uses, so the console's fused multiply-adds and Gekko square roots
 # come out the same in both. Unset (and in the production build) the compiler is $CC as before.
 LLVMCC=("$CC")
-if [ "${MSL_VIEWER_LLVM:-1}" = 1 ] && [ "${MSL_GX_RECORD:-0}" = 1 ]; then LLVMCC=("$PY" "$ROOT/tools/build/llvmcc.py"); fi
+if [ "${MSL_VIEWER_LLVM:-1}" = 1 ] && [ "${MSL_GX_RECORD:-0}" = 1 ]; then LLVMCC=("$PY" "$ROOT/tools/build/llvmcc.py");
+  # (the libm calls stay calls, as in the WebAssembly build: clang turns a sinf and a cosf of one angle into llvm.sin and llvm.cos, and the x86 backend merges that pair into the C library's sincosf,
+  # whose last bit is not the game's: the MSL sinf and cosf are what the console runs)
+  CFLAGS+=(-fno-builtin-sinf -fno-builtin-cosf -fno-builtin-tanf -fno-builtin-sincosf -fno-builtin-atan2f -fno-builtin-atanf -fno-builtin-acosf -fno-builtin-asinf)
+fi
 LLVMSUM=""; if [ "${#LLVMCC[@]}" -gt 1 ]; then LLVMSUM="$(cat "${MSL_FLOAT_RULES:-$ROOT/tools/build/float_rules.json}" "$ROOT/tools/build/llvmcc.py" "$ROOT/tools/build/floatxform.py" | md5sum | cut -c1-12)"; fi
 STAMP="$OBJ/.stamp"; WANT="gx=${MSL_GX_RECORD:-0} only=${MSL_LLVM_ONLY:-} rules=$LLVMSUM cc=${LLVMCC[*]} opt=$OPT cc=$CC ${PYTHON_CPPFLAGS[*]} ${CFLAGS[*]}"
 # (no stamp = unknown objects: rebuilt too; the integrator removes the stamp to force a full build, and with only the changed-stamp test the objects of a rules change stayed stale)

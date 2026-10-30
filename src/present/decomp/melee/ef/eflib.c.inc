@@ -1112,7 +1112,8 @@ void efLib_Cb_SetRotYAndTransition(EF_Effect* effect)
     eff_jobj = GET_JOBJ(effect->gobj);
     (void) user_data;
     if (user_data != NULL) {
-        if (user_data->scale.x < 0.0F) {
+        /* (user_data is the fighter here (efalt spawns 0x494/0x495): the console reads the float at +2C, its facing_dir; as a joint's scale.x the 64-bit build read another field) */
+        if (((Fighter*) user_data)->facing_dir < 0.0F) {
             temp_d = -M_PI_2;
         } else {
             temp_d = M_PI_2;
